@@ -1,6 +1,7 @@
 [build]
-  command = "npm run build"
+  base = "mtg-web-app"
   publish = "dist"
+  command = "npm run build"
 
 [[redirects]]
   from = "/*"
