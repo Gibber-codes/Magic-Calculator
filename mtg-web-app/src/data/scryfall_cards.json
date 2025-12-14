@@ -1,0 +1,247 @@
+[
+    {
+        "name": "Finale of Devastation",
+        "type_line": "Sorcery",
+        "oracle_text": "Search your library and/or graveyard for a creature card with mana value X or less and put it onto the battlefield. If you search your library this way, shuffle. If X is 10 or more, creatures you control get +X/+X and gain haste until end of turn.",
+        "power": "",
+        "toughness": "",
+        "colors": [
+            "G"
+        ],
+        "mana_cost": "{X}{G}{G}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/9/8/985453e7-997e-4d77-a338-cc0290791ebe.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/9/8/985453e7-997e-4d77-a338-cc0290791ebe.jpg"
+    },
+    {
+        "name": "Doubling Season",
+        "type_line": "Enchantment",
+        "oracle_text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.\nIf an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead.",
+        "power": "",
+        "toughness": "",
+        "colors": [
+            "G"
+        ],
+        "mana_cost": "{4}{G}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/8/6/8676d164-c76e-402b-a649-6ded3f549b6e.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/8/6/8676d164-c76e-402b-a649-6ded3f549b6e.jpg"
+    },
+    {
+        "name": "Mondrak, Glory Dominus",
+        "type_line": "Legendary Creature — Phyrexian Horror",
+        "oracle_text": "If one or more tokens would be created under your control, twice that many of those tokens are created instead.\n{1}{W/P}{W/P}, Sacrifice two other artifacts and/or creatures: Put an indestructible counter on Mondrak. ({W/P} can be paid with either {W} or 2 life.)",
+        "power": "4",
+        "toughness": "4",
+        "colors": [
+            "W"
+        ],
+        "mana_cost": "{2}{W}{W}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/f/a/fa798636-a1fd-457f-b0e0-f23609d69224.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/f/a/fa798636-a1fd-457f-b0e0-f23609d69224.jpg"
+    },
+    {
+        "name": "Helm of the Host",
+        "type_line": "Legendary Artifact — Equipment",
+        "oracle_text": "At the beginning of combat on your turn, create a token that's a copy of equipped creature, except the token isn't legendary. That token gains haste.\nEquip {5}",
+        "power": "",
+        "toughness": "",
+        "colors": [],
+        "mana_cost": "{4}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/1/d/1d65d20c-09e5-4139-838b-7e0e48eb2b2b.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/1/d/1d65d20c-09e5-4139-838b-7e0e48eb2b2b.jpg"
+    },
+    {
+        "name": "Biotech Specialist",
+        "type_line": "Creature — Human Wizard",
+        "oracle_text": "When this creature enters, create a Lander token. (It's an artifact with \"{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\")\nWhenever you sacrifice an artifact, this creature deals 2 damage to target opponent.",
+        "power": "3",
+        "toughness": "2",
+        "colors": [
+            "U"
+        ],
+        "mana_cost": "{3}{U}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/8/3/83e6f4e8-3e0b-4f1f-8e6f-4c3c3e6f4e8e.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/8/3/83e6f4e8-3e0b-4f1f-8e6f-4c3c3e6f4e8e.jpg"
+    },
+    {
+        "name": "Infantry Shield",
+        "type_line": "Artifact — Equipment",
+        "oracle_text": "Equipped creature gets +0/+2.\nAt the beginning of your end step, create a 1/1 white Soldier creature token.\nEquip {1}",
+        "power": "",
+        "toughness": "",
+        "colors": [],
+        "mana_cost": "{1}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/e/5/e5c72e30-1c17-4e37-8f49-cf33091f2d90.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/e/5/e5c72e30-1c17-4e37-8f49-cf33091f2d90.jpg"
+    },
+    {
+        "name": "Wildwood Mentor",
+        "type_line": "Creature — Treefolk",
+        "oracle_text": "When Wildwood Mentor enters, another target creature you control gains trample and gets +X/+X until end of turn, where X is Wildwood Mentor's power.",
+        "power": "4",
+        "toughness": "5",
+        "colors": [
+            "G"
+        ],
+        "mana_cost": "{4}{G}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/7/4/74d1c936-de88-4e5d-88ad-8e844db7ddd5.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/7/4/74d1c936-de88-4e5d-88ad-8e844db7ddd5.jpg"
+    },
+    {
+        "name": "Gruff Triplets",
+        "type_line": "Creature — Satyr Warrior",
+        "oracle_text": "Trample\nWhen Gruff Triplets enters, if it isn't a token, create two tokens that are copies of it.\nWhen Gruff Triplets dies, put a number of +1/+1 counters equal to its power on each creature you control named Gruff Triplets.",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+            "G"
+        ],
+        "mana_cost": "{3}{G}{G}{G}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/a/a/aae2c499-6489-4e01-bfd4-9b1813875b66.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/a/a/aae2c499-6489-4e01-bfd4-9b1813875b66.jpg"
+    },
+    {
+        "name": "Seedship Agrarian",
+        "type_line": "Creature — Phyrexian Elf",
+        "oracle_text": "When Seedship Agrarian enters, put a +1/+1 counter on target creature you control.\n{2}, Sacrifice Seedship Agrarian: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+        "power": "2",
+        "toughness": "2",
+        "colors": [
+            "G"
+        ],
+        "mana_cost": "{2}{G}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/c/6/c6f2c803-5e42-4c59-809e-67e8ea3f68e7.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/c/6/c6f2c803-5e42-4c59-809e-67e8ea3f68e7.jpg"
+    },
+    {
+        "name": "Redoubled Stormsinger",
+        "type_line": "Creature — Human Wizard",
+        "oracle_text": "Backup 1 (When this creature enters, put a +1/+1 counter on target creature. If that's another creature, it gains the following abilities until end of turn.)\nHaste\nWhenever this creature attacks, untap target creature you control. After this phase, there is an additional combat phase.",
+        "power": "2",
+        "toughness": "2",
+        "colors": [
+            "R"
+        ],
+        "mana_cost": "{2}{R}{R}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/5/b/5b7e0916-27cc-497f-a5b8-2a19e5f1c8e0.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/5/b/5b7e0916-27cc-497f-a5b8-2a19e5f1c8e0.jpg"
+    },
+    {
+        "name": "Evendo, Waking Haven",
+        "type_line": "Legendary Creature — Elemental",
+        "oracle_text": "Evendo, Waking Haven enters with a +1/+1 counter on it for each card in your hand.\nWhenever you draw a card, put a +1/+1 counter on Evendo.",
+        "power": "0",
+        "toughness": "0",
+        "colors": [
+            "G",
+            "U"
+        ],
+        "mana_cost": "{2}{G}{U}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/a/c/ac8e2f2c-5e90-4d05-8d8a-b5b7d9e7e7d8.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/a/c/ac8e2f2c-5e90-4d05-8d8a-b5b7d9e7e7d8.jpg"
+    },
+    {
+        "name": "Glacier Godmaw",
+        "type_line": "Creature — Dragon",
+        "oracle_text": "Flying\nWhen Glacier Godmaw enters, if you cast it, create four 1/1 blue Bird creature tokens with flying.\nWhenever you cast a spell with mana value 5 or greater, you may return Glacier Godmaw from your graveyard to your hand.",
+        "power": "6",
+        "toughness": "6",
+        "colors": [
+            "U"
+        ],
+        "mana_cost": "{5}{U}{U}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/9/d/9d6d2d8f-82e8-4d8d-8f8d-8d8d8d8d8d8d.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/9/d/9d6d2d8f-82e8-4d8d-8f8d-8d8d8d8d8d8d.jpg"
+    },
+    {
+        "name": "Aetheeric Amplifier",
+        "type_line": "Artifact",
+        "oracle_text": "When Aetheeric Amplifier enters, you get {E}{E} (two energy counters).\nAt the beginning of your end step, if you control a modified creature, you get {E}. (Equipment, Auras you control, and counters are modifications.)\n{T}, Pay {E}{E}{E}{E}: Target creature you control gets +2/+2 and gains lifelink until end of turn.",
+        "power": "",
+        "toughness": "",
+        "colors": [],
+        "mana_cost": "{2}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/2/7/27f8a4e8-3e0b-4f1f-8e6f-4c3c3e6f4e8e.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/2/7/27f8a4e8-3e0b-4f1f-8e6f-4c3c3e6f4e8e.jpg"
+    },
+    {
+        "name": "Krenko, Tin Street Kingpin",
+        "type_line": "Legendary Creature — Goblin",
+        "oracle_text": "Whenever Krenko, Tin Street Kingpin attacks, put a +1/+1 counter on it, then create a number of 1/1 red Goblin creature tokens equal to Krenko's power.",
+        "power": "1",
+        "toughness": "2",
+        "colors": [
+            "R"
+        ],
+        "mana_cost": "{2}{R}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/3/7/37ed04d3-cfa1-4778-aea6-b4c2c29e6e0a.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/3/7/37ed04d3-cfa1-4778-aea6-b4c2c29e6e0a.jpg"
+    },
+    {
+        "name": "Mace of the Valiant",
+        "type_line": "Artifact — Equipment",
+        "oracle_text": "Equipped creature gets +1/+1 for each charge counter on Mace of the Valiant and has vigilance.\nWhenever a creature you control enters, put a charge counter on Mace of the Valiant.\nEquip {3}",
+        "power": "",
+        "toughness": "",
+        "colors": [
+            "W"
+        ],
+        "mana_cost": "{2}{W}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/6/c/6c141ed6-02ee-49c4-98af-938ebcefb2f5.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/6/c/6c141ed6-02ee-49c4-98af-938ebcefb2f5.jpg"
+    },
+    {
+        "name": "Hero of Bladehold",
+        "type_line": "Creature — Human Knight",
+        "oracle_text": "Battle cry (Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn.)\nWhenever Hero of Bladehold attacks, create two 1/1 white Soldier creature tokens that are tapped and attacking.",
+        "power": "3",
+        "toughness": "4",
+        "colors": [
+            "W"
+        ],
+        "mana_cost": "{2}{W}{W}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/c/6/c6e2c501-7ff6-4e98-8434-7d9e92c0e6c7.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/c/6/c6e2c501-7ff6-4e98-8434-7d9e92c0e6c7.jpg"
+    },
+    {
+        "name": "Orthion, Hero of Lavabrink",
+        "type_line": "Legendary Creature — Human Soldier",
+        "oracle_text": "{1}{R}, {T}: Create a token that's a copy of another target creature you control. It gains haste. Sacrifice it at the beginning of the next end step.\n{6}{R}{R}{R}, {T}: Create five tokens that are copies of another target creature you control. They gain haste. Sacrifice them at the beginning of the next end step.",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+            "R"
+        ],
+        "mana_cost": "{3}{R}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/7/1/71dadbb3-7b8a-4656-973f-65a3284afe07.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/7/1/71dadbb3-7b8a-4656-973f-65a3284afe07.jpg",
+        "abilities": [
+            {
+                "cost": "{1}{R}, {T}",
+                "effect": "orthion_copy_single",
+                "description": "Create a token that's a copy of another target creature you control. It gains haste. Sacrifice it at the beginning of the next end step.",
+                "requiresTarget": true,
+                "targetType": "creature"
+            },
+            {
+                "cost": "{6}{R}{R}{R}, {T}",
+                "effect": "orthion_copy_five",
+                "description": "Create five tokens that are copies of another target creature you control. They gain haste. Sacrifice them at the beginning of the next end step.",
+                "requiresTarget": true,
+                "targetType": "creature"
+            }
+        ]
+    },
+    {
+        "name": "Ouroboroid",
+        "type_line": "Creature — Plant Wurm",
+        "oracle_text": "At the beginning of combat on your turn, put X +1/+1 counters on each creature you control, where X is this creature's power.",
+        "power": "1",
+        "toughness": "3",
+        "colors": [
+            "G"
+        ],
+        "mana_cost": "{2}{G}{G}",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/2/0/209c591a-4ab2-4e89-9523-a7b766cf4e51.jpg",
+        "image_normal": "https://cards.scryfall.io/normal/front/2/0/209c591a-4ab2-4e89-9523-a7b766cf4e51.jpg"
+    }
+]
