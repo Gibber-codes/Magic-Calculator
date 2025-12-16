@@ -112,21 +112,26 @@ const useGameState = () => {
         logAction("Turn Ended");
         setCurrentPhase(null);
         setCurrentCombatStep(null);
+
+        // Clear attacking status and temporary buffs from all creatures
+        setCards(prev => prev.map(c => ({
+            ...c,
+            attacking: false,
+            tempPowerBonus: 0,
+            tempToughnessBonus: 0
+        })));
     }, [logAction]);
 
     // --- Ability Stack Management ---
 
-    const addToStack = useCallback((sourceCard, description, triggerType = null, triggerObj = null) => {
+    const addToStack = useCallback((sourceCard, description, triggerType, triggerObj) => {
         let detectedType = triggerType;
-        if (!detectedType && description) {
-            const lowerDesc = description.toLowerCase();
-            if (lowerDesc.startsWith('at ') || lowerDesc.includes('at the beginning')) {
+
+        // Auto-detect type based on description if not provided
+        if (!detectedType || detectedType === 'trigger') {
+            if (description && description.toLowerCase().startsWith('at')) {
                 detectedType = 'at';
-            } else if (lowerDesc.startsWith('whenever ')) {
-                detectedType = 'whenever';
-            } else if (lowerDesc.startsWith('when ')) {
-                detectedType = 'when';
-            } else {
+            } else if (description && description.toLowerCase().startsWith('when')) {
                 detectedType = 'when';
             }
         }
@@ -138,6 +143,7 @@ const useGameState = () => {
             sourceId: sourceCard.id,
             description: description,
             triggerType: detectedType || 'when',
+            trigger: triggerObj?.trigger, // Store the actual trigger type (e.g., 'deferred_token_creation')
             triggerObj: triggerObj,
             timestamp: Date.now()
         };
@@ -146,16 +152,69 @@ const useGameState = () => {
         logAction(`Triggered: ${sourceCard.name} - ${description}`);
     }, [logAction]);
 
-    const resolveStackAbility = useCallback((ability, recentCards = []) => {
-        if (ability.triggerObj && ability.triggerObj.execute) {
-            const updatedCards = ability.triggerObj.execute(cards, recentCards);
+    const resolveStackAbility = useCallback((ability, recentCards = [], startTargetingCallback) => {
+        // Check if this ability needs targeting BEFORE resolution
+        if (ability.triggerObj && ability.triggerObj.ability) {
+            const abilityDef = ability.triggerObj.ability;
+            const needsTargeting = abilityDef.target &&
+                (abilityDef.target.includes('another') || abilityDef.target.includes('target')) &&
+                !abilityDef.targetIds;
+
+            if (needsTargeting && startTargetingCallback) {
+                // Instead of resolving, initiate targeting mode
+                // Return a special flag to tell the caller to start targeting
+                return { needsTargeting: true, ability: ability };
+            }
+        }
+
+        // Check if this is a deferred token creation
+        if (ability.trigger === 'deferred_token_creation' && ability.triggerObj && ability.triggerObj.execute) {
+            const result = ability.triggerObj.execute(cards);
+
+            // Update card state with the new token
+            const newCards = result.newCards || cards;
+            const entryTriggers = result.triggers || [];
+
+            setCards(newCards);
+            logAction(`Created ${ability.description}`);
+
+            // Add entry triggers to the stack
+            entryTriggers.forEach(t => {
+                const desc = t.ability.description || `${t.source.name}: ${t.ability.effect}`;
+                addToStack(t.source, desc, t.ability.trigger, t);
+            });
+
+            saveHistoryState(newCards);
+        } else if (ability.triggerObj && ability.triggerObj.execute) {
+            // Regular trigger resolution
+            const result = ability.triggerObj.execute(cards, recentCards);
+
+            // Handle new return format { newCards, triggers }
+            const newCards = result.newCards || result;
+            const triggers = result.triggers || [];
+
+            setCards(newCards);
             logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName} - ${ability.description}`);
-            saveHistoryState(updatedCards);
+
+            // Add any triggered abilities to the stack
+            triggers.forEach(t => {
+                // Check if this is a deferred creation (different structure)
+                if (t.trigger === 'deferred_token_creation') {
+                    addToStack(t.source, t.description, t.trigger, t);
+                } else {
+                    // Regular trigger
+                    const desc = t.ability?.description || `${t.source.name} triggered`;
+                    addToStack(t.source, desc, 'trigger', t);
+                }
+            });
+
+            saveHistoryState(newCards);
         } else {
             logAction(`Resolved: ${ability.sourceName} - ${ability.description}`);
         }
         setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
-    }, [cards, logAction, saveHistoryState]);
+        return { needsTargeting: false };
+    }, [cards, logAction, saveHistoryState, addToStack]);
 
     const removeFromStack = useCallback((ability) => {
         logAction(`Removed from stack: ${ability.sourceName}`);
@@ -164,19 +223,47 @@ const useGameState = () => {
 
     const resolveAllStack = useCallback((recentCards = []) => {
         let currentCards = [...cards];
+        const newAbilityStack = []; // To collect new triggers if we wanted to support them in resolveAll?
+        // But resolving all assumes we clear the stack. New triggers might need to be resolved too?
+        // For 'resolve all', usually we just crunch through everything.
+        // If resolving one causes a trigger, we should probably add it to the stack so it resolves NEXT (or after).
+        // Standard Magic: "Resolve stack" iteratively.
+        // But for this "Resolve All" button, it's usually valid to just run everything.
+        // If a trigger happens mid-resolution, it goes on top.
+        // Implementing simple version: Just add to stack and let user decide, or ignore?
+        // Better: Process current stack, gather triggers, add triggers to stack. 
+        // "Resolve All" usually implies emptying the current stack.
+
+        // Iterative approach
+        // We need to loop because the stack might grow if we were truly simulating.
+        // But here we are iterating over the SNAPSHOT `abilityStack`.
+        // So new triggers will be added to the state but not executed in this loop.
+
         abilityStack.forEach(ability => {
             if (ability.triggerObj && ability.triggerObj.execute) {
-                currentCards = ability.triggerObj.execute(currentCards, recentCards);
+                const result = ability.triggerObj.execute(currentCards, recentCards);
+                const nextCards = result.newCards || result;
+                const triggers = result.triggers || [];
+
+                currentCards = nextCards;
+
+                // Add new triggers to the REAL stack state (so they appear after this batch clears)
+                triggers.forEach(t => {
+                    const desc = t.ability.description || `${t.source.name} triggered`;
+                    addToStack(t.source, desc, 'trigger', t);
+                });
+
                 logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName}`);
             } else {
                 logAction(`Resolved: ${ability.sourceName} - ${ability.description}`);
             }
         });
+
         if (abilityStack.some(a => a.triggerObj)) {
             saveHistoryState(currentCards);
         }
-        setAbilityStack([]);
-    }, [cards, abilityStack, logAction, saveHistoryState]);
+        setAbilityStack([]); // Clears the ones we just resolved. New triggers from addToStack call above will be added via setState functional update.
+    }, [cards, abilityStack, logAction, saveHistoryState, addToStack]);
 
     const clearStack = useCallback(() => {
         logAction("Stack cleared");

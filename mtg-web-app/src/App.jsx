@@ -511,6 +511,11 @@ const App = () => {
 
             const result = gameEngineRef.current.processAction(action, stackCard, updatedCards, recentCards);
             updatedCards = result.newCards;
+
+            if (result.triggers) {
+              result.triggers.forEach(t => addToStack(t.source, t.ability.description || 'Triggered', 'trigger', t));
+            }
+
             processedCount++;
           }
 
@@ -523,6 +528,10 @@ const App = () => {
 
           if (result.log.description) {
             logAction(result.log.description);
+          }
+
+          if (result.triggers) {
+            result.triggers.forEach(t => addToStack(t.source, t.ability.description || 'Triggered', 'trigger', t));
           }
 
           saveHistoryState(result.newCards);
@@ -569,9 +578,15 @@ const App = () => {
       if (gameEngineRef.current) {
         const etbTriggers = gameEngineRef.current.processEntersBattlefield(newCard);
         etbTriggers.forEach(t => {
-          const description = t.ability.description ||
-            `When ${t.source.name} enters: ${t.ability.effect}`;
-          addToStack(t.source, description, 'on_enter_battlefield', t);
+          let description = t.ability.description;
+          if (!description) {
+            if (t.ability.trigger === 'on_token_enter_battlefield') {
+              description = `${t.source.name}: Token entered`;
+            } else {
+              description = `When ${t.source.name} enters: ${t.ability.effect}`;
+            }
+          }
+          addToStack(t.source, description, t.ability.trigger || 'on_enter_battlefield', t);
         });
       }
 
@@ -678,7 +693,7 @@ const App = () => {
   };
 
   const handleActivateAbility = (card, abilityDef) => {
-    // 0. SPECIAL HANDLING: Manual Ability Definitions (from JSON)
+    // 0. SPECIAL HANDLING: Manual Ability Definitions (from JSON) with requiresTarget flag
     if (abilityDef.requiresTarget) {
       startTargetingMode({
         sourceId: card.id,
@@ -689,14 +704,34 @@ const App = () => {
       return;
     }
 
-    // If it's a manual effect code (no spaces) but no target required, execute directly
+    // 1. CHECK IF THIS ABILITY NEEDS A TARGET (from parsed or manual definition)
+    // This MUST come before direct execution to ensure targeting mode is triggered
+    const needsTarget = abilityDef.target && abilityDef.target.includes('target');
+
+    if (needsTarget) {
+      let type = 'permanent';
+      if (abilityDef.target.includes('creature')) type = 'creature';
+
+      startTargetingMode({
+        sourceId: card.id,
+        action: 'activate-ability',
+        mode: 'single',
+        data: {
+          ...abilityDef,
+          targetType: type
+        }
+      });
+      return;
+    }
+
+    // 2. If it's a manual effect code (no spaces) and no target required, execute directly
     if (abilityDef.effect && !abilityDef.effect.includes(' ') && gameEngineRef.current) {
       try {
         const abilityObj = {
           trigger: 'activated',
           effect: abilityDef.effect,
           description: abilityDef.description || abilityDef.effect,
-          target: abilityDef.targetType || 'self'
+          target: abilityDef.target || 'self'
         };
 
         const triggerObj = gameEngineRef.current.resolveEffect({
@@ -710,29 +745,46 @@ const App = () => {
       }
     }
 
-    // 1. Try to parse the effect text
+    // 3. Try to parse the effect text (fallback for raw oracle text)
     const effects = extractEffects(abilityDef.effect);
 
     if (!effects || effects.length === 0) {
-      // Can't parse, just log (already done by onClick)
+      console.warn("No effects parsed");
       return;
     }
 
-    // 2. Use the first parsed effect
+    // 4. Use the first parsed effect
     const parsedEffect = effects[0];
 
-    // 3. Construct an ability object compatible with GameEngine
+    // Check if the parsed effect requires a target (fallback for raw text parsing)
+    if (parsedEffect.target && parsedEffect.target.includes('target')) {
+      let type = 'permanent';
+      if (parsedEffect.target.includes('creature')) type = 'creature';
+
+      startTargetingMode({
+        sourceId: card.id,
+        action: 'activate-ability',
+        mode: 'single',
+        data: {
+          ...parsedEffect,
+          targetType: type
+        }
+      });
+      return;
+    }
+
+    // 5. Construct an ability object compatible with GameEngine (no target needed)
     const abilityObj = {
-      trigger: 'activated', // Special type for engine? Engine doesn't care about trigger type for execution usually
+      trigger: 'activated',
       effect: parsedEffect.effect,
       target: parsedEffect.target || 'self',
       amount: parsedEffect.amount,
       tokenName: parsedEffect.tokenName,
       tokenProps: parsedEffect.tokenProps,
-      description: abilityDef.effect
+      description: abilityDef.original || abilityDef.effect
     };
 
-    // 4. Resolve and Add to Stack
+    // 6. Resolve and Add to Stack
     if (gameEngineRef.current) {
       try {
         const triggerObj = gameEngineRef.current.resolveEffect({
@@ -740,7 +792,7 @@ const App = () => {
           ability: abilityObj
         });
 
-        // Add to stack
+        // Log it
         addToStack(card, `Activated: ${abilityObj.description}`, 'activated', triggerObj);
       } catch (e) {
         console.error("Failed to resolve activated ability:", e);
@@ -775,6 +827,36 @@ const App = () => {
       console.error(e);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleResolveWithTargeting = (ability) => {
+    // Attempt to resolve, check if targeting is needed
+    const result = resolveStackAbility(ability, recentCards, startTargetingMode);
+
+    if (result && result.needsTargeting) {
+      // Get the source card
+      const sourceCard = cards.find(c => c.id === ability.sourceId);
+      if (!sourceCard) return;
+
+      // Determine target type from ability
+      const abilityDef = ability.triggerObj.ability;
+      let targetType = 'creature';
+
+      if (abilityDef.target.includes('creature')) {
+        targetType = 'creature';
+      }
+
+      // Start targeting mode with the ability stored in data
+      startTargetingMode({
+        sourceId: sourceCard.id,
+        action: 'resolve-trigger',
+        mode: 'single',
+        data: {
+          stackAbility: ability,
+          targetType: targetType
+        }
+      });
     }
   };
 
@@ -833,7 +915,7 @@ const App = () => {
       {/* Triggered Ability Stack - Right side overlay */}
       <TriggeredAbilityStack
         items={abilityStack}
-        onResolve={resolveStackAbility}
+        onResolve={handleResolveWithTargeting}
         onRemove={removeFromStack}
         onResolveAll={resolveAllStack}
         onClear={clearStack}
@@ -896,12 +978,18 @@ const App = () => {
             if (targetingMode.action === 'equip') {
               return c.type === 'Creature';
             }
-            if (targetingMode.action === 'activate-ability') {
+            if (targetingMode.action === 'activate-ability' || targetingMode.action === 'resolve-trigger') {
               // Check specific target type from ability definition
               const targetType = targetingMode.data?.targetType || 'creature';
               if (targetType.toLowerCase() === 'creature') {
                 // Robust creature check
-                return c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
+                // For 'another_attacking_creature', also check if attacking
+                const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
+                // If this is for a resolve-trigger with another_attacking_creature, check if attacking
+                if (targetingMode.action === 'resolve-trigger') {
+                  return isCreature && c.attacking;
+                }
+                return isCreature;
               }
               // Add more types here as needed (e.g. 'permanent', 'artifact')
               return true; // Default to allow if unsure

@@ -12,7 +12,8 @@ const useTargetingMode = (gameState) => {
         saveHistoryState,
         gameEngineRef,
         addToStack,
-        setCurrentCombatStep
+        setCurrentCombatStep,
+        setAbilityStack
     } = gameState;
 
     // --- Targeting Mode State ---
@@ -96,15 +97,60 @@ const useTargetingMode = (gameState) => {
                         ability: abilityWithTarget
                     });
 
+                    // Add the main ability to stack
                     addToStack(sourceCard, `Activated: ${desc}`, 'activated', triggerObj);
+
+                    // IMPORTANT: For Orthion, triggerObj.execute will return deferred token creations
+                    // We need to immediately execute it to get those deferred triggers and add them to stack
+                    // BUT we can't execute yet because the main ability isn't resolved. 
+                    // Instead, we need to check if the execute returns triggers and handle them.
+                    // Actually, looking at the code flow: when the ability resolves from stack,
+                    // useGameState will call triggerObj.execute which returns {newCards, triggers}
+                    // and those triggers should be added to stack there.
+                    // So this should already work! No change needed here.
                 } catch (e) {
                     console.error("Failed to resolve manual ability:", e);
                 }
             }
+        } else if (targetingMode.action === 'resolve-trigger') {
+            // Resolve a triggered ability with the selected target
+            const stackAbility = targetingMode.data?.stackAbility;
+            if (stackAbility && stackAbility.triggerObj && gameEngineRef.current) {
+                // Create a copy of the triggerObj with targetIds set
+                // This prevents mutating the original ability object
+                const triggerObjWithTarget = {
+                    ...stackAbility.triggerObj,
+                    ability: {
+                        ...stackAbility.triggerObj.ability,
+                        targetIds: [targetCard.id]
+                    }
+                };
+
+                // Now resolve the ability with the target set
+                const result = triggerObjWithTarget.execute(cards, []);
+
+                // Handle the result
+                const newCards = result.newCards || result;
+                const triggers = result.triggers || [];
+
+                setCards(newCards);
+                logAction(triggerObjWithTarget.log?.description || `Resolved: ${stackAbility.sourceName} - ${stackAbility.description}`);
+
+                // Add any triggered abilities to the stack
+                triggers.forEach(t => {
+                    const desc = t.ability?.description || `${t.source.name} triggered`;
+                    addToStack(t.source, desc, 'trigger', t);
+                });
+
+                saveHistoryState(newCards);
+
+                // Remove the ability from the stack
+                setAbilityStack(prev => prev.filter(a => a.id !== stackAbility.id));
+            }
         }
 
         cancelTargeting();
-    }, [targetingMode, cards, logAction, setCards, cancelTargeting]);
+    }, [targetingMode, cards, logAction, setCards, cancelTargeting, gameEngineRef, addToStack]);
 
     const handleMultiSelect = useCallback((card, visibleStacks) => {
         if (targetingMode.action === 'declare-attackers') {
@@ -152,7 +198,7 @@ const useTargetingMode = (gameState) => {
                     c.oracle_text?.toLowerCase().includes('vigilance') ||
                     (c.abilities && c.abilities.some(a => a.keyword === 'vigilance'));
 
-                return isVigilance ? c : { ...c, tapped: true };
+                return { ...c, tapped: !isVigilance, attacking: true };
             }
             return c;
         }));

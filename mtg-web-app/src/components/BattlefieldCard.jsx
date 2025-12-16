@@ -48,11 +48,15 @@ const BattlefieldCard = ({
     onStackSelectionChange
 }) => {
     const colors = getCardHexColors(card.colors);
-    const basePower = card.power || 0;
-    const baseToughness = card.toughness || 0;
-    const totalPower = basePower + card.counters;
-    const totalToughness = baseToughness + card.counters;
-    const isModified = card.counters > 0;
+    const basePower = parseInt(card.power) || 0;
+    const baseToughness = parseInt(card.toughness) || 0;
+    const counters = parseInt(card.counters) || 0;
+    const tempPowerBonus = parseInt(card.tempPowerBonus) || 0;
+    const tempToughnessBonus = parseInt(card.tempToughnessBonus) || 0;
+    const totalPower = basePower + counters + tempPowerBonus;
+    const totalToughness = baseToughness + counters + tempToughnessBonus;
+    const isModified = counters > 0;
+    const isBuffed = tempPowerBonus > 0 || tempToughnessBonus > 0;
     // User requested to show the first part of type line (e.g. "Legendary Artifact" instead of "Equipment")
     let cardType = card.type_line ? card.type_line.split('—')[0]?.trim() || card.type_line : card.type;
 
@@ -410,7 +414,7 @@ const BattlefieldCard = ({
                             borderColor={colors.borderColor}
                             fillColor={colors.fillColor}
                         >
-                            <div className={`text-[10px] font-bold flex gap-0.5 ${isModified ? 'text-green-900' : 'text-black'}`}>
+                            <div className={`text-[10px] font-bold flex gap-0.5 ${isBuffed ? 'text-blue-700' : isModified ? 'text-green-900' : 'text-black'}`}>
                                 <span>{formatBigNumber(totalPower)}</span>
                                 <span>/</span>
                                 <span>{formatBigNumber(totalToughness)}</span>
