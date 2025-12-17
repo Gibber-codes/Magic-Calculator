@@ -60,6 +60,12 @@ const getTypeFromTypeLine = (typeLine) => {
   return candidates.find(t => knownTypes.includes(t)) || candidates[0];
 };
 
+// Helper: Check if card is a creature (for layout/stacking)
+const isCreature = (c) => c.type_line && c.type_line.toLowerCase().includes('creature');
+
+// Helper: Check if card is a land (for layout/stacking)
+const isLand = (c) => c.type_line && c.type_line.toLowerCase().includes('land') && !isCreature(c);
+
 const createBattlefieldCard = (cardDef, extra = {}) => {
   const type = getTypeFromTypeLine(cardDef.type_line);
 
@@ -181,10 +187,8 @@ const App = () => {
       // Let's align center-to-center.
 
       const othersBaseY = centerY;
-      // TARGET_CENTER_Y should be LOCAL (since container is offset).
-      // 150px = Half Card Height (100) + 50px padding.
-      // This pushes the cards down 50px from the header.
-      const TARGET_CENTER_Y = 150;
+      // TARGET_CENTER_Y should be centerY to align the middle row (Others) to the middle of the screen
+      const TARGET_CENTER_Y = centerY;
 
       setVerticalOffsetY(TARGET_CENTER_Y - othersBaseY);
     }
@@ -257,8 +261,9 @@ const App = () => {
 
     // Group cards by category using STACKS
     // Use type_line for flexible matching (e.g. "Artifact Creature" goes to creatures, "Token Creature" goes to creatures)
-    const isCreature = (c) => c.type_line && c.type_line.toLowerCase().includes('creature');
-    const isLand = (c) => c.type_line && c.type_line.toLowerCase().includes('land') && !isCreature(c); // Dryad Arbor goes to creatures? Usually treating creatures as creatures is safer for combat UI.
+    // Helpers moved to module scope for reuse
+
+    // Note: isCreature and isLand are now available in module scope
 
     const lands = visibleStacks.filter(g => isLand(g.leader));
     const creatures = visibleStacks.filter(g => isCreature(g.leader));
@@ -644,6 +649,7 @@ const App = () => {
 
   const handleAddCard = (def) => {
     // 1. Close UI immediately to trigger layout reset
+    setActivePanel(null); // Close the panel
     setPreviewCard(null);
     setSearchQuery('');
     setSearchResults([]);
@@ -957,7 +963,8 @@ const App = () => {
       className="w-full h-screen bg-slate-900 flex flex-col overflow-hidden select-none relative"
     >
       {/* Header */}
-      <div className="bg-slate-900 p-4 border-b border-slate-700 flex-shrink-0 z-50">
+      {/* Added pt-[env(safe-area-inset-top)] for edge-to-edge status bar integration */}
+      <div className="bg-slate-900 pt-[env(safe-area-inset-top)] p-4 border-b border-slate-700 flex-shrink-0 z-50">
         <div className="flex justify-end items-center">
           <div className="flex gap-2">
             <button
@@ -1021,6 +1028,8 @@ const App = () => {
           if (e.target !== battlefieldRef.current && !e.target.classList.contains('battlefield-bg')) return;
 
           setIsDragging(true);
+          if (navigator.vibrate) navigator.vibrate(20); // Haptic: Drag Start
+
           const rect = battlefieldRef.current.getBoundingClientRect();
           const relativeY = e.clientY - rect.top;
 
@@ -1040,13 +1049,47 @@ const App = () => {
           const closest = distances.sort((a, b) => a.dist - b.dist)[0];
           rowType = closest.type;
 
+          // Check Horizontal Scroll Eligibility
+          let canScrollX = true;
+          let rowCards = [];
+
+          if (rowType === 'creatures') rowCards = visibleStacks.filter(g => isCreature(g.leader));
+          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isLand(g.leader));
+          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isLand(g.leader));
+
+          const rowCount = rowCards.length;
+          const rowWidth = rowCount * CARD_WIDTH + (rowCount - 1) * CARD_GAP;
+
+          // Allow scroll only if content is wider than container (plus padding)
+          if (rowWidth <= rect.width - 40) { // 40px padding buffer
+            canScrollX = false;
+          }
+
+          // Check Vertical Scroll Eligibility
+          let canScrollY = true;
+          // Calculate total content height (Top of Creatures to Bottom of Lands)
+          // Re-calculate dynamic spread (same logic as useEffect)
+          const h_containerHeight = window.innerHeight;
+          const h_usableHeight = h_containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
+          const h_baseSpread = 250;
+          const h_scaleFactor = Math.min(1, h_usableHeight / 900);
+          const h_spread = Math.max(220, h_baseSpread * h_scaleFactor);
+
+          const totalContentHeight = (h_spread * 2) + CARD_HEIGHT; // Distance implies center-to-center is 2*spread. + half height top/bottom = CARD_HEIGHT.
+
+          if (totalContentHeight <= h_usableHeight + 20) { // 20px buffer
+            canScrollY = false;
+          }
+
           dragRef.current = {
             startX: e.clientX,
             startY: e.clientY,
             initialScrollX: closest.scroll,
             initialOffsetY: verticalOffsetY,
             axis: null,
-            rowType: rowType
+            rowType: rowType,
+            canScrollX,
+            canScrollY
           };
 
           const onMouseMove = (mv) => {
@@ -1060,12 +1103,16 @@ const App = () => {
             }
 
             if (dragRef.current.axis === 'h') {
+              if (!dragRef.current.canScrollX) return; // Block horizontal scroll if fits
+
               // Horizontal: Scroll the specific row
               const newScroll = dragRef.current.initialScrollX + dx;
               if (dragRef.current.rowType === 'creatures') setCreatureScrollX(newScroll);
               else if (dragRef.current.rowType === 'others') setOthersScrollX(newScroll);
               else if (dragRef.current.rowType === 'lands') setLandsScrollX(newScroll);
             } else {
+              if (!dragRef.current.canScrollY) return; // Block vertical scroll if fits
+
               // Vertical: Pan everything
               setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
             }
@@ -1089,9 +1136,9 @@ const App = () => {
             }
             // 2. Vertical Snap - Dynamic targets based on container size
             else if (dragRef.current.axis === 'v') {
+              if (navigator.vibrate) navigator.vibrate(15); // Haptic: Snap
               const containerHeight = window.innerHeight;
-              const BOTTOM_BAR_HEIGHT = 150;
-              const TOP_BAR_HEIGHT = 80;
+              // Use component-level constants (BOTTOM_BAR_HEIGHT = 110, TOP_BAR_HEIGHT = 80)
               const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
               // CenterY in LOCAL coordinates
               const centerY = usableHeight / 2;
@@ -1107,7 +1154,7 @@ const App = () => {
               const landsBaseY = centerY + spread;
 
               // Target position: Center-to-Center align
-              const TARGET_CENTER_Y = 150; // 50px padding
+              const TARGET_CENTER_Y = centerY;
               const targets = [
                 TARGET_CENTER_Y - creatureBaseY,
                 TARGET_CENTER_Y - othersBaseY,
@@ -1160,14 +1207,46 @@ const App = () => {
           const closest = distances.sort((a, b) => a.dist - b.dist)[0];
           rowType = closest.type;
 
+          // Check Horizontal Scroll Eligibility
+          let canScrollX = true;
+          let rowCards = [];
+
+          if (rowType === 'creatures') rowCards = visibleStacks.filter(g => isCreature(g.leader));
+          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isLand(g.leader));
+          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isLand(g.leader));
+
+          const rowCount = rowCards.length;
+          const rowWidth = rowCount * CARD_WIDTH + (rowCount - 1) * CARD_GAP;
+
+          if (rowWidth <= rect.width - 20) {
+            canScrollX = false;
+          }
+
+          // Check Vertical Scroll Eligibility
+          let canScrollY = true;
+          // Re-calculate dynamic spread
+          // containerHeight/usableHeight are already defined in scope above
+          const h_scaleFactor = Math.min(1, usableHeight / 900);
+          const h_spread = Math.max(220, 250 * h_scaleFactor);
+
+          const totalContentHeight = (h_spread * 2) + CARD_HEIGHT;
+
+          if (totalContentHeight <= usableHeight + 20) {
+            canScrollY = false;
+          }
+
           setIsDragging(true);
+          if (navigator.vibrate) navigator.vibrate(20); // Haptic: Touch Drag Start
+
           dragRef.current = {
             startX: touch.clientX,
             startY: touch.clientY,
             initialScrollX: closest.scroll,
             initialOffsetY: verticalOffsetY,
             axis: null,
-            rowType: rowType
+            rowType: rowType,
+            canScrollX,
+            canScrollY
           };
         }}
         onTouchMove={(e) => {
@@ -1186,12 +1265,16 @@ const App = () => {
           }
 
           if (dragRef.current.axis === 'h') {
+            if (!dragRef.current.canScrollX) return;
+
             // Horizontal Swipe: Scroll the specific row
             const newScroll = dragRef.current.initialScrollX + dx;
             if (dragRef.current.rowType === 'creatures') setCreatureScrollX(newScroll);
             else if (dragRef.current.rowType === 'others') setOthersScrollX(newScroll);
             else if (dragRef.current.rowType === 'lands') setLandsScrollX(newScroll);
           } else if (dragRef.current.axis === 'v') {
+            if (!dragRef.current.canScrollY) return;
+
             // Vertical Swipe: Move Rows (now allowed in portrait too)
             setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
           }
@@ -1213,6 +1296,7 @@ const App = () => {
           }
           // 2. Vertical Snap - Dynamic targets based on container size
           else if (dragRef.current.axis === 'v') {
+            if (navigator.vibrate) navigator.vibrate(15); // Haptic: Snap
             const containerHeight = window.innerHeight;
             const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
             // CenterY in LOCAL coordinates
@@ -1229,8 +1313,7 @@ const App = () => {
             const landsBaseY = centerY + spread;
 
             // Target position: Center-to-Center align
-            // 150px local target = 50px padding from top
-            const TARGET_CENTER_Y = 150;
+            const TARGET_CENTER_Y = centerY;
             const snapTargets = [
               TARGET_CENTER_Y - creatureBaseY,
               TARGET_CENTER_Y - othersBaseY,
@@ -1388,16 +1471,19 @@ const App = () => {
       </div>
 
       {/* Info / Navigation Panel - Persistent Bottom Bar (Phases Only) */}
-      <PhaseTracker
-        isVisible={!activePanel}
-        currentPhase={currentPhase}
-        currentCombatStep={currentCombatStep}
-        phaseInfo={PHASE_INFO}
-        onPhaseChange={handlePhaseChange}
-        onAdvancePhase={advancePhase}
-        onAdvanceCombatStep={advanceCombatStep}
-        onEndTurn={endTurn}
-      />
+      {/* Wrapped in div to handle bottom safe area */}
+      <div className="pb-[env(safe-area-inset-bottom)] bg-slate-900 border-t border-slate-700">
+        <PhaseTracker
+          isVisible={!activePanel}
+          currentPhase={currentPhase}
+          currentCombatStep={currentCombatStep}
+          phaseInfo={PHASE_INFO}
+          onPhaseChange={handlePhaseChange}
+          onAdvancePhase={advancePhase}
+          onAdvanceCombatStep={advanceCombatStep}
+          onEndTurn={endTurn}
+        />
+      </div>
 
       {/* --- Overlays & Panels --- */}
 

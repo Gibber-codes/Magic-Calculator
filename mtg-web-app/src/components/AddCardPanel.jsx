@@ -22,7 +22,7 @@ const AddCardPanel = ({
     if (!isOpen) return null;
 
     return (
-        <div className="absolute right-0 top-0 bottom-0 w-96 bg-slate-800 border-l border-slate-700 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+        <div className="absolute right-0 top-0 bottom-0 w-full md:w-96 max-w-full bg-slate-800 border-l border-slate-700 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
             <div className="p-4 border-b border-slate-700 flex justify-between items-center">
                 <h2 className="text-xl font-bold text-white">Add Card</h2>
                 <button onClick={onClose} className="text-gray-400 hover:text-white">
