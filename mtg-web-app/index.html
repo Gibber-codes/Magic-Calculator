@@ -1,13 +1,109 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mtg-web-app</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+  <!-- ===== MOBILE OPTIMIZATION META TAGS ===== -->
+
+  <!-- Viewport: cover notches, prevent zoom issues -->
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+
+  <!-- PWA: Enable standalone mode (hides browser chrome) -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MTG Calc" />
+
+  <!-- Theme colors for browser/system UI -->
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="msapplication-navbutton-color" content="#1a1a2e" />
+  <meta name="msapplication-TileColor" content="#1a1a2e" />
+
+  <!-- Prevent phone number detection -->
+  <meta name="format-detection" content="telephone=no" />
+
+  <!-- Splash screens for iOS (optional but nice) -->
+  <link rel="apple-touch-startup-image" href="/splash/splash-640x1136.png"
+    media="(device-width: 320px) and (device-height: 568px)" />
+  <link rel="apple-touch-startup-image" href="/splash/splash-750x1334.png"
+    media="(device-width: 375px) and (device-height: 667px)" />
+  <link rel="apple-touch-startup-image" href="/splash/splash-1242x2208.png"
+    media="(device-width: 414px) and (device-height: 736px)" />
+  <link rel="apple-touch-startup-image" href="/splash/splash-1125x2436.png"
+    media="(device-width: 375px) and (device-height: 812px)" />
+  <link rel="apple-touch-startup-image" href="/splash/splash-1170x2532.png"
+    media="(device-width: 390px) and (device-height: 844px)" />
+  <link rel="apple-touch-startup-image" href="/splash/splash-1284x2778.png"
+    media="(device-width: 428px) and (device-height: 926px)" />
+
+  <title>MTG Calculator</title>
+
+  <!-- Mobile-first critical CSS (inline for fast load) -->
+  <style>
+    /* Prevent pull-to-refresh on mobile */
+    html,
+    body {
+      overscroll-behavior: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Prevent accidental text selection during gameplay */
+    .no-select {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    /* Safe area padding for notched phones */
+    .safe-area-inset {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+
+    /* Prevent double-tap zoom (apply globally) */
+    * {
+      touch-action: manipulation;
+    }
+
+    /* Hide scrollbars on mobile but keep functionality */
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+  </style>
+</head>
+
+<body class="no-select safe-area-inset">
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+
+  <!-- Service Worker Registration (for offline support + PWA install) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(registration => {
+            console.log('SW registered:', registration.scope);
+          })
+          .catch(error => {
+            console.log('SW registration failed:', error);
+          });
+      });
+    }
+  </script>
+</body>
+
 </html>

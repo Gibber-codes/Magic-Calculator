@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers } from 'lucide-react';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './RedesignedCardFrame';
 import { formatBigNumber } from '../utils/formatters';
+import { useIsTouchDevice } from '../hooks/useTouchInteractions';
 
 // Constants
 const CARD_WIDTH = 140;
@@ -45,7 +46,8 @@ const BattlefieldCard = ({
     count = 1,
     selectedCount = 0,
     stackCards = [],
-    onStackSelectionChange
+    onStackSelectionChange,
+    isDragging = false
 }) => {
     const colors = getCardHexColors(card.colors);
     const basePower = parseInt(card.power) || 0;
@@ -67,6 +69,9 @@ const BattlefieldCard = ({
     // Dimensions for SVG Components to fit CARD_WIDTH (140)
     const bannerHeight = 28;
     const artHeight = 100;
+
+    // Touch device detection
+    const isTouch = useIsTouchDevice();
 
     // Hover State
     const [isHovered, setIsHovered] = useState(false);
@@ -172,7 +177,7 @@ const BattlefieldCard = ({
                 ${isSelected && !isDeclaredAttacker ? 'ring-4 ring-green-400 shadow-[0_0_20px_rgba(34,197,94,0.8)] scale-105 z-40 rounded-xl' : ''}
                 ${isEligibleAttacker ? 'shadow-[0_0_20px_rgba(59,130,246,0.8)]' : ''}
                 ${isDeclaredAttacker ? 'shadow-[0_0_25px_rgba(220,38,38,1)]' : ''}
-                transition-all duration-200 ease-out
+                ${!isDragging ? 'transition-all duration-200 ease-out' : ''}
                 ${card.tapped ? 'opacity-80' : ''}`}
             style={{
                 width: CARD_WIDTH,
@@ -180,13 +185,45 @@ const BattlefieldCard = ({
                 top: y,
                 touchAction: 'none'
             }}
-            onMouseDown={(e) => onMouseDown(e, card)}
-            onMouseEnter={() => {
-                if (canHover()) {
-                    setIsHovered(true);
+            onMouseDown={(e) => {
+                if (!isTouch) {
+                    onMouseDown(e, card);
                 }
             }}
-            onMouseLeave={() => setIsHovered(false)}
+            {...(isTouch
+                ? {
+                    // Touch: first tap shows buttons, second tap opens info panel
+                    onClick: (e) => {
+                        // Handle Targeting Mode or Selection (Immediate Action)
+                        if (isTargeting || isEligibleAttacker || isDeclaredAttacker) {
+                            e.stopPropagation();
+                            onMouseDown(e, card);
+                            return;
+                        }
+
+                        // Handle Normal Mode
+                        if (canHover()) {
+                            e.stopPropagation();
+                            if (isHovered) {
+                                // Already showing buttons - trigger select via onMouseDown
+                                onMouseDown(e, card);
+                            } else {
+                                // First tap - show action buttons
+                                setIsHovered(true);
+                            }
+                        }
+                    }
+                }
+                : {
+                    // Desktop: hover to show menu
+                    onMouseEnter: () => {
+                        if (canHover()) {
+                            setIsHovered(true);
+                        }
+                    },
+                    onMouseLeave: () => setIsHovered(false)
+                }
+            )}
         >
             {/* Targeting Visuals */}
             {
@@ -294,9 +331,12 @@ const BattlefieldCard = ({
                             <div
                                 className="flex flex-col items-center cursor-pointer"
                                 onMouseDown={(e) => {
-                                    e.stopPropagation(); // Prevent creature's onMouseDown from firing
+                                    if (!isEligibleAttacker) {
+                                        e.stopPropagation(); // Prevent creature's onMouseDown from firing unless attacking
+                                    }
                                 }}
                                 onClick={(e) => {
+                                    if (isEligibleAttacker) return; // Allow bubble to creature for attacking
                                     e.stopPropagation();
                                     onAction && onAction('select', att);
                                 }}
@@ -433,15 +473,26 @@ const BattlefieldCard = ({
                 )
             }
 
-            {/* Action Buttons (shown when hovering - left side) */}
+            {/* Touch backdrop - tap outside to close menu */}
+            {isTouch && showActionButtons && (
+                <div
+                    className="fixed inset-0 z-10"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setIsHovered(false);
+                    }}
+                />
+            )}
+
+            {/* Action Buttons (shown when hovering/tapped - left side) */}
             {
                 showActionButtons && (
-                    <div className="absolute left-0 top-0 flex flex-col gap-3 z-50 pt-2 -translate-x-1/2">
+                    <div className={`absolute left-0 top-0 flex flex-col gap-3 z-50 pt-2 -translate-x-1/2 ${isTouch ? 'visible' : ''}`}>
                         {getHoverActions().map((action, index) => (
                             <button
                                 key={action.id}
                                 onClick={(e) => handleActionClick(e, action.id)}
-                                className={`${action.color} w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110 hover:z-50`}
+                                className={`${action.color} w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110 active:scale-95 hover:z-50 touch-target`}
                                 title={action.label}
                                 style={{
                                     transitionDelay: `${index * 50}ms`
@@ -449,10 +500,12 @@ const BattlefieldCard = ({
                             >
                                 <action.icon size={16} className="text-white drop-shadow-sm" />
 
-                                {/* Tooltip - Left side */}
-                                <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
-                                    {action.label}
-                                </span>
+                                {/* Tooltip - Left side (hidden on touch) */}
+                                {!isTouch && (
+                                    <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
+                                        {action.label}
+                                    </span>
+                                )}
                             </button>
                         ))}
                     </div>

@@ -1,0 +1,272 @@
+/* ============================================
+   MOBILE TOUCH UTILITIES
+   Replace hover effects with touch-friendly alternatives
+   ============================================ */
+
+/* ===== DEVICE DETECTION ===== */
+
+/* Desktop/mouse devices: enable hover effects */
+@media (hover: hover) and (pointer: fine) {
+    .hover-card:hover {
+        transform: scale(1.05);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        z-index: 100;
+    }
+
+    .hover-pill:hover {
+        transform: scale(1.3);
+        z-index: 100;
+    }
+
+    .hover-button:hover {
+        transform: scale(1.1);
+        filter: brightness(1.1);
+    }
+
+    .hover-reveal:hover .hover-content {
+        opacity: 1;
+        visibility: visible;
+    }
+}
+
+/* Touch devices: disable hover, use tap states */
+@media (hover: none) and (pointer: coarse) {
+
+    /* Active/tap feedback */
+    .hover-card:active,
+    .hover-card.touch-active {
+        transform: scale(0.98);
+        opacity: 0.9;
+    }
+
+    /* Tap-to-expand cards */
+    .hover-pill.expanded {
+        transform: scale(1.4);
+        z-index: 100;
+        position: relative;
+    }
+
+    .hover-button:active {
+        transform: scale(0.95);
+        filter: brightness(0.9);
+    }
+
+    /* Tap-to-reveal content */
+    .hover-reveal.revealed .hover-content {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* Larger touch targets */
+    .touch-target {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Show action buttons by default on touch */
+    .touch-show-actions .action-buttons {
+        opacity: 1;
+        visibility: visible;
+    }
+}
+
+
+/* ===== TAP-TO-EXPAND CARD PREVIEW ===== */
+
+.expandable-card {
+    transition: transform 0.2s ease, z-index 0s;
+}
+
+.expandable-card.expanded {
+    transform: scale(1.8);
+    z-index: 1000;
+    position: relative;
+}
+
+/* Backdrop for expanded cards */
+.card-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
+}
+
+.card-backdrop.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+
+/* ===== TOUCH ACTION MENU ===== */
+
+.touch-action-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.touch-action-menu.visible {
+    transform: translateX(-50%) translateY(-8px);
+    opacity: 1;
+    visibility: visible;
+}
+
+.touch-action-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    transition: transform 0.15s ease;
+}
+
+.touch-action-btn:active {
+    transform: scale(0.9);
+}
+
+
+/* ===== LONG-PRESS INDICATOR ===== */
+
+.long-press-indicator {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 3px solid transparent;
+    pointer-events: none;
+}
+
+.long-press-indicator.pressing {
+    animation: long-press-fill 0.5s ease forwards;
+}
+
+@keyframes long-press-fill {
+    0% {
+        border-color: transparent;
+        box-shadow: inset 0 0 0 0 rgba(59, 130, 246, 0.3);
+    }
+
+    100% {
+        border-color: rgb(59, 130, 246);
+        box-shadow: inset 0 0 0 100px rgba(59, 130, 246, 0.2);
+    }
+}
+
+
+/* ===== MOBILE SAFE AREAS ===== */
+
+.bottom-safe {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.top-safe {
+    padding-top: max(16px, env(safe-area-inset-top));
+}
+
+
+/* ===== TOUCH SCROLL OPTIMIZATION ===== */
+
+.touch-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+.touch-scroll-x {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+}
+
+.touch-scroll-x>* {
+    scroll-snap-align: start;
+}
+
+
+/* ===== MOBILE BATTLEFIELD LAYOUT ===== */
+
+@media (max-width: 768px) {
+
+    /* Stack layout vertically on mobile */
+    .battlefield-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    /* Compact card sizing */
+    .battlefield-card {
+        max-width: 120px;
+    }
+
+    /* Larger tap targets for buttons */
+    .action-btn {
+        min-width: 44px;
+        min-height: 44px;
+        font-size: 14px;
+    }
+
+    /* Full-width panels */
+    .side-panel {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-height: 60vh;
+        border-radius: 16px 16px 0 0;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+    }
+
+    .side-panel.open {
+        transform: translateY(0);
+    }
+}
+
+
+/* ===== HAPTIC-STYLE FEEDBACK ===== */
+
+.haptic-tap {
+    transition: transform 0.1s ease;
+}
+
+.haptic-tap:active {
+    transform: scale(0.95);
+}
+
+/* ===== SLIDE-UP ANIMATION ===== */
+
+@keyframes slide-up {
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
+}
+
+.animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+}
+
+/* ===== BOTTOM SAFE AREA PADDING ===== */
+
+.pb-safe {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+}

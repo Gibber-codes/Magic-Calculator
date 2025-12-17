@@ -18,7 +18,6 @@ import HistoryPanel from './components/HistoryPanel';
 import SelectedCardPanel from './components/SelectedCardPanel';
 
 import AttackerConfirmOverlay from './components/AttackerConfirmOverlay';
-import ZoneIndicators from './components/ZoneIndicators';
 import PhaseTracker from './components/PhaseTracker';
 import BattlefieldCard from './components/BattlefieldCard';
 import useGameState from './hooks/useGameState';
@@ -138,9 +137,29 @@ const App = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [previewCard, setPreviewCard] = useState(null);
   const [loadingPreset, setLoadingPreset] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
 
 
   const battlefieldRef = useRef(null);
+  const dragRef = useRef({ startX: 0, startY: 0, initialScrollX: 0, initialOffsetY: 0, axis: null, rowType: null });
+  const [creatureScrollX, setCreatureScrollX] = useState(0);
+  const [othersScrollX, setOthersScrollX] = useState(0);
+  const [landsScrollX, setLandsScrollX] = useState(0);
+  const [verticalOffsetY, setVerticalOffsetY] = useState(0);
+  const [isPortrait, setIsPortrait] = useState(typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Lock "Others" row in center if portrait
+  useEffect(() => {
+    if (isPortrait) {
+      setVerticalOffsetY(-80); // Center "Others" row (half height adjustment)
+    }
+  }, [isPortrait]);
 
   // --- Logic ---
 
@@ -198,7 +217,9 @@ const App = () => {
     const others = visibleStacks.filter(g => !isLand(g.leader) && !isCreature(g.leader));
 
     // Helper to position a row of cards
-    const layoutRow = (items, yPos) => {
+    const layoutRow = (items, yPos, xOffset = 0) => {
+      // Apply GLOBAL vertical offset to everything
+      const finalY = yPos + verticalOffsetY;
       const count = items.length;
       if (count === 0) return;
       const totalWidth = count * CARD_WIDTH + (count - 1) * CARD_GAP;
@@ -207,8 +228,8 @@ const App = () => {
       items.forEach((group, index) => {
         positions[group.leader.id] = {
           id: group.leader.id,
-          x: startX + index * (CARD_WIDTH + CARD_GAP),
-          y: yPos
+          x: startX + index * (CARD_WIDTH + CARD_GAP) + xOffset,
+          y: finalY
         };
       });
     };
@@ -217,18 +238,18 @@ const App = () => {
     // Visual Order (Top to Bottom): Creatures -> Others -> Lands
 
     // Creatures at Top
-    layoutRow(creatures, centerY - 250);
+    layoutRow(creatures, centerY - 250, creatureScrollX);
 
     // Others (Artifacts/Enchantments) under creatures
-    layoutRow(others, centerY - 20);
+    layoutRow(others, centerY - 20, othersScrollX);
 
     // Lands at bottom
-    layoutRow(lands, centerY + 200);
+    layoutRow(lands, centerY + 200, landsScrollX);
 
     // Fallback/Overflow handling would be needed for many cards, but simple rows for now.
 
     return positions;
-  }, [visibleStacks, cards, activePanel, showSearchOverlay]);
+  }, [visibleStacks, cards, activePanel, showSearchOverlay, creatureScrollX, othersScrollX, landsScrollX, verticalOffsetY]);
 
   // --- Actions (using hooks with local wrappers) ---
 
@@ -898,7 +919,7 @@ const App = () => {
       {/* Targeting Mode Cancel Banner */}
       {
         targetingMode.active && (
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-top duration-200">
+          <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200">
             <button
               onClick={cancelTargeting}
               className="bg-slate-800 border border-slate-600 text-white px-6 py-2 rounded-full shadow-2xl flex items-center gap-2 hover:bg-slate-700 transition-colors"
@@ -927,152 +948,324 @@ const App = () => {
       {/* Battlefield */}
       <div
         ref={battlefieldRef}
-        className="flex-1 relative battlefield-bg overflow-hidden"
+        className={`flex-1 relative battlefield-bg overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         style={{
           backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)',
           backgroundSize: '40px 40px',
-          backgroundColor: '#0f172a' // slate-900
+          backgroundColor: '#0f172a', // slate-900
+          userSelect: 'none', // Prevent text selection while dragging
+          touchAction: 'none'
         }}
-        onClick={handleBgClick}
+        onMouseDown={(e) => {
+          if (e.target !== battlefieldRef.current && !e.target.classList.contains('battlefield-bg')) return;
+
+          setIsDragging(true);
+          const rect = battlefieldRef.current.getBoundingClientRect();
+          const relativeY = e.clientY - rect.top;
+
+          // Determine which row based on Y position
+          let rowType = null;
+          const centerY = rect.height / 2;
+          const creatureY = centerY - 250 + verticalOffsetY;
+          const othersY = centerY - 20 + verticalOffsetY;
+          const landsY = centerY + 200 + verticalOffsetY;
+
+          // Find closest row
+          const distances = [
+            { type: 'creatures', dist: Math.abs(relativeY - creatureY), scroll: creatureScrollX },
+            { type: 'others', dist: Math.abs(relativeY - othersY), scroll: othersScrollX },
+            { type: 'lands', dist: Math.abs(relativeY - landsY), scroll: landsScrollX }
+          ];
+          const closest = distances.sort((a, b) => a.dist - b.dist)[0];
+          rowType = closest.type;
+
+          dragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            initialScrollX: closest.scroll,
+            initialOffsetY: verticalOffsetY,
+            axis: null,
+            rowType: rowType
+          };
+
+          const onMouseMove = (mv) => {
+            const dx = mv.clientX - dragRef.current.startX;
+            const dy = mv.clientY - dragRef.current.startY;
+
+            // Determine axis if not set
+            if (!dragRef.current.axis) {
+              if (Math.abs(dx) > Math.abs(dy)) dragRef.current.axis = 'h';
+              else dragRef.current.axis = 'v';
+            }
+
+            if (dragRef.current.axis === 'h') {
+              // Horizontal: Scroll the specific row
+              const newScroll = dragRef.current.initialScrollX + dx;
+              if (dragRef.current.rowType === 'creatures') setCreatureScrollX(newScroll);
+              else if (dragRef.current.rowType === 'others') setOthersScrollX(newScroll);
+              else if (dragRef.current.rowType === 'lands') setLandsScrollX(newScroll);
+            } else {
+              // Vertical: Pan everything
+              setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
+            }
+          };
+
+          const onMouseUp = () => {
+            setIsDragging(false);
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+
+            // Snap Logic
+            const CARD_TOTAL_WIDTH = CARD_WIDTH + CARD_GAP; // 152
+
+            // 1. Horizontal Snap
+            if (dragRef.current.axis === 'h') {
+              const snap = (val) => Math.round(val / CARD_TOTAL_WIDTH) * CARD_TOTAL_WIDTH;
+
+              if (dragRef.current.rowType === 'creatures') setCreatureScrollX(prev => snap(prev));
+              else if (dragRef.current.rowType === 'others') setOthersScrollX(prev => snap(prev));
+              else if (dragRef.current.rowType === 'lands') setLandsScrollX(prev => snap(prev));
+            }
+            // 2. Vertical Snap
+            else if (dragRef.current.axis === 'v') {
+              const targets = [150, -80, -300]; // Targets shifted to align CARD CENTER to SCREEN CENTER
+              setVerticalOffsetY(prev => {
+                return targets.reduce((closest, curr) =>
+                  Math.abs(curr - prev) < Math.abs(closest - prev) ? curr : closest
+                );
+              });
+            }
+          };
+
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        }}
+        onTouchStart={(e) => {
+          if (e.target !== battlefieldRef.current && !e.target.classList.contains('battlefield-bg')) return;
+          const touch = e.touches[0];
+          const rect = battlefieldRef.current.getBoundingClientRect();
+          const relativeY = touch.clientY - rect.top;
+
+          // Determine which row based on Y position
+          let rowType = null;
+          const centerY = rect.height / 2;
+          const creatureY = centerY - 250 + verticalOffsetY;
+          const othersY = centerY - 20 + verticalOffsetY;
+          const landsY = centerY + 200 + verticalOffsetY;
+
+          // Find closest row
+          const distances = [
+            { type: 'creatures', dist: Math.abs(relativeY - creatureY), scroll: creatureScrollX },
+            { type: 'others', dist: Math.abs(relativeY - othersY), scroll: othersScrollX },
+            { type: 'lands', dist: Math.abs(relativeY - landsY), scroll: landsScrollX }
+          ];
+          const closest = distances.sort((a, b) => a.dist - b.dist)[0];
+          rowType = closest.type;
+
+          setIsDragging(true);
+          dragRef.current = {
+            startX: touch.clientX,
+            startY: touch.clientY,
+            initialScrollX: closest.scroll,
+            initialOffsetY: verticalOffsetY,
+            axis: null,
+            rowType: rowType
+          };
+        }}
+        onTouchMove={(e) => {
+          if (!isDragging) return;
+          const touch = e.touches[0];
+          const dx = touch.clientX - dragRef.current.startX;
+          const dy = touch.clientY - dragRef.current.startY;
+
+          // Direction Locking
+          if (!dragRef.current.axis) {
+            // Threshold to lock
+            if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+              if (Math.abs(dx) > Math.abs(dy)) dragRef.current.axis = 'h';
+              else dragRef.current.axis = 'v';
+            }
+          }
+
+          if (dragRef.current.axis === 'h') {
+            // Horizontal Swipe: Scroll the specific row
+            const newScroll = dragRef.current.initialScrollX + dx;
+            if (dragRef.current.rowType === 'creatures') setCreatureScrollX(newScroll);
+            else if (dragRef.current.rowType === 'others') setOthersScrollX(newScroll);
+            else if (dragRef.current.rowType === 'lands') setLandsScrollX(newScroll);
+          } else if (dragRef.current.axis === 'v') {
+            // Vertical Swipe: Move Rows
+            // LOCKED if Portrait
+            if (!isPortrait) {
+              setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
+            }
+          }
+        }}
+        onTouchEnd={() => {
+          setIsDragging(false);
+
+          // Snap Logic
+          const CARD_TOTAL_WIDTH = CARD_WIDTH + CARD_GAP; // 152
+
+          // 1. Horizontal Snap
+          if (dragRef.current.axis === 'h') {
+            const snap = (val) => Math.round(val / CARD_TOTAL_WIDTH) * CARD_TOTAL_WIDTH;
+
+            if (dragRef.current.rowType === 'creatures') setCreatureScrollX(prev => snap(prev));
+            else if (dragRef.current.rowType === 'others') setOthersScrollX(prev => snap(prev));
+            else if (dragRef.current.rowType === 'lands') setLandsScrollX(prev => snap(prev));
+          }
+          // 2. Vertical Snap
+          else if (dragRef.current.axis === 'v') {
+            const targets = [150, -80, -300]; // Targets shifted to align CARD CENTER to SCREEN CENTER
+            setVerticalOffsetY(prev => {
+              return targets.reduce((closest, curr) =>
+                Math.abs(curr - prev) < Math.abs(closest - prev) ? curr : closest
+              );
+            });
+          }
+        }}
+        onClick={(e) => {
+          handleBgClick(e);
+        }}
       >
         {/* Empty State Message */}
-        {visibleStacks.length === 0 && (
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-            <div className="text-gray-500 font-medium mb-2">Battlefield Empty</div>
-            <div className="text-gray-600 text-sm">Add a card to begin</div>
-          </div>
-        )}
+        {
+          visibleStacks.length === 0 && (
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+              <div className="text-gray-500 font-medium mb-2">Battlefield Empty</div>
+              <div className="text-gray-600 text-sm">Add a card to begin</div>
+            </div>
+          )
+        }
 
-        {/* Zone Indicators - Left Side */}
-        <ZoneIndicators
-          graveyardCount={cards.filter(c => c.zone === 'graveyard').length}
-          exileCount={cards.filter(c => c.zone === 'exile').length}
-          isTargetingZone={targetingMode.active && targetingMode.action === 'remove-to-zone'}
-          onZoneClick={handleZoneSelection}
-        />
+
 
 
         {/* Unified Card Rendering with Stacking */}
-        {visibleStacks.map(group => {
-          const card = group.leader;
-          const pos = cardPositions[card.id];
+        {
+          visibleStacks.map(group => {
+            const card = group.leader;
+            const pos = cardPositions[card.id];
 
-          // Use leader's position - fallback to center if missing
-          const x = pos ? pos.x : 100;
-          const y = pos ? pos.y : 100;
+            // Use leader's position - fallback to center if missing
+            const x = pos ? pos.x : 100;
+            const y = pos ? pos.y : 100;
 
-          // Targeting Logic
-          // Unified Eligibility Check
-          const isCardEligible = (c) => {
-            if (!targetingMode.active) return false;
+            // Targeting Logic
+            // Unified Eligibility Check
+            const isCardEligible = (c) => {
+              if (!targetingMode.active) return false;
 
-            // Check Source (can't target self usually)
-            if (targetingMode.sourceId === c.id) return false;
+              // Check Source (can't target self usually)
+              if (targetingMode.sourceId === c.id) return false;
 
-            // Mode check
-            if (targetingMode.action === 'declare-attackers') {
-              const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature'));
-              // Allow clicking even if already selected to enable deselect/reselect-count
-              return isCreature && !c.tapped;
-            }
-            if (targetingMode.action === 'equip') {
-              return c.type === 'Creature';
-            }
-            if (targetingMode.action === 'activate-ability' || targetingMode.action === 'resolve-trigger') {
-              // Check specific target type from ability definition
-              const targetType = targetingMode.data?.targetType || 'creature';
-              if (targetType.toLowerCase() === 'creature') {
-                // Robust creature check
-                // For 'another_attacking_creature', also check if attacking
-                const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
-                // If this is for a resolve-trigger with another_attacking_creature, check if attacking
-                if (targetingMode.action === 'resolve-trigger') {
-                  return isCreature && c.attacking;
+              // Mode check
+              if (targetingMode.action === 'declare-attackers') {
+                const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature'));
+                // Allow clicking even if already selected to enable deselect/reselect-count
+                return isCreature && !c.tapped;
+              }
+              if (targetingMode.action === 'equip') {
+                return c.type === 'Creature';
+              }
+              if (targetingMode.action === 'activate-ability' || targetingMode.action === 'resolve-trigger') {
+                // Check specific target type from ability definition
+                const targetType = targetingMode.data?.targetType || 'creature';
+                if (targetType.toLowerCase() === 'creature') {
+                  // Robust creature check
+                  // For 'another_attacking_creature', also check if attacking
+                  const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
+                  // If this is for a resolve-trigger with another_attacking_creature, check if attacking
+                  if (targetingMode.action === 'resolve-trigger') {
+                    return isCreature && c.attacking;
+                  }
+                  return isCreature;
                 }
-                return isCreature;
+                // Add more types here as needed (e.g. 'permanent', 'artifact')
+                return true; // Default to allow if unsure
               }
-              // Add more types here as needed (e.g. 'permanent', 'artifact')
-              return true; // Default to allow if unsure
-            }
-            if (targetingMode.action === 'remove-to-zone') {
-              return true;
-            }
-            return false;
-          };
-
-          const isSource = targetingMode.active && targetingMode.sourceId === card.id;
-          const isValidTarget = isCardEligible(card); // Now behaves same as isEligibleAttacker for visuals if we map it
-
-          // Attachments need to search across ALL cards to find ones attached to THIS stack leader
-          // But wait, if we have 5 Bears, and one has a Sword..
-          // The "attached" card isn't in visibleRawCards, so it's not in the stack logic. It's safe.
-          // But visually, we only render attachments for the 'leader'.
-          // If the user equipped the Sword to Bear #3 (not leader), it might be weird.
-          // But our stacking logic splits stacks if state differs.
-          // "attachedTo" is part of the state? NO, I removed it from 'key' in step 1 patch above because "attachedTo" checks what THIS card attaches TO.
-          // But verifying: Does a card know what is attached TO IT? No, we filter `cards.filter(c => c.attachedTo === card.id)`.
-          // So if Bear A has Sword attached, and Bear B has nothing.
-          // Bear A and Bear B look identical (same power/toughness/name).
-          // But functionally they are different.
-          // We should probably check if `cards` has any attachments pointing to them.
-          // For now, let's assume tokens are vanilla. If you equip one, they are technically visually identical
-          // but we might want to split them?
-          // Actually, if we just render attachments for the leader, and they're stacked...
-          // It just looks like the stack has the sword. Which is fine if they're all equipped?
-          // But if only 1 is equipped...
-          // Let's settle for basic stacking for now. User asked for high volume tokens (Helm copies), which are usually identical.
-          // If you equip one, it's a specific action.
-
-          const attachments = cards.filter(c => c.attachedTo === card.id);
-
-          return (
-            <BattlefieldCard
-              key={card.id}
-              card={card}
-              x={x}
-              y={y}
-              count={group.count}
-              stackCards={group.cards}
-              isSelected={selectedCard?.id === card.id}
-              isTargeting={targetingMode.active && targetingMode.mode === 'single'}
-              isEligibleAttacker={isCardEligible(card)}
-              isDeclaredAttacker={
-                targetingMode.active &&
-                targetingMode.selectedIds?.includes(card.id)
+              if (targetingMode.action === 'remove-to-zone') {
+                return true;
               }
-              isSource={isSource}
+              return false;
+            };
 
-              isValidTarget={false} // Disable old red ring, use isEligibleAttacker for Blue styling
-              attachments={attachments}
-              selectedCount={targetingMode.active ? targetingMode.selectedIds.filter(id => group.cards.some(c => c.id === id)).length : 0}
-              onMouseDown={(e) => {
-                if (targetingMode.active) {
-                  e.stopPropagation();
-                  // Check eligibility using our unified helper
-                  const eligible = isCardEligible(card);
-                  if (eligible) {
-                    if (targetingMode.mode === 'multiple') {
-                      handleMultiSelect(card);
+            const isSource = targetingMode.active && targetingMode.sourceId === card.id;
+            const isValidTarget = isCardEligible(card); // Now behaves same as isEligibleAttacker for visuals if we map it
+
+            // Attachments need to search across ALL cards to find ones attached to THIS stack leader
+            // But wait, if we have 5 Bears, and one has a Sword..
+            // The "attached" card isn't in visibleRawCards, so it's not in the stack logic. It's safe.
+            // But visually, we only render attachments for the 'leader'.
+            // If the user equipped the Sword to Bear #3 (not leader), it might be weird.
+            // But our stacking logic splits stacks if state differs.
+            // "attachedTo" is part of the state? NO, I removed it from 'key' in step 1 patch above because "attachedTo" checks what THIS card attaches TO.
+            // But verifying: Does a card know what is attached TO IT? No, we filter `cards.filter(c => c.attachedTo === card.id)`.
+            // So if Bear A has Sword attached, and Bear B has nothing.
+            // Bear A and Bear B look identical (same power/toughness/name).
+            // But functionally they are different.
+            // We should probably check if `cards` has any attachments pointing to them.
+            // For now, let's assume tokens are vanilla. If you equip one, they are technically visually identical
+            // but we might want to split them?
+            // Actually, if we just render attachments for the leader, and they're stacked...
+            // It just looks like the stack has the sword. Which is fine if they're all equipped?
+            // But if only 1 is equipped...
+            // Let's settle for basic stacking for now. User asked for high volume tokens (Helm copies), which are usually identical.
+            // If you equip one, it's a specific action.
+
+            const attachments = cards.filter(c => c.attachedTo === card.id);
+
+            return (
+              <BattlefieldCard
+                key={card.id}
+                card={card}
+                x={x}
+                y={y}
+                count={group.count}
+                stackCards={group.cards}
+                isSelected={selectedCard?.id === card.id}
+                isTargeting={targetingMode.active && targetingMode.mode === 'single'}
+                isEligibleAttacker={isCardEligible(card)}
+                isDeclaredAttacker={
+                  targetingMode.active &&
+                  targetingMode.selectedIds?.includes(card.id)
+                }
+                isSource={isSource}
+
+                isValidTarget={false} // Disable old red ring, use isEligibleAttacker for Blue styling
+                isDragging={isDragging}
+                attachments={attachments}
+                selectedCount={targetingMode.active ? targetingMode.selectedIds.filter(id => group.cards.some(c => c.id === id)).length : 0}
+                onMouseDown={(e) => {
+                  if (targetingMode.active) {
+                    e.stopPropagation();
+                    // Check eligibility using our unified helper
+                    const eligible = isCardEligible(card);
+                    if (eligible) {
+                      if (targetingMode.mode === 'multiple') {
+                        handleMultiSelect(card);
+                      } else {
+                        handleTargetSelection(card);
+                      }
+                    }
+                  } else {
+                    // Toggle card selection
+                    if (selectedCard?.id === card.id) {
+                      setSelectedCard(null);
                     } else {
-                      handleTargetSelection(card);
+                      setSelectedCard(card);
                     }
                   }
-                } else {
-                  // Toggle card selection
-                  if (selectedCard?.id === card.id) {
-                    setSelectedCard(null);
-                  } else {
-                    setSelectedCard(card);
-                  }
-                }
-              }}
-              onAction={(action, cardVal, deleteCount) => {
-                handleCardAction(action, cardVal, deleteCount);
-              }}
-              onStackSelectionChange={updateStackSelection}
-            />
-          );
-        })}
+                }}
+                onAction={(action, cardVal, deleteCount) => {
+                  handleCardAction(action, cardVal, deleteCount);
+                }}
+                onStackSelectionChange={updateStackSelection}
+              />
+            );
+          })
+        }
       </div>
 
       {/* Info / Navigation Panel - Persistent Bottom Bar (Phases Only) */}
