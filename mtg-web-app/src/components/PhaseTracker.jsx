@@ -34,11 +34,11 @@ const PhaseTracker = ({
     const effectivePhaseInfo = phaseInfo || PHASE_INFO;
 
     return (
-        <div className="bg-slate-900/95 backdrop-blur-md border-t border-slate-700 flex-shrink-0 z-40 animate-in slide-in-from-bottom duration-200">
+        <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-700 flex-shrink-0 z-40 animate-in slide-in-from-bottom duration-200">
             {/* Combat Step Indicator - Shows when in Combat Phase */}
             {currentPhase === 'Combat' && currentCombatStep && (
-                <div className="px-4 pt-4 flex justify-center">
-                    <div className="bg-slate-800/70 p-3 rounded-xl border border-slate-600/50 shadow-lg">
+                <div className="px-2 pt-2 flex justify-center">
+                    <div className="bg-slate-800/70 p-2 rounded-xl border border-slate-600/50 shadow-lg">
                         <div className="flex items-center gap-2">
                             {COMBAT_STEPS.map((step, index) => {
                                 const currentIdx = COMBAT_STEPS.indexOf(currentCombatStep);
@@ -76,7 +76,7 @@ const PhaseTracker = ({
                                         {/* Connector Line */}
                                         {index < COMBAT_STEPS.length - 1 && (
                                             <div
-                                                className={`w-8 h-0.5 mb-4 transition-all duration-300 ${index < currentIdx ? 'bg-green-500/50' : 'bg-slate-600'}`}
+                                                className={`w-8 h-0.5 mb-2 transition-all duration-300 ${index < currentIdx ? 'bg-green-500/50' : 'bg-slate-600'}`}
                                             />
                                         )}
                                     </React.Fragment>
@@ -88,8 +88,8 @@ const PhaseTracker = ({
             )}
 
             {/* Phase Buttons */}
-            <div className="p-4 flex justify-center">
-                <div className="flex items-center gap-4 bg-slate-800/50 p-2 rounded-2xl border border-slate-700/50 shadow-xl">
+            <div className="p-2 flex justify-center">
+                <div className="flex items-center gap-4 bg-slate-800/50 p-1.5 rounded-2xl border border-slate-700/50 shadow-xl">
                     <div className="flex items-center gap-3 px-4">
                         {PHASE_ORDER.map((phase) => {
                             const info = effectivePhaseInfo[phase];
@@ -102,7 +102,7 @@ const PhaseTracker = ({
                                     className={`flex flex-col items-center gap-1 transition-all duration-300 hover:scale-110 active:scale-95 ${isActive ? 'text-blue-400 scale-110' : 'text-gray-600 hover:text-gray-400'}`}
                                     title={info?.label || phase}
                                 >
-                                    <div className={`p-2 rounded-full ${isActive ? 'bg-blue-500/20 ring-2 ring-blue-500' : 'bg-slate-800 hover:bg-slate-700'}`}>
+                                    <div className={`p-1.5 rounded-full ${isActive ? 'bg-blue-500/20 ring-2 ring-blue-500' : 'bg-slate-800 hover:bg-slate-700'}`}>
                                         {typeof Icon === 'function' ? <Icon size={16} /> : <Icon size={16} />}
                                     </div>
                                 </button>

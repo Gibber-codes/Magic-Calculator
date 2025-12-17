@@ -146,20 +146,49 @@ const App = () => {
   const [othersScrollX, setOthersScrollX] = useState(0);
   const [landsScrollX, setLandsScrollX] = useState(0);
   const [verticalOffsetY, setVerticalOffsetY] = useState(0);
+  // Track window size to force re-calc of layout on resize (fixes stale visual positions)
+  const [windowSize, setWindowSize] = useState({ width: typeof window !== 'undefined' ? window.innerWidth : 0, height: typeof window !== 'undefined' ? window.innerHeight : 0 });
   const [isPortrait, setIsPortrait] = useState(typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false);
+  const BOTTOM_BAR_HEIGHT = 110; // Compact height (was 150)
+  const TOP_BAR_HEIGHT = 80;   // Constant for top header height
 
   useEffect(() => {
-    const handleResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    const handleResize = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Lock "Others" row in center if portrait
+  // Initial centering - place "Others" row at comfortable position on mount/resize
   useEffect(() => {
-    if (isPortrait) {
-      setVerticalOffsetY(-80); // Center "Others" row (half height adjustment)
+    if (battlefieldRef.current) {
+      const containerHeight = window.innerHeight; // Use window height directly for consistency
+      const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
+      // CenterY should be LOCAL to the container (which starts after Top Bar)
+      const centerY = usableHeight / 2;
+
+      // Dynamic spread based on available height
+      // Card height is 200px. We need >210px gap to avoid overlap.
+      const baseSpread = 250;
+      const scaleFactor = Math.min(1, usableHeight / 900);
+      const spread = Math.max(220, baseSpread * scaleFactor); // Min 220px to clear cards
+
+      // For "Others" row to be centered visually:
+      // The row's center line should be at TARGET_Y + (CARD_HEIGHT/2).
+      // Or simply align the center line with the visual center.
+      // Let's align center-to-center.
+
+      const othersBaseY = centerY;
+      // TARGET_CENTER_Y should be LOCAL (since container is offset).
+      // 150px = Half Card Height (100) + 50px padding.
+      // This pushes the cards down 50px from the header.
+      const TARGET_CENTER_Y = 150;
+
+      setVerticalOffsetY(TARGET_CENTER_Y - othersBaseY);
     }
-  }, [isPortrait]);
+  }, []); // Run once on mount
 
   // --- Logic ---
 
@@ -199,11 +228,30 @@ const App = () => {
   // Grouped Layout Calculation
   const cardPositions = useMemo(() => {
     if (!battlefieldRef.current) return {};
-    const rect = battlefieldRef.current.getBoundingClientRect();
-    const containerWidth = rect.width || window.innerWidth;
-    const containerHeight = rect.height || window.innerHeight;
+    // Use window dimensions if ref is not ready or to maintain consistency
+    const containerWidth = window.innerWidth;
+    const containerHeight = window.innerHeight;
+
+    // Account for bottom navigation bar (combat tracker + phase buttons) AND top header
+    const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
+
     const centerX = containerWidth / 2;
-    const centerY = containerHeight / 2;
+    // CenterY should be LOCAL to the container
+    const centerY = usableHeight / 2;
+
+    // Dynamic spread based on available height
+    // Card height is 200px. We need >210px gap to avoid overlap.
+    const baseSpread = 250;
+    const scaleFactor = Math.min(1, usableHeight / 900);
+    const spread = Math.max(220, baseSpread * scaleFactor); // Min 220px
+
+    // Dynamic Row Offsets
+    // Creatures: Up by 1 spread
+    // Others: Center
+    // Lands: Down by 1 spread
+    const creatureRowY = centerY - spread;
+    const othersRowY = centerY;
+    const landsRowY = centerY + spread;
 
     const positions = {};
 
@@ -223,13 +271,26 @@ const App = () => {
       const count = items.length;
       if (count === 0) return;
       const totalWidth = count * CARD_WIDTH + (count - 1) * CARD_GAP;
-      const startX = centerX - totalWidth / 2;
+
+      // Calculate centered startX, but clamp to 0 (with small padding) if row is too wide
+      const EDGE_PADDING = 8;
+      let startX = centerX - totalWidth / 2;
+
+      // If the row is wider than the screen, start from left edge + padding
+      // This allows horizontal scroll to reveal all cards
+      if (totalWidth > containerWidth) {
+        startX = EDGE_PADDING;
+      } else {
+        // Even for centered rows, don't let startX go negative
+        startX = Math.max(EDGE_PADDING, startX);
+      }
 
       items.forEach((group, index) => {
         positions[group.leader.id] = {
           id: group.leader.id,
           x: startX + index * (CARD_WIDTH + CARD_GAP) + xOffset,
-          y: finalY
+          // Convert Center Line Y to Top Edge Y for rendering
+          y: finalY - (200 / 2)
         };
       });
     };
@@ -238,18 +299,18 @@ const App = () => {
     // Visual Order (Top to Bottom): Creatures -> Others -> Lands
 
     // Creatures at Top
-    layoutRow(creatures, centerY - 250, creatureScrollX);
+    layoutRow(creatures, creatureRowY, creatureScrollX);
 
     // Others (Artifacts/Enchantments) under creatures
-    layoutRow(others, centerY - 20, othersScrollX);
+    layoutRow(others, othersRowY, othersScrollX);
 
     // Lands at bottom
-    layoutRow(lands, centerY + 200, landsScrollX);
+    layoutRow(lands, landsRowY, landsScrollX);
 
     // Fallback/Overflow handling would be needed for many cards, but simple rows for now.
 
     return positions;
-  }, [visibleStacks, cards, activePanel, showSearchOverlay, creatureScrollX, othersScrollX, landsScrollX, verticalOffsetY]);
+  }, [visibleStacks, cards, activePanel, showSearchOverlay, creatureScrollX, othersScrollX, landsScrollX, verticalOffsetY, windowSize]);
 
   // --- Actions (using hooks with local wrappers) ---
 
@@ -1026,9 +1087,33 @@ const App = () => {
               else if (dragRef.current.rowType === 'others') setOthersScrollX(prev => snap(prev));
               else if (dragRef.current.rowType === 'lands') setLandsScrollX(prev => snap(prev));
             }
-            // 2. Vertical Snap
+            // 2. Vertical Snap - Dynamic targets based on container size
             else if (dragRef.current.axis === 'v') {
-              const targets = [150, -80, -300]; // Targets shifted to align CARD CENTER to SCREEN CENTER
+              const containerHeight = window.innerHeight;
+              const BOTTOM_BAR_HEIGHT = 150;
+              const TOP_BAR_HEIGHT = 80;
+              const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
+              // CenterY in LOCAL coordinates
+              const centerY = usableHeight / 2;
+
+              // Dynamic spread based on available height for Snap Logic
+              const baseSpread = 250;
+              const scaleFactor = Math.min(1, usableHeight / 900);
+              const spread = Math.max(220, baseSpread * scaleFactor);
+
+              // Row baseline Y positions
+              const creatureBaseY = centerY - spread;
+              const othersBaseY = centerY;
+              const landsBaseY = centerY + spread;
+
+              // Target position: Center-to-Center align
+              const TARGET_CENTER_Y = 150; // 50px padding
+              const targets = [
+                TARGET_CENTER_Y - creatureBaseY,
+                TARGET_CENTER_Y - othersBaseY,
+                TARGET_CENTER_Y - landsBaseY
+              ];
+
               setVerticalOffsetY(prev => {
                 return targets.reduce((closest, curr) =>
                   Math.abs(curr - prev) < Math.abs(closest - prev) ? curr : closest
@@ -1048,16 +1133,29 @@ const App = () => {
 
           // Determine which row based on Y position
           let rowType = null;
-          const centerY = rect.height / 2;
-          const creatureY = centerY - 250 + verticalOffsetY;
-          const othersY = centerY - 20 + verticalOffsetY;
-          const landsY = centerY + 200 + verticalOffsetY;
+          const containerHeight = window.innerHeight;
+          const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
+          // CenterY in LOCAL coordinates
+          const centerY = usableHeight / 2;
+
+          // Dynamic spread based on available height for touch detection
+          const baseSpread = 250;
+          const scaleFactor = Math.min(1, usableHeight / 900);
+          const spread = Math.max(220, baseSpread * scaleFactor);
+
+          const creatureRowY = centerY - spread;
+          const othersRowY = centerY;
+          const landsRowY = centerY + spread;
+
+          const creatureCenterY = creatureRowY + verticalOffsetY;
+          const othersCenterY = othersRowY + verticalOffsetY;
+          const landsCenterY = landsRowY + verticalOffsetY;
 
           // Find closest row
           const distances = [
-            { type: 'creatures', dist: Math.abs(relativeY - creatureY), scroll: creatureScrollX },
-            { type: 'others', dist: Math.abs(relativeY - othersY), scroll: othersScrollX },
-            { type: 'lands', dist: Math.abs(relativeY - landsY), scroll: landsScrollX }
+            { type: 'creatures', dist: Math.abs(relativeY - creatureCenterY), scroll: creatureScrollX },
+            { type: 'others', dist: Math.abs(relativeY - othersCenterY), scroll: othersScrollX },
+            { type: 'lands', dist: Math.abs(relativeY - landsCenterY), scroll: landsScrollX }
           ];
           const closest = distances.sort((a, b) => a.dist - b.dist)[0];
           rowType = closest.type;
@@ -1073,7 +1171,7 @@ const App = () => {
           };
         }}
         onTouchMove={(e) => {
-          if (!isDragging) return;
+          if (!isDragging || !dragRef.current) return;
           const touch = e.touches[0];
           const dx = touch.clientX - dragRef.current.startX;
           const dy = touch.clientY - dragRef.current.startY;
@@ -1094,15 +1192,13 @@ const App = () => {
             else if (dragRef.current.rowType === 'others') setOthersScrollX(newScroll);
             else if (dragRef.current.rowType === 'lands') setLandsScrollX(newScroll);
           } else if (dragRef.current.axis === 'v') {
-            // Vertical Swipe: Move Rows
-            // LOCKED if Portrait
-            if (!isPortrait) {
-              setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
-            }
+            // Vertical Swipe: Move Rows (now allowed in portrait too)
+            setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
           }
         }}
         onTouchEnd={() => {
           setIsDragging(false);
+          if (!dragRef.current) return;
 
           // Snap Logic
           const CARD_TOTAL_WIDTH = CARD_WIDTH + CARD_GAP; // 152
@@ -1115,11 +1211,34 @@ const App = () => {
             else if (dragRef.current.rowType === 'others') setOthersScrollX(prev => snap(prev));
             else if (dragRef.current.rowType === 'lands') setLandsScrollX(prev => snap(prev));
           }
-          // 2. Vertical Snap
+          // 2. Vertical Snap - Dynamic targets based on container size
           else if (dragRef.current.axis === 'v') {
-            const targets = [150, -80, -300]; // Targets shifted to align CARD CENTER to SCREEN CENTER
+            const containerHeight = window.innerHeight;
+            const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
+            // CenterY in LOCAL coordinates
+            const centerY = usableHeight / 2;
+
+            // Dynamic spread based on available height for Snap Logic
+            const baseSpread = 250;
+            const scaleFactor = Math.min(1, usableHeight / 900);
+            const spread = Math.max(220, baseSpread * scaleFactor);
+
+            // Row baseline Y positions (center lines)
+            const creatureBaseY = centerY - spread;
+            const othersBaseY = centerY;
+            const landsBaseY = centerY + spread;
+
+            // Target position: Center-to-Center align
+            // 150px local target = 50px padding from top
+            const TARGET_CENTER_Y = 150;
+            const snapTargets = [
+              TARGET_CENTER_Y - creatureBaseY,
+              TARGET_CENTER_Y - othersBaseY,
+              TARGET_CENTER_Y - landsBaseY
+            ];
+
             setVerticalOffsetY(prev => {
-              return targets.reduce((closest, curr) =>
+              return snapTargets.reduce((closest, curr) =>
                 Math.abs(curr - prev) < Math.abs(closest - prev) ? curr : closest
               );
             });
