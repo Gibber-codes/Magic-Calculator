@@ -7,10 +7,21 @@ export const useIsTouchDevice = () => {
     const [isTouch, setIsTouch] = useState(false);
 
     useEffect(() => {
-        const mediaQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
-        setIsTouch(mediaQuery.matches);
+        // Robust detection: Check hardware capability OR pointer type
+        // This ensures phones, tablets, and hybrids get the touch-optimized UI (tap-to-hover)
+        const checkTouch = () => {
+            return (
+                ('ontouchstart' in window) ||
+                (navigator.maxTouchPoints > 0) ||
+                (window.matchMedia('(pointer: coarse)').matches)
+            );
+        };
 
-        const handler = (e) => setIsTouch(e.matches);
+        setIsTouch(checkTouch());
+
+        // Listen for changes (e.g. plugging in a mouse/monitor? rare but good to have)
+        const mediaQuery = window.matchMedia('(pointer: coarse)');
+        const handler = (e) => setIsTouch(checkTouch() || e.matches);
         mediaQuery.addEventListener('change', handler);
         return () => mediaQuery.removeEventListener('change', handler);
     }, []);
