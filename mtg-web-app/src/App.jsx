@@ -47,7 +47,14 @@ const COMBAT_STEPS = [
 
 // Presets Definition
 const PRESETS = {
-  'Ouroboroid Season': ['Ouroboroid', 'Doubling Season', 'Orthion, Hero of Lavabrink', 'Finale of Devastation']
+  'Ouroboroid Season': {
+    cards: ['Ouroboroid', 'Doubling Season', 'Orthion, Hero of Lavabrink', 'Finale of Devastation'],
+    image: '/Ouroboroid_season.png'
+  },
+  'Phyrexian Multiplication': {
+    cards: ['Helm of the Host', 'Mondrak, Glory Dominus'],
+    image: '/helmed_mondrak.png'
+  }
 };
 
 // --- Helper Functions ---
@@ -657,7 +664,7 @@ const App = () => {
     };
   };
 
-  const handleAddCard = (def) => {
+  const handleAddCard = (def, count = 1) => {
     // 1. Close UI immediately to trigger layout reset
     setActivePanel(null); // Close the panel
     setPreviewCard(null);
@@ -666,27 +673,34 @@ const App = () => {
     setShowSearchOverlay(false); // Reset overlay state
     // 2. Defer card addition slightly to allow ResizeObserver to catch the new layout size
     setTimeout(() => {
-      const newCard = createBattlefieldCard(def, {}, { cards, gameEngineRef });
+      let currentCards = [...cards];
+      const addedCards = [];
 
-      // Save current state to history before making changes
-      const newCards = [...cards, newCard];
-      saveHistoryState(newCards);
+      // Create multiple cards if count > 1
+      for (let i = 0; i < count; i++) {
+        const newCard = createBattlefieldCard(def, {}, { cards: currentCards, gameEngineRef });
+        currentCards = [...currentCards, newCard];
+        addedCards.push(newCard);
 
-      // Process ETB Triggers
-      if (gameEngineRef.current) {
-        const etbTriggers = gameEngineRef.current.processEntersBattlefield(newCard);
-        etbTriggers.forEach(t => {
-          let description = t.ability.description;
-          if (!description) {
-            if (t.ability.trigger === 'on_token_enter_battlefield') {
-              description = `${t.source.name}: Token entered`;
-            } else {
-              description = `When ${t.source.name} enters: ${t.ability.effect}`;
+        // Process ETB Triggers for each card
+        if (gameEngineRef.current) {
+          const etbTriggers = gameEngineRef.current.processEntersBattlefield(newCard);
+          etbTriggers.forEach(t => {
+            let description = t.ability.description;
+            if (!description) {
+              if (t.ability.trigger === 'on_token_enter_battlefield') {
+                description = `${t.source.name}: Token entered`;
+              } else {
+                description = `When ${t.source.name} enters: ${t.ability.effect}`;
+              }
             }
-          }
-          addToStack(t.source, description, t.ability.trigger || 'on_enter_battlefield', t);
-        });
+            addToStack(t.source, description, t.ability.trigger || 'on_enter_battlefield', t);
+          });
+        }
       }
+
+      // Save the final batch state to history
+      saveHistoryState(currentCards);
 
       // Add to Recent Cards (if not already there by name)
       setRecentCards(prev => {
@@ -695,36 +709,32 @@ const App = () => {
       });
 
       // Auto-Fetch Tokens and Add to Recents
-      // We do this after the main card is added to not block UI
+      // Use the first card from the batch for token fetching
+      const referenceCard = addedCards[0];
       if (def.all_parts || def.scryfall_id) {
-        // If we have all_parts, use it directly. If not, we might need to fetch (but we updated formatScryfallCard)
-        // def should have all_parts now if it came from our service.
-        // If it was a manually constructed object or old preset, it might not.
         const tokenFetchPromise = def.all_parts
           ? fetchRelatedTokens(def)
           : getScryfallCard(def.name).then(fetchRelatedTokens);
 
         tokenFetchPromise.then(tokens => {
           if (tokens && tokens.length > 0) {
-            // Update the main card on the battlefield with these tokens
+            // Update the main cards on the battlefield with these tokens
+            const addedIds = addedCards.map(c => c.id);
             setCards(current => current.map(c =>
-              c.id === newCard.id ? { ...c, relatedTokens: tokens } : c
+              addedIds.includes(c.id) ? { ...c, relatedTokens: tokens } : c
             ));
 
             setRecentCards(prev => {
-              // Filter out tokens already in list
               const newTokens = tokens.filter(t => !prev.some(p => p.name === t.name));
               if (newTokens.length === 0) return prev;
-              // Add new tokens to the TOP of the list (or after the main card?)
-              // User asked for them to be added. Top is fine.
-              return [...newTokens, ...prev].slice(0, 20); // Increase limit to accommodate tokens
+              return [...newTokens, ...prev].slice(0, 20);
             });
             logAction(`Added ${tokens.length} related token(s) to recents`);
           }
         }).catch(err => console.warn('Failed to auto-fetch tokens', err));
       }
 
-      logAction(`Added ${newCard.name}`);
+      logAction(`Added ${count} ${def.name}(s)`);
     }, 50); // 50ms is enough for React to render the "closed" state and ResizeObserver to fire
   };
 
@@ -750,7 +760,8 @@ const App = () => {
     if (loadingPreset) return;
     setLoadingPreset(presetName);
 
-    const cardNames = PRESETS[presetName];
+    const preset = PRESETS[presetName];
+    const cardNames = preset.cards || [];
     // We don't add them to battlefield, just to recents
 
     // Process sequentially to keep order
