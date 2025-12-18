@@ -57,6 +57,12 @@ export const TRIGGER_PATTERNS = [
         trigger: 'on_token_enter_battlefield',
         target: 'self'
     },
+    // Landfall (Mossborn Hydra)
+    {
+        pattern: /Whenever a land you control enters/i,
+        trigger: 'on_land_enter_battlefield',
+        target: 'self'
+    },
 ];
 
 // ============================================
@@ -99,6 +105,12 @@ export const EFFECT_PATTERNS = [
         pattern: /put a \+1\/\+1 counter on this creature/i,
         effect: 'add_counters',
         amount: 1,
+        target: 'self'
+    },
+    // Double counters on self (Mossborn Hydra)
+    {
+        pattern: /double the number of \+1\/\+1 counters on this creature/i,
+        effect: 'double_counters',
         target: 'self'
     },
     // Wildwood Mentor attack trigger - give +X/+X to another attacking creature
@@ -326,6 +338,30 @@ export function extractEffects(oracleText) {
 }
 
 /**
+ * Extract "Enters the battlefield with X +1/+1 counters"
+ */
+export function extractEntersWithCounters(oracleText) {
+    if (!oracleText) return 0;
+
+    // Pattern: "enters the battlefield with [amount] +1/+1 counters"
+    // Also matches "Hydra enters with..."
+    const pattern = /enters(?: the battlefield)? with (an?|one|two|three|four|five|six|seven|eight|nine|ten|\d+) \+1\/\+1 counters?(?: on it)?/i;
+    const match = oracleText.match(pattern);
+
+    if (match) {
+        const amountStr = match[1].toLowerCase();
+        const numberMap = {
+            'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3,
+            'four': 4, 'five': 5, 'six': 6, 'seven': 7,
+            'eight': 8, 'nine': 9, 'ten': 10
+        };
+        return numberMap[amountStr] || parseInt(amountStr) || 0;
+    }
+
+    return 0;
+}
+
+/**
  * Extract replacement effects from oracle text
  */
 export function extractReplacementEffects(oracleText) {
@@ -378,6 +414,7 @@ export function parseOracleText(card) {
         effects: extractEffects(oracleText),
         replacementEffects: extractReplacementEffects(oracleText),
         activated: extractActivatedAbilities(oracleText),
+        entersWithCounters: extractEntersWithCounters(oracleText),
     };
 }
 
@@ -451,6 +488,7 @@ export function getCardAbilities(card) {
     return {
         abilities: [...triggeredAbilities, ...activatedAbilities],
         replacementEffects: parsed.replacementEffects,
+        entersWithCounters: parsed.entersWithCounters,
         parsed: true
     };
 }

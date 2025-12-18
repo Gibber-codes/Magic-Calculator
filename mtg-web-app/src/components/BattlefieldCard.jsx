@@ -52,12 +52,26 @@ const BattlefieldCard = ({
     const colors = getCardHexColors(card.colors);
     const basePower = parseInt(card.power) || 0;
     const baseToughness = parseInt(card.toughness) || 0;
-    const counters = parseInt(card.counters) || 0;
+    // Defensive check: Ensure counters is an object or number, strictly not a string
+    let countersObj = {};
+    if (typeof card.counters === 'number') {
+        countersObj = { '+1/+1': card.counters };
+    } else if (typeof card.counters === 'object' && card.counters !== null) {
+        countersObj = card.counters;
+    }
+    // If it was a string or garbage, it defaults to {}
+
+    const plusOne = (countersObj['+1/+1'] || 0);
+    const minusOne = (countersObj['-1/-1'] || 0);
+    // Net modification from counters
+    const counterPower = plusOne - minusOne;
+    const counterToughness = plusOne - minusOne;
+
     const tempPowerBonus = parseInt(card.tempPowerBonus) || 0;
     const tempToughnessBonus = parseInt(card.tempToughnessBonus) || 0;
-    const totalPower = basePower + counters + tempPowerBonus;
-    const totalToughness = baseToughness + counters + tempToughnessBonus;
-    const isModified = counters > 0;
+    const totalPower = basePower + counterPower + tempPowerBonus;
+    const totalToughness = baseToughness + counterToughness + tempToughnessBonus;
+    const isModified = Object.keys(countersObj).length > 0 && Object.values(countersObj).some(v => v > 0);
     const isBuffed = tempPowerBonus > 0 || tempToughnessBonus > 0;
     // User requested to show the first part of type line (e.g. "Legendary Artifact" instead of "Equipment")
     let cardType = card.type_line ? card.type_line.split('—')[0]?.trim() || card.type_line : card.type;
@@ -408,10 +422,26 @@ const BattlefieldCard = ({
                     ) : null}
                 </ArtWindow>
 
-                {/* Counter Indicator Overlay on Art */}
+                {/* Counter Indicator Overlay on Art (Generic) */}
                 {isModified && card.type === 'Creature' && (
-                    <div className="absolute top-2 left-2 bg-green-600 rounded-full w-6 h-6 flex items-center justify-center shadow-lg border-2 border-green-800 z-20">
-                        <span className="text-white text-[10px] font-bold">+{formatBigNumber(card.counters)}</span>
+                    <div className="absolute top-2 left-2 flex flex-col gap-1 items-start z-20">
+                        {/* Show +1/+1 separately if present */}
+                        {plusOne > 0 &&
+                            <div className="bg-green-600 rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border border-green-800">
+                                <span className="text-white text-[10px] font-bold">+{formatBigNumber(plusOne)}</span>
+                            </div>
+                        }
+                        {/* Show generic counter count for others (simplified) */}
+                        {Object.entries(countersObj).map(([type, val]) => {
+                            if (type === '+1/+1' || val <= 0) return null;
+                            // Icon mappings or Short text could go here. For now: generic purple bubble
+                            const isBad = type === '-1/-1';
+                            return (
+                                <div key={type} className={`${isBad ? 'bg-red-800 border-red-900' : 'bg-purple-600 border-purple-800'} rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border`}>
+                                    <span className="text-white text-[10px] font-bold">{isBad ? '-' : ''}{val} {type === '-1/-1' ? '' : type.substring(0, 3)}</span>
+                                </div>
+                            )
+                        })}
                     </div>
                 )}
 

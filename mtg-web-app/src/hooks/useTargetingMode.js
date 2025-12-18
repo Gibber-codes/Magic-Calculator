@@ -184,6 +184,31 @@ const useTargetingMode = (gameState) => {
         }));
     }, [targetingMode.selectedIds, targetingMode.action]);
 
+    const handleToggleSelectAll = useCallback(() => {
+        if (targetingMode.action !== 'declare-attackers') return;
+
+        // Find all eligible attackers (untapped creatures on battlefield)
+        const eligibleAttackers = cards.filter(c =>
+            c.zone === 'battlefield' &&
+            !c.tapped &&
+            (c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')))
+        );
+        const eligibleIds = eligibleAttackers.map(c => c.id);
+
+        setTargetingMode(prev => {
+            // Check if all eligible are already selected
+            const allSelected = eligibleIds.length > 0 && eligibleIds.every(id => prev.selectedIds.includes(id));
+
+            if (allSelected) {
+                // Clear all attackers
+                return { ...prev, selectedIds: [] };
+            } else {
+                // Select all eligible
+                return { ...prev, selectedIds: eligibleIds };
+            }
+        });
+    }, [targetingMode.action, cards]);
+
     const handleConfirmAttackers = useCallback(() => {
         const attackers = cards.filter(c => targetingMode.selectedIds.includes(c.id));
         const attackerIds = attackers.map(c => c.id);
@@ -228,6 +253,7 @@ const useTargetingMode = (gameState) => {
         handleZoneSelection,
         handleTargetSelection,
         handleMultiSelect,
+        handleToggleSelectAll,
         updateStackSelection,
         handleConfirmAttackers
     };

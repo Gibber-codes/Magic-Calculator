@@ -205,19 +205,42 @@ export class GameEngine {
         if (!newTokens || newTokens.length === 0) return [];
 
         const triggers = [];
-        // Scan all cards on the battlefield for "on_token_enter_battlefield" triggers
         cards.forEach(card => {
             if (card.zone !== 'battlefield') return;
             if (!card.abilities) return;
 
             card.abilities.forEach(ability => {
                 if (ability.trigger === 'on_token_enter_battlefield') {
-                    // Trigger for each token entered
                     newTokens.forEach(token => {
                         triggers.push({
                             source: card,
                             ability: ability,
-                            // Could pass context here if needed
+                        });
+                    });
+                }
+            });
+        });
+
+        return triggers.map(trigger => this.resolveEffect(trigger));
+    }
+
+    /**
+     * Find triggers for when lands enter the battlefield
+     */
+    findLandEntryTriggers(cards, newLands) {
+        if (!newLands || newLands.length === 0) return [];
+
+        const triggers = [];
+        cards.forEach(card => {
+            if (card.zone !== 'battlefield') return;
+            if (!card.abilities) return;
+
+            card.abilities.forEach(ability => {
+                if (ability.trigger === 'on_land_enter_battlefield') {
+                    newLands.forEach(land => {
+                        triggers.push({
+                            source: card,
+                            ability: ability,
                         });
                     });
                 }
@@ -251,7 +274,13 @@ export class GameEngine {
 
         // 2. Check for "When token enters" triggers (Wildwood Mentor) from OTHER cards
         if (enteringCard.isToken) {
-            otherResults = this.findTokenEntryTriggers(this.cards, [enteringCard]);
+            otherResults = [...otherResults, ...this.findTokenEntryTriggers(this.cards, [enteringCard])];
+        }
+
+        // 3. Check for Landfall
+        const isLand = enteringCard.type_line && enteringCard.type_line.toLowerCase().includes('land');
+        if (isLand) {
+            otherResults = [...otherResults, ...this.findLandEntryTriggers(this.cards, [enteringCard])];
         }
 
         return [...ownResults, ...otherResults];
@@ -373,9 +402,14 @@ export class GameEngine {
             // For power: printed power + +1/+1 counters + temporary buffs
             if (property === 'power') {
                 const basePower = parseInt(equippedCreature.power) || 0;
-                const counters = parseInt(equippedCreature.counters) || 0;
+
+                const countersObj = typeof equippedCreature.counters === 'number' ? { '+1/+1': equippedCreature.counters } : (equippedCreature.counters || {});
+                const plusOne = (countersObj['+1/+1'] || 0);
+                const minusOne = (countersObj['-1/-1'] || 0);
+                const counterNet = plusOne - minusOne;
+
                 const tempBonus = parseInt(equippedCreature.tempPowerBonus) || 0;
-                return basePower + counters + tempBonus;
+                return Math.max(0, basePower + counterNet + tempBonus);
             }
 
             const value = equippedCreature[property];
@@ -389,9 +423,15 @@ export class GameEngine {
             // For power: printed power + +1/+1 counters + temporary buffs
             if (property === 'power') {
                 const basePower = parseInt(source.power) || 0;
-                const counters = parseInt(source.counters) || 0;
+
+                // Handle new object counters vs legacy number
+                const countersObj = typeof source.counters === 'number' ? { '+1/+1': source.counters } : (source.counters || {});
+                const plusOne = (countersObj['+1/+1'] || 0);
+                const minusOne = (countersObj['-1/-1'] || 0);
+                const counterNet = plusOne - minusOne;
+
                 const tempBonus = parseInt(source.tempPowerBonus) || 0;
-                return basePower + counters + tempBonus;
+                return Math.max(0, basePower + counterNet + tempBonus); // Power can't be negative for "add X counters" usually, but technically negative power is possible. For Amount, we usually want floor 0.
             }
 
             const value = source[property];
@@ -593,13 +633,53 @@ export class GameEngine {
             targets.forEach(target => {
                 const cardIndex = newCards.findIndex(c => c.id === target.id);
                 if (cardIndex !== -1) {
+                    const current = newCards[cardIndex].counters || 0;
+                    let nextCounters;
+
+                    if (typeof current === 'number') {
+                        // Legacy: Assume +1/+1 is what was meant if it was a number
+                        nextCounters = { '+1/+1': current + value };
+                    } else {
+                        // Object: Update +1/+1
+                        const oldVal = current['+1/+1'] || 0;
+                        nextCounters = { ...current, '+1/+1': oldVal + value };
+                    }
+
                     newCards[cardIndex] = {
                         ...newCards[cardIndex],
-                        counters: (newCards[cardIndex].counters || 0) + value,
+                        counters: nextCounters,
                     };
                 }
             });
             // No tokens created, so no triggers from this effect
+        }
+
+        if (ability.effect === 'double_counters') {
+            targets.forEach(target => {
+                const cardIndex = newCards.findIndex(c => c.id === target.id);
+                if (cardIndex !== -1) {
+                    const current = newCards[cardIndex].counters || 0;
+                    const oldVal = typeof current === 'number' ? current : (current['+1/+1'] || 0);
+
+                    if (oldVal > 0) {
+                        // In MTG, doubling means adding counters equal to current count
+                        const modifiers = this.findReplacementEffects('add_counters', newCards);
+                        const finalAdded = this.applyModifiers(oldVal, modifiers, 'add_counters');
+
+                        let nextCounters;
+                        if (typeof current === 'number') {
+                            nextCounters = { '+1/+1': oldVal + finalAdded };
+                        } else {
+                            nextCounters = { ...current, '+1/+1': oldVal + finalAdded };
+                        }
+
+                        newCards[cardIndex] = {
+                            ...newCards[cardIndex],
+                            counters: nextCounters,
+                        };
+                    }
+                }
+            });
         }
 
         if (ability.effect === 'buff_creature') {
@@ -1024,18 +1104,65 @@ export class GameEngine {
 
         if (!targetCard) return result;
 
+
+        if (action === 'counter-update') {
+            const { type = '+1/+1', change = 1 } = targetCard; // extracted from payload passed as targetCard proxy
+
+            const modifiers = type === '+1/+1' ? this.findReplacementEffects('add_counters', result.newCards) : [];
+            const baseValue = change;
+            const finalValue = type === '+1/+1' && change > 0
+                ? this.applyModifiers(baseValue, modifiers, 'add_counters')
+                : baseValue;
+
+            result.newCards = result.newCards.map(c => {
+                if (c.id !== targetCard.id) return c;
+
+                const current = c.counters || {};
+                // Helper to get numeric value whether strict object or legacy number
+                const getVal = (t) => (typeof current === 'number' ? (t === '+1/+1' ? current : 0) : (current[t] || 0));
+
+                const currentVal = getVal(type);
+                const newVal = Math.max(0, currentVal + finalValue);
+
+                const nextCounters = typeof current === 'number'
+                    ? (type === '+1/+1' ? newVal : { '+1/+1': current, [type]: newVal })
+                    : { ...current, [type]: newVal };
+
+                // Cleanup
+                if (newVal === 0 && typeof nextCounters === 'object') delete nextCounters[type];
+
+                return { ...c, counters: nextCounters };
+            });
+
+            result.log.description = `Modified ${type} counters on ${targetCard.name}`;
+            result.log.equation = `Delta: ${finalValue} (${baseValue} base)`;
+            if (modifiers.length > 0) {
+                result.log.modifierSteps = modifiers.map(mod => ({
+                    source: mod.source.name,
+                    description: `${mod.source.name}: ×${mod.multiplier} = ${finalValue} counters`,
+                }));
+            }
+        }
+
+        // LEGACY / SHORTCUT HANDLERS (Mapped to new system)
         if (action === 'counter+') {
+            // Re-route to standard update if possible, but for now duplicate logic for safety
             const modifiers = this.findReplacementEffects('add_counters', result.newCards);
             const baseValue = 1;
             const finalValue = this.applyModifiers(baseValue, modifiers, 'add_counters');
 
-            result.newCards = result.newCards.map(c =>
-                c.id === targetCard.id
-                    ? { ...c, counters: (c.counters || 0) + finalValue }
-                    : c
-            );
+            result.newCards = result.newCards.map(c => {
+                if (c.id !== targetCard.id) return c;
+                const current = c.counters || {};
+                const val = typeof current === 'number' ? current : (current['+1/+1'] || 0);
+                const newVal = val + finalValue;
+                const nextCounters = typeof current === 'number' ? newVal : { ...current, '+1/+1': newVal };
+                // Migrate to object if mixing? No, keep simple if legacy.
+                // Actually, let's migrate to object to support future mixing
+                return { ...c, counters: typeof current === 'number' ? { '+1/+1': newVal } : nextCounters };
+            });
 
-            result.log.description = `Added counter(s) to ${targetCard.name}`;
+            result.log.description = `Added +1/+1 counter(s) to ${targetCard.name}`;
             result.log.equation = `Base: +${baseValue} counter`;
             result.log.modifierSteps = modifiers.map(mod => ({
                 source: mod.source.name,
@@ -1044,13 +1171,24 @@ export class GameEngine {
         }
 
         if (action === 'counter-') {
-            result.newCards = result.newCards.map(c =>
-                c.id === targetCard.id
-                    ? { ...c, counters: Math.max(0, (c.counters || 0) - 1) }
-                    : c
-            );
+            result.newCards = result.newCards.map(c => {
+                if (c.id !== targetCard.id) return c;
+                const current = c.counters || {};
+                const val = typeof current === 'number' ? current : (current['+1/+1'] || 0);
+                const newVal = Math.max(0, val - 1);
 
-            result.log.description = `Removed counter from ${targetCard.name}`;
+                let nextCounters;
+                if (typeof current === 'number') {
+                    nextCounters = newVal === 0 ? {} : { '+1/+1': newVal }; // Migrate to object
+                } else {
+                    nextCounters = { ...current, '+1/+1': newVal };
+                    if (newVal === 0) delete nextCounters['+1/+1'];
+                }
+
+                return { ...c, counters: nextCounters };
+            });
+
+            result.log.description = `Removed +1/+1 counter from ${targetCard.name}`;
             result.log.equation = `Base: -1 counter`;
         }
 

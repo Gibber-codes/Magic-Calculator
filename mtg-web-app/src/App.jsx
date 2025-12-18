@@ -17,7 +17,7 @@ import AddCardPanel from './components/AddCardPanel';
 import HistoryPanel from './components/HistoryPanel';
 import SelectedCardPanel from './components/SelectedCardPanel';
 
-import AttackerConfirmOverlay from './components/AttackerConfirmOverlay';
+
 import PhaseTracker from './components/PhaseTracker';
 import BattlefieldCard from './components/BattlefieldCard';
 import useGameState from './hooks/useGameState';
@@ -66,7 +66,8 @@ const isCreature = (c) => c.type_line && c.type_line.toLowerCase().includes('cre
 // Helper: Check if card is a land (for layout/stacking)
 const isLand = (c) => c.type_line && c.type_line.toLowerCase().includes('land') && !isCreature(c);
 
-const createBattlefieldCard = (cardDef, extra = {}) => {
+const createBattlefieldCard = (cardDef, extra = {}, context = {}) => {
+  const { cards = [], gameEngineRef = null } = context;
   const type = getTypeFromTypeLine(cardDef.type_line);
 
   // Check for local overrides in cardData
@@ -74,10 +75,18 @@ const createBattlefieldCard = (cardDef, extra = {}) => {
   const mergedDef = localDef ? { ...cardDef, ...localDef } : cardDef;
 
   // Use the parser to get abilities and replacement effects dynamically
-  // If the card was previously parsed (_parsed flag), force a re-parse to ensure we use the latest parser logic
-  // This fixes stale ability data from cached Recent Cards
   const parseDef = mergedDef._parsed ? { ...mergedDef, abilities: null } : mergedDef;
-  const { abilities, replacementEffects } = getCardAbilities(parseDef);
+  const { abilities, replacementEffects, entersWithCounters } = getCardAbilities(parseDef);
+
+  // Determine initial counters based on "Enters with X counters" keywords
+  let initialCounters = {};
+  if (entersWithCounters > 0 && gameEngineRef?.current) {
+    const modifiers = gameEngineRef.current.findReplacementEffects('add_counters', cards);
+    const finalCount = gameEngineRef.current.applyModifiers(entersWithCounters, modifiers, 'add_counters');
+    if (finalCount > 0) {
+      initialCounters = { '+1/+1': finalCount };
+    }
+  }
 
   return {
     id: Date.now() + Math.random(),
@@ -90,7 +99,7 @@ const createBattlefieldCard = (cardDef, extra = {}) => {
     colors: mergedDef.colors || [],
     art_crop: mergedDef.art_crop || '',
     image_normal: mergedDef.image_normal || '',
-    counters: 0,
+    counters: initialCounters, // Use calculated starting counters
     tapped: false,
     zone: 'battlefield', // Default zone
     attachedTo: null, // ID of card this is attached to
@@ -128,6 +137,7 @@ const App = () => {
     startTargetingMode, cancelTargeting,
     handleZoneSelection, handleTargetSelection,
     handleMultiSelect: baseHandleMultiSelect,
+    handleToggleSelectAll,
     updateStackSelection, handleConfirmAttackers
   } = targeting;
 
@@ -155,8 +165,8 @@ const App = () => {
   // Track window size to force re-calc of layout on resize (fixes stale visual positions)
   const [windowSize, setWindowSize] = useState({ width: typeof window !== 'undefined' ? window.innerWidth : 0, height: typeof window !== 'undefined' ? window.innerHeight : 0 });
   const [isPortrait, setIsPortrait] = useState(typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false);
-  const BOTTOM_BAR_HEIGHT = 110; // Compact height (was 150)
-  const TOP_BAR_HEIGHT = 80;   // Constant for top header height
+  const BOTTOM_BAR_HEIGHT = 0; // Floating UI now
+  const TOP_BAR_HEIGHT = 0;   // Floating UI now
 
   useEffect(() => {
     const handleResize = () => {
@@ -214,7 +224,7 @@ const App = () => {
       const attachmentKey = attachments.map(a => a.name).sort().join(',');
 
       // Key defines identity for stacking
-      const key = `${card.name}|${card.power}|${card.toughness}|${card.tapped}|${card.counters}|${card.faceDown || false}|${card.type_line}|${card.isToken}|[${attachmentKey}]`;
+      const key = `${card.name}|${card.power}|${card.toughness}|${card.tapped}|${JSON.stringify(card.counters)}|${card.faceDown || false}|${card.type_line}|${card.isToken}|[${attachmentKey}]`;
 
       if (!groupMap.has(key)) {
         const group = { key, leader: card, count: 1, cards: [card], id: card.id }; // Added 'id' for easier access
@@ -577,7 +587,7 @@ const App = () => {
       return;
     } else {
       // Delegate to GameEngine for actions that support replacement effects (counters, tapping)
-      if (['counter+', 'counter-', 'tap'].includes(action) && gameEngineRef.current) {
+      if (['counter+', 'counter-', 'counter-update', 'tap'].includes(action) && gameEngineRef.current) {
         // Handle multiple cards in a stack
         if (deleteCount > 1) {
           // Find all cards in the stack with the same name, zone, and state
@@ -656,7 +666,7 @@ const App = () => {
     setShowSearchOverlay(false); // Reset overlay state
     // 2. Defer card addition slightly to allow ResizeObserver to catch the new layout size
     setTimeout(() => {
-      const newCard = createBattlefieldCard(def);
+      const newCard = createBattlefieldCard(def, {}, { cards, gameEngineRef });
 
       // Save current state to history before making changes
       const newCards = [...cards, newCard];
@@ -962,24 +972,21 @@ const App = () => {
     <div
       className="w-full h-screen bg-slate-900 flex flex-col overflow-hidden select-none relative"
     >
-      {/* Header */}
-      {/* Added pt-[env(safe-area-inset-top)] for edge-to-edge status bar integration */}
-      <div className="bg-slate-900 pt-[env(safe-area-inset-top)] p-4 border-b border-slate-700 flex-shrink-0 z-50">
-        <div className="flex justify-end items-center">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActivePanel(activePanel === 'history' ? null : 'history')}
-              className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${activePanel === 'history' ? 'bg-amber-700 text-white' : 'bg-amber-600 hover:bg-amber-700 text-white'}`}
-            >
-              <History size={16} /> History
-            </button>
-            <button
-              onClick={() => setActivePanel(activePanel === 'add' ? null : 'add')}
-              className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${activePanel === 'add' ? 'bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-            >
-              <Plus size={16} /> Add
-            </button>
-          </div>
+      {/* Floating Header Controls */}
+      <div className="absolute top-0 right-0 p-4 pt-[env(safe-area-inset-top)] z-50 pointer-events-none">
+        <div className="flex gap-2 pointer-events-auto">
+          <button
+            onClick={() => setActivePanel(activePanel === 'history' ? null : 'history')}
+            className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'history' ? 'bg-amber-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
+          >
+            <History size={16} /> History
+          </button>
+          <button
+            onClick={() => setActivePanel(activePanel === 'add' ? null : 'add')}
+            className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'add' ? 'bg-blue-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
+          >
+            <Plus size={16} /> Add
+          </button>
         </div>
       </div>
 
@@ -1470,20 +1477,20 @@ const App = () => {
         }
       </div>
 
-      {/* Info / Navigation Panel - Persistent Bottom Bar (Phases Only) */}
-      {/* Wrapped in div to handle bottom safe area */}
-      <div className="pb-[env(safe-area-inset-bottom)] bg-slate-900 border-t border-slate-700">
-        <PhaseTracker
-          isVisible={!activePanel}
-          currentPhase={currentPhase}
-          currentCombatStep={currentCombatStep}
-          phaseInfo={PHASE_INFO}
-          onPhaseChange={handlePhaseChange}
-          onAdvancePhase={advancePhase}
-          onAdvanceCombatStep={advanceCombatStep}
-          onEndTurn={endTurn}
-        />
-      </div>
+      {/* Info / Navigation Panel - Floating Bottom Pill */}
+      <PhaseTracker
+        isVisible={!activePanel}
+        currentPhase={currentPhase}
+        currentCombatStep={currentCombatStep}
+        phaseInfo={PHASE_INFO}
+        onPhaseChange={handlePhaseChange}
+        onAdvancePhase={advancePhase}
+        onAdvanceCombatStep={advanceCombatStep}
+        onEndTurn={endTurn}
+        isAttackerStep={targetingMode.active && targetingMode.action === 'declare-attackers'}
+        onToggleSelectAll={handleToggleSelectAll}
+        onConfirmAttackers={handleConfirmAttackers}
+      />
 
       {/* --- Overlays & Panels --- */}
 
@@ -1526,14 +1533,6 @@ const App = () => {
             }
           }
         }}
-      />
-
-      {/* Confirm Attackers Overlay */}
-      <AttackerConfirmOverlay
-        isVisible={targetingMode.active && targetingMode.action === 'declare-attackers'}
-        selectedCount={targetingMode.selectedIds?.length || 0}
-        onConfirm={handleConfirmAttackers}
-        onCancel={() => setTargetingMode({ active: false, sourceId: null, action: null, mode: 'single', selectedIds: [] })}
       />
 
       {/* Add Card Panel */}
