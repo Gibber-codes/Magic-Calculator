@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { createBattlefieldCard } from '../utils/cardUtils';
 
 /**
  * Custom hook for managing targeting mode and multi-select/stack selection.
@@ -79,6 +80,26 @@ const useTargetingMode = (gameState) => {
                 }
                 return c;
             }));
+        } else if (targetingMode.action === 'enchant') {
+            const auraDef = targetingMode.data;
+            logAction(`Enchanted ${targetCard.name} with ${auraDef.name}`);
+
+            const newAura = createBattlefieldCard(auraDef, {
+                attachedTo: targetCard.id,
+                zone: 'attached'
+            }, { cards, gameEngineRef });
+
+            setCards(prev => [...prev, newAura]);
+            saveHistoryState([...cards, newAura]);
+
+            // Process ETB for Aura?
+            if (gameEngineRef.current) {
+                const etbTriggers = gameEngineRef.current.processEntersBattlefield(newAura);
+                etbTriggers.forEach(t => {
+                    const description = t.ability.description || `When ${t.source.name} enters: ${t.ability.effect}`;
+                    addToStack(t.source, description, t.ability.trigger || 'on_enter_battlefield', t);
+                });
+            }
         } else if (targetingMode.action === 'activate-ability') {
             const abilityDef = targetingMode.data;
             if (abilityDef && gameEngineRef.current) {

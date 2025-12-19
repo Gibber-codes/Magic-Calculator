@@ -1,15 +1,35 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import GameEngine from '../utils/gameEngine';
 
-const PHASE_ORDER = ['Beginning', 'Main', 'Combat', 'Main 2', 'End'];
+// --- Constants ---
 
-const COMBAT_STEPS = [
-    'Beginning of Combat',
-    'Declare Attackers',
-    'Declare Blockers',
-    'Combat Damage',
-    'End of Combat'
+const TURN_STRUCTURE = {
+    'Beginning': ['Untap', 'Upkeep', 'Draw'],
+    'Main': ['Pre-Combat Main'],
+    'Combat': ['Beginning of Combat', 'Declare Attackers', 'Declare Blockers', 'Combat Damage', 'End of Combat'],
+    'Main 2': ['Post-Combat Main'], // Maps to 'Main 2' phase for UI compatibility
+    'End': ['End', 'Cleanup']
+};
+
+// Flattened sequence for easy traversal
+const FULL_TURN_SEQUENCE = [
+    { phase: 'Beginning', step: 'Untap' },
+    { phase: 'Beginning', step: 'Upkeep' },
+    { phase: 'Beginning', step: 'Draw' },
+    { phase: 'Main', step: 'Pre-Combat Main' },
+    { phase: 'Combat', step: 'Beginning of Combat' },
+    { phase: 'Combat', step: 'Declare Attackers' },
+    { phase: 'Combat', step: 'Declare Blockers' },
+    { phase: 'Combat', step: 'Combat Damage' },
+    { phase: 'Combat', step: 'End of Combat' },
+    { phase: 'Main 2', step: 'Post-Combat Main' },
+    { phase: 'End', step: 'End' },
+    { phase: 'End', step: 'Cleanup' }
 ];
+
+// For UI compatibility, expose standard phases
+const PHASE_ORDER = ['Beginning', 'Main', 'Combat', 'Main 2', 'End'];
+const COMBAT_STEPS = TURN_STRUCTURE['Combat'];
 
 /**
  * Custom hook for managing core game state including cards, phases, history, and ability stack.
@@ -63,9 +83,28 @@ const useGameState = () => {
 
     // --- Phase Management ---
 
+    // Helper: Untap all cards
+    const untapAll = useCallback(() => {
+        setCards(prev => prev.map(c => ({ ...c, tapped: false })));
+        logAction('Untapped all permanents');
+    }, [logAction]);
+
     const handlePhaseChange = useCallback((phase, cardPositions = {}) => {
+        // Special Handling: Untap Step
+        // If we are entering 'Beginning', we impliedly start at Untap -> Upkeep -> Draw
+        // But the UI currently calls this with just the Phase name.
+
+        // Logic Refinement:
+        // 1. If phase is 'Beginning', we trigger untap.
+        // 2. We set currentPhase to 'Beginning' and maybe track step internally if we wanted full granularity exposed.
+        // For now, we keep the UI phase-based but execute step logic.
+
         setCurrentPhase(phase);
         logAction(`Phase: ${phase}`);
+
+        if (phase === 'Beginning') {
+            untapAll();
+        }
 
         // Initialize combat step when entering combat phase
         if (phase === 'Combat') {
@@ -81,7 +120,7 @@ const useGameState = () => {
             return triggers;
         }
         return [];
-    }, [logAction]);
+    }, [logAction, untapAll]);
 
     const advanceCombatStep = useCallback(() => {
         const currentIdx = COMBAT_STEPS.indexOf(currentCombatStep);
@@ -157,6 +196,7 @@ const useGameState = () => {
         if (ability.triggerObj && ability.triggerObj.ability) {
             const abilityDef = ability.triggerObj.ability;
             const needsTargeting = abilityDef.target &&
+                typeof abilityDef.target === 'string' &&
                 (abilityDef.target.includes('another') || abilityDef.target.includes('target')) &&
                 !abilityDef.targetIds;
 
@@ -190,29 +230,48 @@ const useGameState = () => {
             const result = ability.triggerObj.execute(cards, recentCards);
 
             // Handle new return format { newCards, triggers }
-            const newCards = result.newCards || result;
+            const resultNewCards = result.newCards || result;
             const triggers = result.triggers || [];
 
-            setCards(newCards);
+            // MERGE LOGIC: Handle updates to existing cards (by ID) vs new cards
+            // GameEngine might return existing cards with updated properties (e.g. zone: 'graveyard')
+            const updatedCards = (() => {
+                const newIds = new Set(resultNewCards.map(c => c.id));
+                const kept = cards.filter(c => !newIds.has(c.id));
+                return [...kept, ...resultNewCards];
+            })();
+
+            setCards(updatedCards);
             logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName} - ${ability.description}`);
 
-            // Add any triggered abilities to the stack
-            triggers.forEach(t => {
-                // Check if this is a deferred creation (different structure)
-                if (t.trigger === 'deferred_token_creation') {
-                    addToStack(t.source, t.description, t.trigger, t);
-                } else {
-                    // Regular trigger
-                    const desc = t.ability?.description || `${t.source.name} triggered`;
-                    addToStack(t.source, desc, 'trigger', t);
-                }
+            // Update stack state: remove the resolved ability AND add new triggers
+            setAbilityStack(prev => {
+                const filtered = prev.filter(a => a.id !== ability.id);
+                const newAbilities = triggers.map(t => {
+                    const isDeferred = t.trigger === 'deferred_token_creation';
+                    const desc = isDeferred ? t.description : (t.ability?.description || `${t.source.name} triggered`);
+                    const type = isDeferred ? t.trigger : 'trigger';
+
+                    return {
+                        id: Date.now() + Math.random(),
+                        sourceName: t.source.name,
+                        sourceColors: t.source.colors || [],
+                        sourceId: t.source.id,
+                        description: desc,
+                        triggerType: type,
+                        trigger: t.trigger,
+                        triggerObj: t,
+                        timestamp: Date.now()
+                    };
+                });
+                return [...filtered, ...newAbilities];
             });
 
-            saveHistoryState(newCards);
+            saveHistoryState(updatedCards);
         } else {
             logAction(`Resolved: ${ability.sourceName} - ${ability.description}`);
+            setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
         }
-        setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
         return { needsTargeting: false };
     }, [cards, logAction, saveHistoryState, addToStack]);
 

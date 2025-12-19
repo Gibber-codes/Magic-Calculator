@@ -11,6 +11,7 @@ import GameEngine from './utils/gameEngine';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './components/RedesignedCardFrame';
 import { formatBigNumber } from './utils/formatters';
 import { getCardAbilities, extractActivatedAbilities, extractEffects, parseOracleText } from './utils/keywordParser';
+import { getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard } from './utils/cardUtils';
 import { searchScryfall, getScryfallCard, formatScryfallCard, fetchRelatedTokens } from './utils/scryfallService';
 import TriggeredAbilityStack from './components/TriggeredAbilityStack';
 import AddCardPanel from './components/AddCardPanel';
@@ -59,62 +60,8 @@ const PRESETS = {
 
 // --- Helper Functions ---
 
-const getTypeFromTypeLine = (typeLine) => {
-  if (!typeLine) return 'Other';
-  const primary = typeLine.split(' — ')[0];
-  const candidates = primary.split(' ');
-  const knownTypes = ['Creature', 'Enchantment', 'Artifact', 'Planeswalker', 'Instant', 'Sorcery', 'Land'];
-  return candidates.find(t => knownTypes.includes(t)) || candidates[0];
-};
+// --- Helper Functions moved to utils/cardUtils.js ---
 
-// Helper: Check if card is a creature (for layout/stacking)
-const isCreature = (c) => c.type_line && c.type_line.toLowerCase().includes('creature');
-
-// Helper: Check if card is a land (for layout/stacking)
-const isLand = (c) => c.type_line && c.type_line.toLowerCase().includes('land') && !isCreature(c);
-
-const createBattlefieldCard = (cardDef, extra = {}, context = {}) => {
-  const { cards = [], gameEngineRef = null } = context;
-  const type = getTypeFromTypeLine(cardDef.type_line);
-
-  // Check for local overrides in cardData
-  const localDef = cardData.find(c => c.name === cardDef.name);
-  const mergedDef = localDef ? { ...cardDef, ...localDef } : cardDef;
-
-  // Use the parser to get abilities and replacement effects dynamically
-  const parseDef = mergedDef._parsed ? { ...mergedDef, abilities: null } : mergedDef;
-  const { abilities, replacementEffects, entersWithCounters } = getCardAbilities(parseDef);
-
-  // Determine initial counters based on "Enters with X counters" keywords
-  let initialCounters = {};
-  if (entersWithCounters > 0 && gameEngineRef?.current) {
-    const modifiers = gameEngineRef.current.findReplacementEffects('add_counters', cards);
-    const finalCount = gameEngineRef.current.applyModifiers(entersWithCounters, modifiers, 'add_counters');
-    if (finalCount > 0) {
-      initialCounters = { '+1/+1': finalCount };
-    }
-  }
-
-  return {
-    id: Date.now() + Math.random(),
-    name: mergedDef.name,
-    type,
-    type_line: mergedDef.type_line,
-    power: mergedDef.power !== '' ? parseInt(mergedDef.power) || undefined : undefined,
-    toughness: mergedDef.toughness !== '' ? parseInt(mergedDef.toughness) || undefined : undefined,
-    oracle_text: mergedDef.oracle_text || '',
-    colors: mergedDef.colors || [],
-    art_crop: mergedDef.art_crop || '',
-    image_normal: mergedDef.image_normal || '',
-    counters: initialCounters, // Use calculated starting counters
-    tapped: false,
-    zone: 'battlefield', // Default zone
-    attachedTo: null, // ID of card this is attached to
-    abilities: abilities || [],
-    replacementEffects: replacementEffects || [],
-    ...extra,
-  };
-};
 
 
 
@@ -399,6 +346,43 @@ const App = () => {
     const targetCard = specificCard;
     if (!targetCard) return;
 
+    if (action === 'select') {
+      setSelectedCard(targetCard);
+      return;
+    }
+
+    if (action === 'transform') {
+      const newCards = cards.map(c => {
+        if (c.id === targetCard.id) {
+          const faces = c.card_faces || [];
+          if (faces.length < 2) return c;
+
+          // Calculate next face index
+          const currentIdx = c.activeFaceIndex !== undefined ? c.activeFaceIndex : 0;
+          const nextIdx = (currentIdx + 1) % faces.length;
+          const newFace = faces[nextIdx];
+
+          // Update top-level props to match new face for easier rendering
+          return {
+            ...c,
+            activeFaceIndex: nextIdx,
+            name: newFace.name,
+            type_line: newFace.type_line,
+            oracle_text: newFace.oracle_text,
+            power: newFace.power,
+            toughness: newFace.toughness,
+            // Only update art if the new face has its own art
+            art_crop: newFace.art_crop || c.art_crop,
+            image_normal: newFace.image_normal || c.image_normal
+          };
+        }
+        return c;
+      });
+      setCards(newCards);
+      logAction(`${targetCard.name} transformed.`);
+      return;
+    }
+
     // Handle trigger action - add ability to stack
     if (action === 'trigger') {
       let description = 'Triggered ability';
@@ -550,7 +534,12 @@ const App = () => {
           newCards = newCards.map(c => {
             if (c.id === targetCard.id) return null; // Delete target
             if (c.attachedTo === targetCard.id) {
-              // Detach attached cards
+              // Distinguish between Aura and Equipment
+              const isAura = c.type_line && c.type_line.toLowerCase().includes('aura');
+              if (isAura) {
+                return null; // Auras are removed when host leaves
+              }
+              // Equipment stays on battlefield
               return { ...c, attachedTo: null, zone: 'battlefield' };
             }
             return c;
@@ -678,6 +667,21 @@ const App = () => {
 
       // Create multiple cards if count > 1
       for (let i = 0; i < count; i++) {
+        // --- Aura Handling ---
+        const isAura = def.type_line && def.type_line.toLowerCase().includes('aura');
+        if (isAura) {
+          // Auras require targeting upon entry
+          const parsed = parseOracleText(def);
+          startTargetingMode({
+            action: 'enchant',
+            sourceId: null, // New card doesn't have an ID yet
+            data: { ...def, auraTarget: parsed.auraTarget },
+            mode: 'single'
+          });
+          logAction(`Cast ${def.name}, select a target...`);
+          return; // Stop processing for this card - targeting will finish it
+        }
+
         const newCard = createBattlefieldCard(def, {}, { cards: currentCards, gameEngineRef });
         currentCards = [...currentCards, newCard];
         addedCards.push(newCard);
@@ -1394,16 +1398,27 @@ const App = () => {
                 const targetType = targetingMode.data?.targetType || 'creature';
                 if (targetType.toLowerCase() === 'creature') {
                   // Robust creature check
-                  // For 'another_attacking_creature', also check if attacking
                   const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
-                  // If this is for a resolve-trigger with another_attacking_creature, check if attacking
+
+                  // For 'resolve-trigger', only require attacking if the ability target text says so
                   if (targetingMode.action === 'resolve-trigger') {
-                    return isCreature && c.attacking;
+                    const abilityTarget = targetingMode.data?.stackAbility?.triggerObj?.ability?.target || '';
+                    if (abilityTarget.includes('attacking')) {
+                      return isCreature && c.attacking;
+                    }
                   }
                   return isCreature;
                 }
                 // Add more types here as needed (e.g. 'permanent', 'artifact')
                 return true; // Default to allow if unsure
+              }
+              if (targetingMode.action === 'enchant') {
+                const auraTarget = targetingMode.data?.auraTarget;
+                if (!auraTarget || auraTarget.includes('permanent')) return true;
+                if (auraTarget.includes('creature')) return isCreature(c);
+                if (auraTarget.includes('land')) return isLand(c);
+                if (auraTarget.includes('planeswalker')) return c.type_line?.toLowerCase().includes('planeswalker');
+                return true;
               }
               if (targetingMode.action === 'remove-to-zone') {
                 return true;
@@ -1456,6 +1471,7 @@ const App = () => {
                 isValidTarget={false} // Disable old red ring, use isEligibleAttacker for Blue styling
                 isDragging={isDragging}
                 attachments={attachments}
+                allCards={cards}
                 selectedCount={targetingMode.active ? targetingMode.selectedIds.filter(id => group.cards.some(c => c.id === id)).length : 0}
                 onMouseDown={(e) => {
                   if (targetingMode.active) {
@@ -1508,6 +1524,7 @@ const App = () => {
       {/* Selected Card Panel */}
       <SelectedCardPanel
         card={selectedCard}
+        allCards={cards}
         onClose={() => setSelectedCard(null)}
         onActivateAbility={(card, ability) => {
           logAction(`Activated: ${ability.cost}`);

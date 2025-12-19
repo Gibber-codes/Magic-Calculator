@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Zap, Plus, Minus, Sparkles, Layers, ChevronDown, Shield } from 'lucide-react';
 import { extractActivatedAbilities } from '../utils/keywordParser';
 import { formatBigNumber } from '../utils/formatters';
+import { calculateCardStats } from '../utils/cardUtils';
 
 const SelectedCardPanel = ({
     card,
@@ -9,7 +10,8 @@ const SelectedCardPanel = ({
     onActivateAbility,
     onCounterChange,
     stackCount = 1,
-    stackCards = []
+    stackCards = [],
+    allCards = []
 }) => {
     // Local state for how many cards in the stack to modify
     const [modifyCount, setModifyCount] = useState(1);
@@ -35,18 +37,20 @@ const SelectedCardPanel = ({
     // Parse counters object
     const countersObj = typeof card.counters === 'number' ? { '+1/+1': card.counters } : (card.counters || {});
 
-    // Stats Breakdown
-    const basePower = parseInt(card.power) || 0;
-    const baseToughness = parseInt(card.toughness) || 0;
-    const plusOne = (countersObj['+1/+1'] || 0);
-    const minusOne = (countersObj['-1/-1'] || 0);
-    const counterPower = plusOne - minusOne;
-    const counterToughness = plusOne - minusOne;
-    const tempPower = parseInt(card.tempPowerBonus) || 0;
-    const tempToughness = parseInt(card.tempToughnessBonus) || 0;
-
-    const totalPower = basePower + counterPower + tempPower;
-    const totalToughness = baseToughness + counterToughness + tempToughness;
+    // Use centralized stats calculation
+    // Important: find the "live" version of the card in allCards to ensure we have latest state (counters, attachments)
+    const liveCard = allCards.find(c => c.id === card.id) || card;
+    const stats = calculateCardStats(liveCard, allCards);
+    const totalPower = stats.power;
+    const totalToughness = stats.toughness;
+    const basePower = stats.basePower;
+    const baseToughness = stats.baseToughness;
+    const counterPower = stats.counterPower;
+    const counterToughness = stats.counterToughness;
+    const tempPower = stats.tempPowerBonus;
+    const tempToughness = stats.tempToughnessBonus;
+    const dynamicPower = stats.dynamicPower;
+    const dynamicToughness = stats.dynamicToughness;
 
     // Determine current count of SELECTED type
     const currentSelectedCount = countersObj[selectedCounterType] || 0;
@@ -144,9 +148,9 @@ const SelectedCardPanel = ({
                                     <span>Base</span>
                                     <span className="font-mono opacity-70">{basePower}/{baseToughness}</span>
                                 </div>
-                                {(plusOne > 0 || minusOne > 0) && (
+                                {counterPower !== 0 && (
                                     <div className="flex justify-between text-blue-300">
-                                        <span>Counters ({plusOne > 0 ? `+${plusOne}` : ''}{minusOne > 0 ? ` / -${minusOne}` : ''})</span>
+                                        <span>Counters</span>
                                         <span className="font-mono">
                                             {counterPower >= 0 ? '+' : ''}{counterPower}/{counterToughness >= 0 ? '+' : ''}{counterToughness}
                                         </span>
@@ -157,6 +161,14 @@ const SelectedCardPanel = ({
                                         <span>Modifiers</span>
                                         <span className="font-mono">
                                             {tempPower >= 0 ? '+' : ''}{tempPower}/{tempToughness >= 0 ? '+' : ''}{tempToughness}
+                                        </span>
+                                    </div>
+                                )}
+                                {(dynamicPower !== 0 || dynamicToughness !== 0) && (
+                                    <div className="flex justify-between text-purple-300">
+                                        <span>Attachments</span>
+                                        <span className="font-mono">
+                                            {dynamicPower >= 0 ? '+' : ''}{dynamicPower}/{dynamicToughness >= 0 ? '+' : ''}{dynamicToughness}
                                         </span>
                                     </div>
                                 )}

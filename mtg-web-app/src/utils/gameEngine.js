@@ -2,6 +2,7 @@
  * MTG Game Engine
  * Handles phase management, triggered abilities, and replacement effects
  */
+import { calculateCardStats } from './cardUtils';
 
 export class GameEngine {
     constructor(cards) {
@@ -294,6 +295,7 @@ export class GameEngine {
      */
     resolveEffect(trigger) {
         const { source, ability } = trigger;
+        const engine = this;
 
         // We return an object that holds ability info and
         // an execute(cards) function that recomputes everything.
@@ -314,45 +316,47 @@ export class GameEngine {
              * Execute this trigger on a given cards array.
              * Returns { newCards, triggers }
              */
-            execute: (cards, knownCards = []) => {
-                const currentCards = cards || this.cards || [];
+            execute(cards, knownCards = []) {
+                const abilityToUse = this.ability || ability;
+                const currentCards = cards || engine.cards || [];
 
                 // Get the live source from the current board state
                 const liveSource =
                     currentCards.find(c => c.id === source.id) || source;
 
                 // Calculate base effect (e.g. X = this.power = base + counters)
-                const baseValue = this.calculateBaseValue(liveSource, ability);
+                const baseValue = engine.calculateBaseValue(liveSource, abilityToUse, currentCards);
 
                 // Determine targets from CURRENT board
                 // Skip automatic target finding for abilities that require manual targeting
-                const requiresManualTargeting = ability.target &&
-                    (ability.target.includes('another') || ability.target.includes('target')) &&
-                    !ability.targetIds;
+                const requiresManualTargeting = abilityToUse.target &&
+                    typeof abilityToUse.target === 'string' &&
+                    (abilityToUse.target.includes('another') || abilityToUse.target.includes('target')) &&
+                    !abilityToUse.targetIds;
 
                 const targets = requiresManualTargeting
                     ? [] // Don't auto-find targets; UI will prompt for selection
-                    : ability.targetIds
-                        ? currentCards.filter(c => ability.targetIds.includes(c.id))
-                        : this.findTargets(ability.target, currentCards, liveSource);
+                    : abilityToUse.targetIds
+                        ? currentCards.filter(c => abilityToUse.targetIds.includes(c.id))
+                        : engine.findTargets(abilityToUse.target, currentCards, liveSource);
 
                 // Check for replacement effects from CURRENT board
-                const modifiers = this.findReplacementEffects(
-                    ability.effect,
+                const modifiers = engine.findReplacementEffects(
+                    abilityToUse.effect,
                     currentCards
                 );
 
                 // Apply modifiers (Doubling Season, etc.)
-                const finalValue = this.applyModifiers(
+                const finalValue = engine.applyModifiers(
                     baseValue,
                     modifiers,
-                    ability.effect
+                    abilityToUse.effect
                 );
 
                 // Generate a fresh log
-                const log = this.generateLog(
+                const log = engine.generateLog(
                     liveSource,
-                    ability,
+                    abilityToUse,
                     baseValue,
                     finalValue,
                     modifiers,
@@ -360,19 +364,19 @@ export class GameEngine {
                 );
 
                 // Update the trigger object so UI can read accurate info
-                result.baseValue = baseValue;
-                result.finalValue = finalValue;
-                result.targets = targets;
-                result.modifiers = modifiers;
-                result.log = log;
+                this.baseValue = baseValue;
+                this.finalValue = finalValue;
+                this.targets = targets;
+                this.modifiers = modifiers;
+                this.log = log;
 
                 // Actually apply the effect
                 // executeEffect now returns { newCards, triggers }
                 // Pass sourceId so effects like create_related_token can find the source card
-                const executionResult = this.executeEffect(
+                const executionResult = engine.executeEffect(
                     currentCards,
                     targets,
-                    { ...ability, sourceId: liveSource.id },
+                    { ...abilityToUse, sourceId: liveSource.id },
                     finalValue,
                     knownCards
                 );
@@ -386,10 +390,10 @@ export class GameEngine {
 
     /**
      * Calculate the base value for an effect
-     * Handles "this.power" as basePower + +1/+1 counters
+     * Handles "this.power" as basePower + +1/+1 counters + dynamic buffs
      * Handles "equipped_creature.power" for equipment-granted abilities
      */
-    calculateBaseValue(source, ability) {
+    calculateBaseValue(source, ability, currentCards = this.cards) {
         const amount = ability.amount;
 
         // Handle equipment-granted abilities that reference equipped creature
@@ -399,17 +403,10 @@ export class GameEngine {
 
             if (!equippedCreature) return 1; // Fallback
 
-            // For power: printed power + +1/+1 counters + temporary buffs
+            // For power: printed power + +1/+1 counters + temporary buffs + attachments
             if (property === 'power') {
-                const basePower = parseInt(equippedCreature.power) || 0;
-
-                const countersObj = typeof equippedCreature.counters === 'number' ? { '+1/+1': equippedCreature.counters } : (equippedCreature.counters || {});
-                const plusOne = (countersObj['+1/+1'] || 0);
-                const minusOne = (countersObj['-1/-1'] || 0);
-                const counterNet = plusOne - minusOne;
-
-                const tempBonus = parseInt(equippedCreature.tempPowerBonus) || 0;
-                return Math.max(0, basePower + counterNet + tempBonus);
+                const stats = calculateCardStats(equippedCreature, currentCards);
+                return Math.max(0, stats.power);
             }
 
             const value = equippedCreature[property];
@@ -420,25 +417,17 @@ export class GameEngine {
         if (typeof amount === 'string' && amount.startsWith('this.')) {
             const property = amount.split('.')[1];
 
-            // For power: printed power + +1/+1 counters + temporary buffs
+            // For power: printed power + +1/+1 counters + temporary buffs + attachments
             if (property === 'power') {
-                const basePower = parseInt(source.power) || 0;
-
-                // Handle new object counters vs legacy number
-                const countersObj = typeof source.counters === 'number' ? { '+1/+1': source.counters } : (source.counters || {});
-                const plusOne = (countersObj['+1/+1'] || 0);
-                const minusOne = (countersObj['-1/-1'] || 0);
-                const counterNet = plusOne - minusOne;
-
-                const tempBonus = parseInt(source.tempPowerBonus) || 0;
-                return Math.max(0, basePower + counterNet + tempBonus); // Power can't be negative for "add X counters" usually, but technically negative power is possible. For Amount, we usually want floor 0.
+                const stats = calculateCardStats(source, currentCards);
+                return Math.max(0, stats.power);
             }
 
             const value = source[property];
             return parseInt(value) || 0;
         }
 
-        // Handle static numeric values
+        // Handle static numeric values or defaults
         if (amount === undefined) {
             // Defaults for specific effects without explicit amount
             if (ability.effect === 'orthion_copy_five') return 5;
@@ -474,10 +463,10 @@ export class GameEngine {
             case 'all_permanents_you_control':
                 return pool;
 
+            case 'another_target_creature_you_control':
             case 'target_creature_you_control':
-                // For now, treat as "all creatures you control";
-                // UI could eventually refine this to pick a single one.
-                return pool.filter(c => c.type === 'Creature');
+                // For now, treat as "all creatures you control" (UI handles picking)
+                return pool.filter(c => c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')));
 
             case 'creature':
                 // Used for "another target creature"
@@ -841,50 +830,127 @@ export class GameEngine {
             return { newCards, triggers: newTriggers };
         }
 
-        if (ability.effect === 'create_named_token') {
-            const tokenName = ability.tokenName || 'Token';
-            const amount = value || 1;
-            // Token definition logic
-            const tokenDefs = {
-                'Lander': { type: 'Token Artifact', type_line: 'Token Artifact', power: 0, toughness: 0, colors: [], art_crop: 'https://cards.scryfall.io/art_crop/front/8/5/85ef1950-219f-401b-8ff5-914f9aaec122.jpg?1752946491', image_normal: 'https://cards.scryfall.io/large/front/8/5/85ef1950-219f-401b-8ff5-914f9aaec122.jpg?1752946491' },
-                'Treasure': { type: 'Token Artifact — Treasure', type_line: 'Token Artifact — Treasure', power: 0, toughness: 0, colors: [] },
-                'Food': { type: 'Token Artifact — Food', type_line: 'Token Artifact — Food', power: 0, toughness: 0, colors: [] },
-                'Clue': { type: 'Token Artifact — Clue', type_line: 'Token Artifact — Clue', power: 0, toughness: 0, colors: [] }
-            };
+        const tokenDefs = {
+            'Lander': { type: 'Token Artifact', type_line: 'Token Artifact', power: 0, toughness: 0, colors: [], art_crop: 'https://cards.scryfall.io/art_crop/front/8/5/85ef1950-219f-401b-8ff5-914f9aaec122.jpg?1752946491', image_normal: 'https://cards.scryfall.io/large/front/8/5/85ef1950-219f-401b-8ff5-914f9aaec122.jpg?1752946491' },
+            'Treasure': { type: 'Token Artifact — Treasure', type_line: 'Token Artifact — Treasure', power: 0, toughness: 0, colors: [] },
+            'Food': { type: 'Token Artifact — Food', type_line: 'Token Artifact — Food', power: 0, toughness: 0, colors: [] },
+            'Clue': { type: 'Token Artifact — Clue', type_line: 'Token Artifact — Clue', power: 0, toughness: 0, colors: [] }
+        };
 
-            const sourceCard = targets[0];
-            const isMatch = (scryfallName, parsedName) => {
-                const s = scryfallName.toLowerCase();
-                const p = parsedName.toLowerCase();
-                return s === p || p.includes(s) || s.includes(p);
-            };
+        const isMatch = (scryfallName, parsedName) => {
+            if (!scryfallName || !parsedName) return false;
+            const s = scryfallName.toLowerCase();
+            const pValue = (typeof parsedName === 'function' ? parsedName() : parsedName).toLowerCase();
+
+            // Clean up name for fuzzy matching (e.g. "Virtuous Role" -> "virtuous")
+            const pWord = pValue.replace(' role', '').replace(' token', '').trim();
+
+            // 1. Direct match
+            if (s === pValue || s.includes(pValue) || pValue.includes(s)) return true;
+
+            // 2. Fuzzy word match (matches "monster // virtuous" if searching for "virtuous")
+            if (s.includes(pWord)) return true;
+
+            return false;
+        };
+
+        if (ability.effect === 'cleanup_existing_roles') {
+            const targetId = ability.target;
+            const cleanupResult = this.performRoleCleanup(newCards, targetId);
+            return { newCards: cleanupResult.newCards, triggers: newTriggers };
+        }
+
+        if (ability.effect === 'create_named_token' || ability.effect === 'create_attached_token') {
+            const tokenName = (typeof ability.tokenName === 'function' ? ability.tokenName() : ability.tokenName) || 'Token';
+            const amount = value || 1;
+            const target = targets[0]; // For attached tokens, this is the host
+
+            // Find the source card that triggered this
+            const sourceCard = newCards.find(c => c.id === ability.sourceId) ||
+                (ability.effect === 'create_named_token' ? targets[0] : null) ||
+                knownCards.find(c => c.relatedTokens && c.relatedTokens.length > 0);
+
+            // 1. Look for related token on the source card
             let relatedToken = sourceCard?.relatedTokens?.find(t => isMatch(t.name, tokenName));
+
+            // 2. Fallback: Search knownCards for any matching token
             if (!relatedToken && knownCards.length > 0) {
-                relatedToken = knownCards.find(c => (c.isToken || (c.type_line && c.type_line.includes('Token'))) && isMatch(c.name, tokenName));
+                relatedToken = knownCards.find(c =>
+                    (c.isToken || (c.type_line && c.type_line.includes('Token'))) &&
+                    isMatch(c.name, tokenName)
+                );
             }
 
             const hardcoded = tokenDefs[tokenName];
             const parsed = ability.tokenProps;
-            const type = relatedToken ? (relatedToken.type_line || 'Token') : (parsed?.type || hardcoded?.type || 'Token Creature');
+
+            // Merge metadata
+            const mergedType = relatedToken ? (relatedToken.type_line || 'Token') : (parsed?.type || hardcoded?.type || (ability.effect === 'create_attached_token' ? 'Enchantment' : 'Token Creature'));
             const power = relatedToken ? (parseInt(relatedToken.power) || 0) : (parsed?.power !== undefined ? parsed.power : (hardcoded?.power !== undefined ? hardcoded.power : 1));
             const toughness = relatedToken ? (parseInt(relatedToken.toughness) || 0) : (parsed?.toughness !== undefined ? parsed.toughness : (hardcoded?.toughness !== undefined ? hardcoded.toughness : 1));
             const colors = relatedToken ? (relatedToken.colors || []) : (parsed?.colors || hardcoded?.colors || []);
             const image = relatedToken ? relatedToken.image_normal : hardcoded?.image_normal;
             const art = relatedToken ? relatedToken.art_crop : hardcoded?.art_crop;
+            const oracle = relatedToken ? relatedToken.oracle_text : hardcoded?.oracle_text;
 
-            // Manual loop for sequential processing
-            for (let i = 0; i < amount; i++) {
-                let token;
+            const isAttached = ability.effect === 'create_attached_token';
+            let loopCount = amount;
+            let currentTargets = targets;
+
+            for (let i = 0; i < loopCount; i++) {
+                const target = currentTargets[i] || targets[0]; // fallback to targets[0] if not multi
+                let token = {
+                    id: Date.now() + i + Math.random(),
+                    name: (hardcoded?.name || tokenName),
+                    type: mergedType,
+                    type_line: mergedType,
+                    power,
+                    toughness,
+                    colors,
+                    oracle_text: oracle,
+                    counters: 0,
+                    isToken: true,
+                    tapped: false,
+                    zone: isAttached && target ? 'attached' : 'battlefield',
+                    attachedTo: isAttached && target ? target.id : null,
+                    image_normal: image,
+                    art_crop: art
+                };
+
+                // Use relatedToken data if available
                 if (relatedToken) {
-                    token = { ...relatedToken, id: Date.now() + i + Math.random(), isToken: true, tapped: false, counters: 0, zone: 'battlefield', attachedTo: null };
-                } else {
-                    token = { id: Date.now() + i + Math.random(), name: `${tokenName} Token`, type, type_line: type, power, toughness, colors, counters: 0, isToken: true, tapped: false, zone: 'battlefield', image_normal: image, art_crop: art };
+                    let activeFaceIndex = 0;
+                    if (relatedToken.card_faces) {
+                        const idx = relatedToken.card_faces.findIndex(f => isMatch(f.name, tokenName));
+                        if (idx !== -1) activeFaceIndex = idx;
+                    }
+
+                    token = {
+                        ...token,
+                        ...relatedToken,
+                        activeFaceIndex,
+                        id: token.id, // Keep generated ID
+                        zone: token.zone,
+                        attachedTo: token.attachedTo
+                    };
                 }
 
-                // Sequential Trigger Check
-                const triggers = this.findTokenEntryTriggers(newCards, [token]);
-                newTriggers.push(...triggers);
-                newCards.push(token);
+                if (token.type_line?.includes('Role') && token.attachedTo) {
+                    // Sequential Trigger Check
+                    const triggers = this.findTokenEntryTriggers([...this.cards, ...newCards], [token]);
+                    newTriggers.push(...triggers);
+                    newCards.push(token);
+
+                    // AUTOMATIC: Handle Role Rule (Clean up old roles immediately)
+                    // newCards is a parameter but we want to update the accumulated result for THIS effect
+                    const cleanupResult = this.performRoleCleanup(newCards, token.attachedTo);
+                    // Clean up old roles immediately and update the newCards array in place
+                    const finalCards = cleanupResult.newCards;
+                    newCards.length = 0;
+                    newCards.push(...finalCards);
+                } else {
+                    newCards.push(token);
+                }
             }
             return { newCards, triggers: newTriggers };
         }
@@ -1088,6 +1154,43 @@ export class GameEngine {
     }
 
     /**
+     * Helper to perform role cleanup (State-Based Action)
+     * When multiple Roles controlled by the same player are attached to the same creature,
+     * all but the newest one are put into the graveyard.
+     */
+    performRoleCleanup(cards, targetId) {
+        const newCards = [...cards];
+        const roles = newCards.filter(c =>
+            c.type_line && (c.type_line.includes('Role') || (c.name && c.name.includes('Role'))) &&
+            c.attachedTo === targetId &&
+            c.zone !== 'graveyard'
+        );
+
+        if (roles.length > 1) {
+            // Sort by ID (assume higher ID is newer)
+            roles.sort((a, b) => a.id - b.id);
+            const rolesToDestroy = roles.slice(0, roles.length - 1);
+            const idsToDestroy = rolesToDestroy.map(r => r.id);
+
+            return {
+                newCards: newCards.map(c => {
+                    if (idsToDestroy.includes(c.id)) {
+                        return {
+                            ...c,
+                            zone: 'graveyard',
+                            tapped: false,
+                            attachedTo: null
+                        };
+                    }
+                    return c;
+                })
+            };
+        }
+
+        return { newCards };
+    }
+
+    /**
      * Process a manual action (like adding a counter to a specific card)
      * (This part is basically unchanged from your original engine)
      */
@@ -1103,7 +1206,6 @@ export class GameEngine {
         };
 
         if (!targetCard) return result;
-
 
         if (action === 'counter-update') {
             const { type = '+1/+1', change = 1 } = targetCard; // extracted from payload passed as targetCard proxy

@@ -158,14 +158,39 @@ export async function fetchRelatedTokens(scryfallCard) {
                 if (!response.ok) continue;
 
                 const tokenData = await response.json();
-                const formatted = formatScryfallCard(tokenData);
 
-                // Mark explicitly as token (formatScryfallCard handles it usually but good to be sure)
-                formatted.isToken = true;
+                // Handle Double-Faced Tokens (like Roles or Modal Double-Faced Tokens) via splitting
+                // If it has card_faces that are distinct (have their own image_uris), treat them as separate tokens
+                if (tokenData.card_faces && tokenData.card_faces.length > 1 && tokenData.card_faces[0].image_uris) {
+                    tokenData.card_faces.forEach(face => {
+                        // Create a synthetic card object for the face
+                        const faceData = {
+                            ...tokenData,
+                            name: face.name,
+                            type_line: face.type_line,
+                            oracle_text: face.oracle_text,
+                            colors: face.colors || tokenData.colors,
+                            mana_cost: face.mana_cost,
+                            image_uris: face.image_uris,
+                            card_faces: undefined // Prevent recursion/confusion in formatScryfallCard
+                        };
 
-                // Add to list if not duplicate
-                if (!tokens.some(t => t.name === formatted.name)) {
-                    tokens.push(formatted);
+                        const formatted = formatScryfallCard(faceData);
+                        formatted.isToken = true;
+
+                        // Add to list if not duplicate
+                        if (!tokens.some(t => t.name === formatted.name)) {
+                            tokens.push(formatted);
+                        }
+                    });
+                } else {
+                    // Standard Single-Face Processing
+                    const formatted = formatScryfallCard(tokenData);
+                    formatted.isToken = true;
+
+                    if (!tokens.some(t => t.name === formatted.name)) {
+                        tokens.push(formatted);
+                    }
                 }
             } catch (e) {
                 console.warn('Failed to fetch token part:', part.name, e);

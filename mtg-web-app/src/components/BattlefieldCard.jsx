@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers } from 'lucide-react';
+import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers, Repeat } from 'lucide-react';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './RedesignedCardFrame';
+import { calculateCardStats } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
 import { useIsTouchDevice } from '../hooks/useTouchInteractions';
 
@@ -47,32 +48,28 @@ const BattlefieldCard = ({
     selectedCount = 0,
     stackCards = [],
     onStackSelectionChange,
-    isDragging = false
+    isDragging = false,
+    allCards = []
 }) => {
+    const stats = calculateCardStats(card, allCards, attachments);
     const colors = getCardHexColors(card.colors);
-    const basePower = parseInt(card.power) || 0;
-    const baseToughness = parseInt(card.toughness) || 0;
-    // Defensive check: Ensure counters is an object or number, strictly not a string
-    let countersObj = {};
-    if (typeof card.counters === 'number') {
-        countersObj = { '+1/+1': card.counters };
-    } else if (typeof card.counters === 'object' && card.counters !== null) {
-        countersObj = card.counters;
-    }
-    // If it was a string or garbage, it defaults to {}
 
-    const plusOne = (countersObj['+1/+1'] || 0);
-    const minusOne = (countersObj['-1/-1'] || 0);
-    // Net modification from counters
-    const counterPower = plusOne - minusOne;
-    const counterToughness = plusOne - minusOne;
+    // Extract counters for visual indicator
+    const countersObj = typeof card.counters === 'object' ? (card.counters || {}) : { '+1/+1': card.counters || 0 };
+    const plusOne = countersObj['+1/+1'] || 0;
 
-    const tempPowerBonus = parseInt(card.tempPowerBonus) || 0;
-    const tempToughnessBonus = parseInt(card.tempToughnessBonus) || 0;
-    const totalPower = basePower + counterPower + tempPowerBonus;
-    const totalToughness = baseToughness + counterToughness + tempToughnessBonus;
-    const isModified = Object.keys(countersObj).length > 0 && Object.values(countersObj).some(v => v > 0);
-    const isBuffed = tempPowerBonus > 0 || tempToughnessBonus > 0;
+    const totalPower = stats.power;
+    const totalToughness = stats.toughness;
+    const counterPower = stats.counterPower;
+    const counterToughness = stats.counterToughness;
+    const tempPowerBonus = stats.tempPowerBonus;
+    const tempToughnessBonus = stats.tempToughnessBonus;
+    const basePower = stats.basePower;
+    const baseToughness = stats.baseToughness;
+
+    // Local check for modified/buffed state for styling
+    const isModified = counterPower !== 0; // Simple check for counters
+    const isBuffed = tempPowerBonus > 0 || tempToughnessBonus > 0 || stats.dynamicPower > 0;
     // User requested to show the first part of type line (e.g. "Legendary Artifact" instead of "Equipment")
     let cardType = card.type_line ? card.type_line.split('—')[0]?.trim() || card.type_line : card.type;
 
@@ -135,6 +132,11 @@ const BattlefieldCard = ({
         // Equipment
         if (card.type_line?.includes('Equipment')) {
             actions.unshift({ id: 'equip', icon: Sword, label: 'Equip', color: 'bg-slate-600' });
+        }
+
+        // Transform/Flip for Double-faced cards
+        if (card.card_faces && card.card_faces.length > 1) {
+            actions.unshift({ id: 'transform', icon: Repeat, label: 'Transform', color: 'bg-indigo-600' });
         }
 
         return actions;
@@ -417,7 +419,7 @@ const BattlefieldCard = ({
                         <img
                             src={card.art_crop}
                             alt={card.name}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover object-top"
                         />
                     ) : null}
                 </ArtWindow>
