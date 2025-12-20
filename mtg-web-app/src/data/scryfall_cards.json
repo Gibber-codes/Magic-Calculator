@@ -1,5 +1,16 @@
 [
     {
+        "name": "Virtuous",
+        "type_line": "Token Enchantment — Aura Role",
+        "oracle_text": "Enchanted creature gets +1/+1 for each enchantment you control.",
+        "power": "",
+        "toughness": "",
+        "colors": [],
+        "mana_cost": "",
+        "art_crop": "https://cards.scryfall.io/art_crop/front/2/7/27927100-2587-4e05-9957-eb183d46c1f0.jpg?1675956918",
+        "image_normal": "https://cards.scryfall.io/normal/front/2/7/27927100-2587-4e05-9957-eb183d46c1f0.jpg?1675956918"
+    },
+    {
         "name": "Mondrak, Glory Dominus",
         "type_line": "Legendary Creature — Phyrexian Horror",
         "oracle_text": "If one or more tokens would be created under your control, twice that many of those tokens are created instead.\n{1}{W/P}{W/P}, Sacrifice two other artifacts and/or creatures: Put an indestructible counter on Mondrak. ({W/P} can be paid with either {W} or 2 life.)",

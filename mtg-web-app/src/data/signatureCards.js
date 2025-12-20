@@ -10,7 +10,7 @@ export const SIGNATURE_DATA = {
             {
                 trigger: 'on_enter_battlefield',
                 effect: 'create_attached_token',
-                tokenName: 'Virtuous Role',
+                tokenName: 'Virtuous',
                 target: 'another_creature_you_control',
                 amount: 1,
                 description: 'create a Virtuous Role token attached to another target creature you control'
@@ -18,44 +18,11 @@ export const SIGNATURE_DATA = {
             {
                 trigger: 'on_attack',
                 effect: 'create_attached_token',
-                tokenName: 'Virtuous Role',
+                tokenName: 'Virtuous',
                 target: 'another_creature_you_control',
                 amount: 1,
                 description: 'create a Virtuous Role token attached to another target creature you control'
             }
         ]
-    },
-    'Virtuous Role': {
-        name: 'Virtuous Role',
-        type: 'Token Enchantment — Aura Role',
-        type_line: 'Token Enchantment — Aura Role',
-        oracle_text: 'Enchanted creature gets +1/+1 for each enchantment you control.',
-        isToken: true,
-        isRole: true,
-        isAura: true,
-        auraTarget: 'creature',
-        // metadata for engine to calculate buffs
-        special_buff: 'enchantment_count'
-    },
-    'Monster': {
-        name: 'Monster',
-        type: 'Token Enchantment — Aura Role',
-        type_line: 'Token Enchantment — Aura Role',
-        oracle_text: 'Enchanted creature gets +1/+1 and has trample.',
-        isToken: true,
-        isRole: true,
-        isAura: true,
-        auraTarget: 'creature'
-    },
-    'Virtuous': {
-        name: 'Virtuous',
-        type: 'Token Enchantment — Aura Role',
-        type_line: 'Token Enchantment — Aura Role',
-        oracle_text: 'Enchanted creature gets +1/+1 for each enchantment you control.',
-        isToken: true,
-        isRole: true,
-        isAura: true,
-        auraTarget: 'creature',
-        special_buff: 'enchantment_count'
     }
 };

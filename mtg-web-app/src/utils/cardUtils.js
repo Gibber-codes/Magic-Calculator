@@ -50,17 +50,41 @@ export const createBattlefieldCard = (cardDef, extra = {}, context = {}) => {
         }
     }
 
+    // Prepare Active Face Data
+    let finalName = mergedDef.name;
+    let finalTypeLine = mergedDef.type_line;
+    let finalPower = mergedDef.power;
+    let finalToughness = mergedDef.toughness;
+    let finalOracle = mergedDef.oracle_text;
+    let finalArt = mergedDef.art_crop;
+    let finalImage = mergedDef.image_normal;
+    let finalColors = mergedDef.colors;
+
+    if (mergedDef.card_faces && mergedDef.card_faces[activeFaceIndex]) {
+        const face = mergedDef.card_faces[activeFaceIndex];
+        finalName = face.name;
+        finalTypeLine = face.type_line;
+        finalPower = face.power;
+        finalToughness = face.toughness;
+        finalOracle = face.oracle_text;
+        finalArt = face.art_crop || finalArt; // Fallback to card art if face has none
+        finalImage = face.image_normal || finalImage;
+        finalColors = face.colors || finalColors;
+    }
+
+    const finalType = getTypeFromTypeLine(finalTypeLine);
+
     return {
         id: Date.now() + Math.random(),
-        name: mergedDef.name,
-        type,
-        type_line: mergedDef.type_line,
-        power: mergedDef.power !== '' ? parseInt(mergedDef.power) || undefined : undefined,
-        toughness: mergedDef.toughness !== '' ? parseInt(mergedDef.toughness) || undefined : undefined,
-        oracle_text: mergedDef.oracle_text || '',
-        colors: mergedDef.colors || [],
-        art_crop: mergedDef.art_crop || '',
-        image_normal: mergedDef.image_normal || '',
+        name: finalName,
+        type: finalType,
+        type_line: finalTypeLine,
+        power: finalPower !== '' ? parseInt(finalPower) || undefined : undefined,
+        toughness: finalToughness !== '' ? parseInt(finalToughness) || undefined : undefined,
+        oracle_text: finalOracle || '',
+        colors: finalColors || [],
+        art_crop: finalArt || '',
+        image_normal: finalImage || '',
         counters: initialCounters, // Use calculated starting counters
         tapped: false,
         zone: 'battlefield', // Default zone

@@ -3,6 +3,7 @@
  * Handles phase management, triggered abilities, and replacement effects
  */
 import { calculateCardStats } from './cardUtils';
+import localCardData from '../data/scryfall_cards.json';
 
 export class GameEngine {
     constructor(cards) {
@@ -870,10 +871,17 @@ export class GameEngine {
                 (ability.effect === 'create_named_token' ? targets[0] : null) ||
                 knownCards.find(c => c.relatedTokens && c.relatedTokens.length > 0);
 
-            // 1. Look for related token on the source card
-            let relatedToken = sourceCard?.relatedTokens?.find(t => isMatch(t.name, tokenName));
 
-            // 2. Fallback: Search knownCards for any matching token
+            // 1. Priority: Search local scryfall_cards.json for manual overrides
+            // This allows the user to define "Virtuous" exactly how they want it, bypassing split cards
+            let relatedToken = localCardData.find(c => isMatch(c.name, tokenName));
+
+            // 2. Look for related token on the source card
+            if (!relatedToken) {
+                relatedToken = sourceCard?.relatedTokens?.find(t => isMatch(t.name, tokenName));
+            }
+
+            // 3. Fallback: Search knownCards for any matching token
             if (!relatedToken && knownCards.length > 0) {
                 relatedToken = knownCards.find(c =>
                     (c.isToken || (c.type_line && c.type_line.includes('Token'))) &&
@@ -885,9 +893,10 @@ export class GameEngine {
             const parsed = ability.tokenProps;
 
             // Merge metadata
+            // If relatedToken (from local JSON or scryfall) is found, use its type/stats
             const mergedType = relatedToken ? (relatedToken.type_line || 'Token') : (parsed?.type || hardcoded?.type || (ability.effect === 'create_attached_token' ? 'Enchantment' : 'Token Creature'));
-            const power = relatedToken ? (parseInt(relatedToken.power) || 0) : (parsed?.power !== undefined ? parsed.power : (hardcoded?.power !== undefined ? hardcoded.power : 1));
-            const toughness = relatedToken ? (parseInt(relatedToken.toughness) || 0) : (parsed?.toughness !== undefined ? parsed.toughness : (hardcoded?.toughness !== undefined ? hardcoded.toughness : 1));
+            const power = relatedToken ? (relatedToken.power !== '' ? parseInt(relatedToken.power) : (hardcoded?.power !== undefined ? hardcoded.power : 1)) : (parsed?.power !== undefined ? parsed.power : (hardcoded?.power !== undefined ? hardcoded.power : 1));
+            const toughness = relatedToken ? (relatedToken.toughness !== '' ? parseInt(relatedToken.toughness) : (hardcoded?.toughness !== undefined ? hardcoded.toughness : 1)) : (parsed?.toughness !== undefined ? parsed.toughness : (hardcoded?.toughness !== undefined ? hardcoded.toughness : 1));
             const colors = relatedToken ? (relatedToken.colors || []) : (parsed?.colors || hardcoded?.colors || []);
             const image = relatedToken ? relatedToken.image_normal : hardcoded?.image_normal;
             const art = relatedToken ? relatedToken.art_crop : hardcoded?.art_crop;
@@ -920,14 +929,31 @@ export class GameEngine {
                 // Use relatedToken data if available
                 if (relatedToken) {
                     let activeFaceIndex = 0;
+                    let faceData = {};
+
                     if (relatedToken.card_faces) {
                         const idx = relatedToken.card_faces.findIndex(f => isMatch(f.name, tokenName));
-                        if (idx !== -1) activeFaceIndex = idx;
+                        if (idx !== -1) {
+                            activeFaceIndex = idx;
+                            const face = relatedToken.card_faces[idx];
+                            // Capture face data to overwrite top-level props
+                            faceData = {
+                                name: face.name,
+                                type_line: face.type_line,
+                                oracle_text: face.oracle_text,
+                                power: face.power,
+                                toughness: face.toughness,
+                                art_crop: face.art_crop || relatedToken.art_crop,
+                                image_normal: face.image_normal || relatedToken.image_normal,
+                                colors: face.colors || relatedToken.colors
+                            };
+                        }
                     }
 
                     token = {
                         ...token,
                         ...relatedToken,
+                        ...faceData, // Overwrite with specific face data
                         activeFaceIndex,
                         id: token.id, // Keep generated ID
                         zone: token.zone,

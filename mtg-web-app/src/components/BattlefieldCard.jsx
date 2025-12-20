@@ -322,73 +322,89 @@ const BattlefieldCard = ({
                             }}
                             onMouseLeave={() => setHoveredAttachmentId(null)}
                         >
-                            {/* Unequip Action Button (Circular Overlay - Left Edge) */}
-                            {hoveredAttachmentId === att.id && (
-                                <div className="absolute left-0 top-0 z-50 pt-2 -translate-x-1/2">
-                                    <button
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            onAction && onAction('unequip-self', att);
-                                        }}
-                                        className="bg-slate-600 w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110"
-                                        title="Unequip"
-                                    >
-                                        <Minus size={16} className="text-white drop-shadow-sm" />
-                                        {/* Tooltip - Left side */}
-                                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
-                                            Unequip
-                                        </span>
-                                    </button>
-                                </div>
-                            )}
+                            {/* Derive display name and face index */}
+                            {(() => {
+                                const attActiveIdx = att.activeFaceIndex !== undefined ? att.activeFaceIndex : 0;
+                                const attFaces = att.card_faces || [];
+                                const attDisplayFace = attFaces[attActiveIdx] || att;
+                                const attDisplayName = attDisplayFace.name || att.name;
+                                const isAttBackFace = attActiveIdx === 1;
 
-                            {/* Container for Banner + Art components */}
-                            <div
-                                className="flex flex-col items-center cursor-pointer"
-                                onMouseDown={(e) => {
-                                    if (!isEligibleAttacker) {
-                                        e.stopPropagation(); // Prevent creature's onMouseDown from firing unless attacking
-                                    }
-                                }}
-                                onClick={(e) => {
-                                    if (isEligibleAttacker) return; // Allow bubble to creature for attacking
-                                    e.stopPropagation();
-                                    onAction && onAction('select', att);
-                                }}
-                            >
-                                {/* Top Banner (Name) */}
-                                <div className="relative z-10" style={{ marginBottom: -4 }}>
-                                    <TopBanner
-                                        width={CARD_WIDTH}
-                                        height={28}
-                                        borderColor={attColors.borderColor}
-                                        fillColor={attColors.fillColor}
-                                    >
-                                        <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'black' }}>
-                                            <Sword size={10} className="opacity-50" />
-                                            {att.name}
+                                return (
+                                    <>
+                                        {/* Unequip Action Button (Circular Overlay - Left Edge) */}
+                                        {hoveredAttachmentId === att.id && (
+                                            <div className="absolute left-0 top-0 z-50 pt-2 -translate-x-1/2">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        onAction && onAction('unequip-self', att);
+                                                    }}
+                                                    className="bg-slate-600 w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110"
+                                                    title="Unequip"
+                                                >
+                                                    <Minus size={16} className="text-white drop-shadow-sm" />
+                                                    {/* Tooltip - Left side */}
+                                                    <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
+                                                        Unequip
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* Container for Banner + Art components */}
+                                        <div
+                                            className="flex flex-col items-center cursor-pointer"
+                                            onMouseDown={(e) => {
+                                                if (!isEligibleAttacker) {
+                                                    e.stopPropagation(); // Prevent creature's onMouseDown from firing unless attacking
+                                                }
+                                            }}
+                                            onClick={(e) => {
+                                                if (isEligibleAttacker) return; // Allow bubble to creature for attacking
+                                                e.stopPropagation();
+                                                onAction && onAction('select', att);
+                                            }}
+                                        >
+                                            {/* Top Banner (Name) */}
+                                            <div className="relative z-10" style={{ marginBottom: -4 }}>
+                                                <TopBanner
+                                                    width={CARD_WIDTH}
+                                                    height={28}
+                                                    borderColor={attColors.borderColor}
+                                                    fillColor={attColors.fillColor}
+                                                >
+                                                    <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'black' }}>
+                                                        <Sword size={10} className="opacity-50" />
+                                                        {attDisplayName}
+                                                    </div>
+                                                </TopBanner>
+                                            </div>
+
+                                            {/* Art Window */}
+                                            <div className="relative z-0">
+                                                <ArtWindow
+                                                    width={CARD_WIDTH}
+                                                    height={100}
+                                                    borderColor={attColors.borderColor}
+                                                >
+                                                    {att.art_crop ? (
+                                                        <img
+                                                            src={att.art_crop}
+                                                            alt={attDisplayName}
+                                                            className="w-full h-full object-cover"
+                                                            style={{
+                                                                objectPosition: isAttBackFace ? '100% 15%' : '0% 15%'
+                                                            }}
+                                                        />
+                                                    ) : null}
+                                                </ArtWindow>
+                                            </div>
                                         </div>
-                                    </TopBanner>
-                                </div>
-
-                                {/* Art Window */}
-                                <div className="relative z-0">
-                                    <ArtWindow
-                                        width={CARD_WIDTH}
-                                        height={100}
-                                        borderColor={attColors.borderColor}
-                                    >
-                                        {att.art_crop ? (
-                                            <img
-                                                src={att.art_crop}
-                                                alt={att.name}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : null}
-                                    </ArtWindow>
-                                </div>
-                            </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     );
                 })}
@@ -403,7 +419,12 @@ const BattlefieldCard = ({
                     fillColor={colors.fillColor}
                 >
                     <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: 'black' }}>
-                        {card.name}
+                        {/* Derive display name locally just in case */}
+                        {(() => {
+                            const activeIdx = card.activeFaceIndex !== undefined ? card.activeFaceIndex : 0;
+                            const face = (card.card_faces || [])[activeIdx] || card;
+                            return face.name || card.name;
+                        })()}
                     </div>
                 </TopBanner>
             </div>
@@ -419,7 +440,10 @@ const BattlefieldCard = ({
                         <img
                             src={card.art_crop}
                             alt={card.name}
-                            className="w-full h-full object-cover object-top"
+                            className="w-full h-full object-cover"
+                            style={{
+                                objectPosition: (card.activeFaceIndex === 1) ? '100% 15%' : '0% 15%'
+                            }}
                         />
                     ) : null}
                 </ArtWindow>
