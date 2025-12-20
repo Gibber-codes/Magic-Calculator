@@ -17,7 +17,7 @@ import { SIGNATURE_DATA } from './data/signatureCards';
 import TriggeredAbilityStack from './components/TriggeredAbilityStack';
 import AddCardPanel from './components/AddCardPanel';
 import HistoryPanel from './components/HistoryPanel';
-import SelectedCardPanel from './components/SelectedCardPanel';
+
 
 
 import PhaseTracker from './components/PhaseTracker';
@@ -1025,6 +1025,8 @@ const App = () => {
       if (activePanel !== 'add') {
         setActivePanel(null);
       }
+      // Stop Selecting card when clicking anywhere else
+      setSelectedCard(null);
     }
   };
 
@@ -1034,23 +1036,25 @@ const App = () => {
     <div
       className="w-full h-screen bg-slate-900 flex flex-col overflow-hidden select-none relative"
     >
-      {/* Floating Header Controls */}
-      <div className="absolute top-0 right-0 p-4 pt-[env(safe-area-inset-top)] z-50 pointer-events-none">
-        <div className="flex gap-2 pointer-events-auto">
-          <button
-            onClick={() => setActivePanel(activePanel === 'history' ? null : 'history')}
-            className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'history' ? 'bg-amber-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
-          >
-            <History size={16} /> History
-          </button>
-          <button
-            onClick={() => setActivePanel(activePanel === 'add' ? null : 'add')}
-            className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'add' ? 'bg-blue-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
-          >
-            <Plus size={16} /> Add
-          </button>
+      {/* Floating Header Controls - Hidden when a card is selected */}
+      {!selectedCard && (
+        <div className="absolute top-0 right-0 p-4 pt-[env(safe-area-inset-top)] z-50 pointer-events-none">
+          <div className="flex gap-2 pointer-events-auto">
+            <button
+              onClick={() => setActivePanel(activePanel === 'history' ? null : 'history')}
+              className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'history' ? 'bg-amber-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
+            >
+              <History size={16} /> History
+            </button>
+            <button
+              onClick={() => setActivePanel(activePanel === 'add' ? null : 'add')}
+              className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'add' ? 'bg-blue-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
+            >
+              <Plus size={16} /> Add
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
 
       {/* Targeting Mode Cancel Banner */}
@@ -1071,16 +1075,19 @@ const App = () => {
       }
 
       {/* Triggered Ability Stack - Right side overlay */}
-      <TriggeredAbilityStack
-        items={abilityStack}
-        onResolve={handleResolveWithTargeting}
-        onRemove={removeFromStack}
-        onResolveAll={resolveAllStack}
-        onClear={clearStack}
-        onReorder={setAbilityStack}
-        isCollapsed={isStackCollapsed}
-        onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
-      />
+      {/* Triggered Ability Stack - Hidden when a card is selected */}
+      {!selectedCard && (
+        <TriggeredAbilityStack
+          items={abilityStack}
+          onResolve={handleResolveWithTargeting}
+          onRemove={removeFromStack}
+          onResolveAll={resolveAllStack}
+          onClear={clearStack}
+          onReorder={setAbilityStack}
+          isCollapsed={isStackCollapsed}
+          onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
+        />
+      )}
 
       {/* Battlefield */}
       <div
@@ -1413,15 +1420,29 @@ const App = () => {
 
 
 
-        {/* Unified Card Rendering with Stacking */}
+        {/* Focus Backdrop - Dims battlefield when a card is selected */}
+        {selectedCard && (
+          <div
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-40 transition-all duration-500 animate-in fade-in"
+            onClick={() => setSelectedCard(null)}
+          />
+        )}
         {
           visibleStacks.map(group => {
             const card = group.leader;
+            const isSelected = selectedCard?.id === card.id;
             const pos = cardPositions[card.id];
 
-            // Use leader's position - fallback to center if missing
-            const x = pos ? pos.x : 100;
-            const y = pos ? pos.y : 100;
+            // Focus Mode: Bring to center and enlarge
+            let x = pos ? pos.x : 100;
+            let y = pos ? pos.y : 100;
+
+            if (isSelected && !isDragging) {
+              const containerWidth = window.innerWidth;
+              const containerHeight = window.innerHeight;
+              x = (containerWidth / 2) - (CARD_WIDTH / 2);
+              y = (containerHeight / 2) - (CARD_HEIGHT / 2) - 40; // Slightly higher to account for controls below
+            }
 
             // Targeting Logic
             // Unified Eligibility Check
@@ -1544,6 +1565,31 @@ const App = () => {
                   handleCardAction(action, cardVal, deleteCount);
                 }}
                 onStackSelectionChange={updateStackSelection}
+                onActivateAbility={(card, ability) => {
+                  logAction(`Activated: ${ability.cost}`);
+                  handleActivateAbility(card, ability);
+                }}
+                onConvertLand={handleLandConversion}
+                onCounterChange={(action, cardsToModify, count) => {
+                  if (!gameEngineRef.current) return;
+
+                  let updatedCards = [...cards];
+                  cardsToModify.forEach(cardToModify => {
+                    const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
+                    updatedCards = result.newCards;
+                  });
+
+                  const actionLabel = action === 'counter+' ? 'Added +1/+1 counter to' : 'Removed +1/+1 counter from';
+                  logAction(`${actionLabel} ${count} ${selectedCard?.name || 'creature'}(s)`);
+                  saveHistoryState(updatedCards);
+
+                  if (selectedCard) {
+                    const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
+                    if (updatedSelectedCard) {
+                      setSelectedCard(updatedSelectedCard);
+                    }
+                  }
+                }}
               />
             );
           })
@@ -1551,64 +1597,26 @@ const App = () => {
       </div>
 
       {/* Info / Navigation Panel - Floating Bottom Pill */}
-      <PhaseTracker
-        isVisible={!activePanel}
-        currentPhase={currentPhase}
-        currentCombatStep={currentCombatStep}
-        phaseInfo={PHASE_INFO}
-        onPhaseChange={handlePhaseChange}
-        onAdvancePhase={advancePhase}
-        onAdvanceCombatStep={advanceCombatStep}
-        onEndTurn={endTurn}
-        isAttackerStep={targetingMode.active && targetingMode.action === 'declare-attackers'}
-        onToggleSelectAll={handleToggleSelectAll}
-        onConfirmAttackers={handleConfirmAttackers}
-      />
+      {/* Info / Navigation Panel - Hidden when a card is selected */}
+      {!selectedCard && (
+        <PhaseTracker
+          isVisible={!activePanel}
+          currentPhase={currentPhase}
+          currentCombatStep={currentCombatStep}
+          phaseInfo={PHASE_INFO}
+          onPhaseChange={handlePhaseChange}
+          onAdvancePhase={advancePhase}
+          onAdvanceCombatStep={advanceCombatStep}
+          onEndTurn={endTurn}
+          isAttackerStep={targetingMode.active && targetingMode.action === 'declare-attackers'}
+          onToggleSelectAll={handleToggleSelectAll}
+          onConfirmAttackers={handleConfirmAttackers}
+        />
+      )}
 
       {/* --- Overlays & Panels --- */}
 
       {/* Selected Card Panel */}
-      <SelectedCardPanel
-        card={selectedCard}
-        allCards={cards}
-        onClose={() => setSelectedCard(null)}
-        onActivateAbility={(card, ability) => {
-          logAction(`Activated: ${ability.cost}`);
-          handleActivateAbility(card, ability);
-        }}
-        onConvertLand={handleLandConversion}
-        stackCount={(() => {
-          if (!selectedCard) return 1;
-          const stack = visibleStacks.find(s => s.cards.some(c => c.id === selectedCard.id));
-          return stack ? stack.count : 1;
-        })()}
-        stackCards={(() => {
-          if (!selectedCard) return [];
-          const stack = visibleStacks.find(s => s.cards.some(c => c.id === selectedCard.id));
-          return stack ? stack.cards : [selectedCard];
-        })()}
-        onCounterChange={(action, cardsToModify, count) => {
-          if (!gameEngineRef.current) return;
-
-          let updatedCards = [...cards];
-          cardsToModify.forEach(cardToModify => {
-            const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
-            updatedCards = result.newCards;
-          });
-
-          const actionLabel = action === 'counter+' ? 'Added +1/+1 counter to' : 'Removed +1/+1 counter from';
-          logAction(`${actionLabel} ${count} ${selectedCard?.name || 'creature'}(s)`);
-          saveHistoryState(updatedCards);
-
-          // Update selectedCard to reflect the new counter value
-          if (selectedCard) {
-            const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
-            if (updatedSelectedCard) {
-              setSelectedCard(updatedSelectedCard);
-            }
-          }
-        }}
-      />
 
       {/* Add Card Panel */}
       <AddCardPanel

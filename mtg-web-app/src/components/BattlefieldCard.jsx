@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
-import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers, Repeat } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers, Repeat, Maximize2, Zap } from 'lucide-react';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './RedesignedCardFrame';
 import { calculateCardStats, isPlaceholderLand, isBasicLand, isMinimalDisplayLand, BASIC_LAND_COLORS } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
 import { useIsTouchDevice } from '../hooks/useTouchInteractions';
+import SelectedCardControls from './SelectedCardControls';
+import { extractActivatedAbilities } from '../utils/keywordParser';
 
 // Constants
 const CARD_WIDTH = 140;
@@ -46,10 +49,14 @@ const BattlefieldCard = ({
     attachments = [],
     count = 1,
     selectedCount = 0,
+
     stackCards = [],
     onStackSelectionChange,
     isDragging = false,
-    allCards = []
+    allCards = [],
+    onActivateAbility,
+    onCounterChange,
+    onConvertLand
 }) => {
     const stats = calculateCardStats(card, allCards, attachments);
     const colors = getCardHexColors(card.colors);
@@ -92,6 +99,44 @@ const BattlefieldCard = ({
     // Local delete count for stacks (how many to delete when clicking delete button)
     const [deleteCount, setDeleteCount] = useState(1);
 
+    // Overlay State (Long Press)
+    const [showOverlay, setShowOverlay] = useState(false);
+    const longPressTimerRef = useRef(null);
+    const isLongPressingRef = useRef(false);
+
+    const handlePointerDown = (e) => {
+        // Only trigger on selected cards
+        if (!isSelected) return;
+
+        // Don't trigger if right click
+        if (e.button === 2) return;
+
+        isLongPressingRef.current = false;
+        longPressTimerRef.current = setTimeout(() => {
+            isLongPressingRef.current = true;
+            setShowOverlay(true);
+        }, 500); // 500ms hold time
+    };
+
+    const handlePointerUp = () => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+        }
+        // Small delay to clear flag so click handlers don't fire if it WAS a long press
+        setTimeout(() => {
+            isLongPressingRef.current = false;
+        }, 50);
+
+        setShowOverlay(false);
+    };
+
+    const handlePointerMove = () => {
+        // Cancel if moved significantly (though simple clear on move is safer for strictly static holds)
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+        }
+    };
+
     // Sync deleteCount with count for default selection (select all by default)
     React.useEffect(() => {
         if (count > 1) {
@@ -113,16 +158,43 @@ const BattlefieldCard = ({
 
     // Is this a stack that should show selection UI?
     const isStack = count > 1;
-    const showStackUI = isHovered && isStack;
-    const showActionButtons = isHovered;
+    const showStackUI = false; // Hover effect removed as requested
+    const showActionButtons = false; // Hover effect removed as requested
 
     // Determine what count to display in the indicator
     // If in targeting mode (attacker declaration), use selectedCount
     // Otherwise, use deleteCount for general stack operations
     const displayCount = isEligibleAttacker || isDeclaredAttacker ? selectedCount : deleteCount;
 
-    // Define actions based on Card Type
     const getHoverActions = () => {
+        // IF SELECTED: Return abilities too, so we can render them on the side
+        if (isSelected) {
+            const abilities = (card.abilities && card.abilities.length > 0)
+                ? card.abilities
+                : extractActivatedAbilities(card.oracle_text);
+
+            const abilityActions = abilities.map((ability, idx) => ({
+                id: `ability-${idx}`,
+                icon: Zap,
+                label: ability.cost,
+                color: 'bg-indigo-600',
+                ability: ability
+            }));
+
+            const coreActions = [
+                { id: 'tap', icon: RotateCcw, label: 'Tap/Untap', color: 'bg-slate-700' },
+                { id: 'delete', icon: Trash2, label: 'Remove', color: 'bg-red-600' }
+            ];
+
+            if (card.type_line?.includes('Equipment')) {
+                coreActions.unshift({ id: 'equip', icon: Sword, label: 'Equip', color: 'bg-slate-600' });
+            }
+            if (card.card_faces && card.card_faces.length > 1) {
+                coreActions.unshift({ id: 'transform', icon: Repeat, label: 'Transform', color: 'bg-indigo-600' });
+            }
+
+            return [...abilityActions, ...coreActions];
+        }
 
         const actions = [
             { id: 'delete', icon: Trash2, label: 'Remove', color: 'bg-red-600' },
@@ -142,8 +214,16 @@ const BattlefieldCard = ({
         return actions;
     };
 
-    const handleActionClick = (e, actionId) => {
+    const handleActionClick = (e, action) => {
         e.stopPropagation(); // Prevent card selection
+
+        const actionId = action.id || action;
+
+        // Special handling for activated abilities
+        if (action.ability) {
+            onActivateAbility && onActivateAbility(card, action.ability);
+            return;
+        }
 
         // For all actions on stacks, pass the count
         if (isStack) {
@@ -282,7 +362,7 @@ const BattlefieldCard = ({
     const cardGlowClass = isSource
         ? 'shadow-[0_0_25px_rgba(59,130,246,1)] scale-105 z-40 animate-pulse'
         : isValidTarget || isDeclaredAttacker ? 'shadow-[0_0_25px_rgba(220,38,38,1)] scale-105 z-40'
-            : isSelected ? 'shadow-[0_0_25px_rgba(34,197,94,1)] scale-105 z-40'
+            : isSelected ? 'shadow-[0_0_40px_rgba(34,197,94,0.8)] scale-[1.3] z-[60]'
                 : isEligibleAttacker ? 'shadow-[0_0_20px_rgba(59,130,246,1)] z-40'
                     : '';
 
@@ -299,204 +379,152 @@ const BattlefieldCard = ({
                 top: y,
                 touchAction: 'none'
             }}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+            onPointerMove={handlePointerMove}
             onMouseDown={(e) => {
-                if (!isTouch) {
+                if (!isTouch && !isLongPressingRef.current) {
+                    e.stopPropagation();
                     onMouseDown(e, card);
                 }
             }}
             {...(isTouch
                 ? {
                     // Touch: first tap shows buttons, second tap opens info panel
+                    // Touch: Immediate selection (no more hover/first-tap logic)
                     onClick: (e) => {
-                        // Handle Targeting Mode or Selection (Immediate Action)
-                        if (isTargeting || isEligibleAttacker || isDeclaredAttacker) {
-                            e.stopPropagation();
-                            onMouseDown(e, card);
-                            return;
-                        }
-
-                        // Handle Normal Mode
-                        if (canHover()) {
-                            e.stopPropagation();
-                            if (isHovered) {
-                                // Already showing buttons - trigger select via onMouseDown
-                                onMouseDown(e, card);
-                            } else {
-                                // First tap - show action buttons
-                                setIsHovered(true);
-                            }
-                        }
+                        if (isLongPressingRef.current) return;
+                        e.stopPropagation();
+                        onMouseDown(e, card);
                     }
                 }
                 : {
-                    // Desktop: hover to show menu
-                    onMouseEnter: () => {
-                        if (canHover()) {
-                            setIsHovered(true);
-                        }
-                    },
-                    onMouseLeave: () => setIsHovered(false)
+                    // Desktop: now click-to-select only (hover effect removed)
                 }
             )}
         >
             {/* Targeting Visuals - Background highlights if needed, but shadows are now on container */}
             {/* Keeping relative wrapper for content */}
-            <div className="w-full flex flex-col items-center rounded-xl overflow-hidden relative">
 
-                {/* Attached Equipment Banners - Stacked Above */}
-                <div className="absolute bottom-full left-0 w-full flex flex-col-reverse items-center z-20 pointer-events-auto transition-all duration-300 ease-out"
-                    style={{
-                        marginBottom: -98,
-                    }}
-                    onMouseMove={(e) => {
-                        // Coordinate-Based Detection with Z-Awareness
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const offsetFromBottom = rect.bottom - e.clientY;
+            {/* MAIN CARD CONTENT (Standard Frame) - Glow wraps attachments + card */}
+            <div className={`relative flex flex-col items-center rounded-xl transition-all duration-300 w-full ${isSelected && !isDragging && !isTargeting && !isDeclaredAttacker ? 'shadow-[0_0_25px_rgba(34,197,94,0.6)]' : ''}`}
+                style={{
+                    paddingTop: attachments.length > 0 ? `${attachments.length * 28}px` : 0 // Space for attachments at top
+                }}
+            >
 
-                        // Card Layout Constants
-                        const VISIBLE_STRIP = 28;
-                        const CARD_HEIGHT = 124;
+                {/* Attached Equipment Banners - Positioned at top of container */}
+                {attachments.length > 0 && (
+                    <div className="absolute top-0 left-0 w-full flex flex-col items-center z-20 pointer-events-auto transition-all duration-300 ease-out"
+                        onMouseMove={(e) => {
+                            // Coordinate-Based Detection with Z-Awareness
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const offsetFromTop = e.clientY - rect.top;
 
-                        // Find the front-most card (lowest index) that contains the mouse
-                        let hitIndex = -1;
+                            // Card Layout Constants
+                            const BANNER_HEIGHT = 28;
 
-                        for (let i = 0; i < attachments.length; i++) {
-                            const itemBottom = i * VISIBLE_STRIP;
-                            const itemTop = itemBottom + CARD_HEIGHT;
+                            // Find which banner is hovered
+                            let hitIndex = -1;
 
-                            if (offsetFromBottom >= itemBottom && offsetFromBottom <= itemTop) {
-                                hitIndex = i;
-                                break;
+                            for (let i = 0; i < attachments.length; i++) {
+                                const itemTop = i * BANNER_HEIGHT;
+                                const itemBottom = itemTop + BANNER_HEIGHT;
+
+                                if (offsetFromTop >= itemTop && offsetFromTop <= itemBottom) {
+                                    hitIndex = i;
+                                    break;
+                                }
                             }
-                        }
 
-                        // Fallback to last item if we are way above
-                        if (hitIndex === -1 && attachments.length > 0) {
-                            const maxTop = (attachments.length - 1) * VISIBLE_STRIP + CARD_HEIGHT;
-                            if (offsetFromBottom > maxTop) hitIndex = attachments.length - 1;
-                        }
+                            if (hitIndex !== -1) {
+                                setHoveredAttachmentId(attachments[hitIndex].id);
+                                setIsEquipmentHovered(true);
+                            }
+                        }}
+                        onMouseLeave={() => {
+                            setIsEquipmentHovered(false);
+                            setHoveredAttachmentId(null);
+                        }}
+                    >
+                        {attachments.map((att, index) => {
+                            const attColors = getCardHexColors(att.colors);
+                            const hoveredIndex = attachments.findIndex(a => a.id === hoveredAttachmentId);
+                            const shouldLift = hoveredIndex !== -1 && index >= hoveredIndex;
+                            const baseTransform = index * 1;
+                            const activeLift = shouldLift ? (baseTransform - 2) : baseTransform;
 
-                        if (hitIndex !== -1) {
-                            setHoveredAttachmentId(attachments[hitIndex].id);
-                            setIsEquipmentHovered(true);
-                        }
-                    }}
-                    onMouseLeave={() => {
-                        setIsEquipmentHovered(false);
-                        setHoveredAttachmentId(null);
-                    }}
-                >
-                    {attachments.map((att, index) => {
-                        const attColors = getCardHexColors(att.colors);
+                            return (
+                                <div key={att.id}
+                                    className="relative transition-all duration-300 ease-out flex flex-col items-center pointer-events-auto w-full"
+                                    style={{
+                                        zIndex: attachments.length - index,
+                                        transform: `translateY(${activeLift}px)`,
+                                    }}
+                                    onMouseLeave={() => setHoveredAttachmentId(null)}
+                                >
+                                    {(() => {
+                                        const attActiveIdx = att.activeFaceIndex !== undefined ? att.activeFaceIndex : 0;
+                                        const attFaces = att.card_faces || [];
+                                        const attDisplayFace = attFaces[attActiveIdx] || att;
+                                        const attDisplayName = attDisplayFace.name || att.name;
 
-                        // Calculate Hovered Index
-                        const hoveredIndex = attachments.findIndex(a => a.id === hoveredAttachmentId);
+                                        return (
+                                            <>
+                                                {hoveredAttachmentId === att.id && (
+                                                    <div className="absolute left-0 top-0 z-50 pt-2 -translate-x-1/2">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                onAction && onAction('unequip-self', att);
+                                                            }}
+                                                            className="bg-slate-600 w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110"
+                                                            title="Unequip"
+                                                        >
+                                                            <Minus size={16} className="text-white drop-shadow-sm" />
+                                                            <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
+                                                                Unequip
+                                                            </span>
+                                                        </button>
+                                                    </div>
+                                                )}
 
-                        // Cascade Lift Logic
-                        const shouldLift = hoveredIndex !== -1 && index >= hoveredIndex;
-
-                        // Fixed tight stack spread
-                        const fixedSpread = -96;
-
-                        // Lift logic
-                        const baseTransform = index * 2;
-                        const activeLift = shouldLift ? (baseTransform - 18) : baseTransform;
-
-                        return (
-                            <div key={att.id}
-                                className="relative transition-all duration-300 ease-out flex flex-col items-center pointer-events-auto"
-                                style={{
-                                    zIndex: attachments.length - index,
-                                    marginTop: index === attachments.length - 1 ? 0 : fixedSpread,
-                                    transform: `translateY(${activeLift}px)`,
-                                }}
-                                onMouseLeave={() => setHoveredAttachmentId(null)}
-                            >
-                                {/* Derive display name and face index */}
-                                {(() => {
-                                    const attActiveIdx = att.activeFaceIndex !== undefined ? att.activeFaceIndex : 0;
-                                    const attFaces = att.card_faces || [];
-                                    const attDisplayFace = attFaces[attActiveIdx] || att;
-                                    const attDisplayName = attDisplayFace.name || att.name;
-                                    const isAttBackFace = attActiveIdx === 1;
-
-                                    return (
-                                        <>
-                                            {/* Unequip Action Button (Circular Overlay - Left Edge) */}
-                                            {hoveredAttachmentId === att.id && (
-                                                <div className="absolute left-0 top-0 z-50 pt-2 -translate-x-1/2">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
+                                                <div
+                                                    className="flex flex-col items-center cursor-pointer transition-all duration-300"
+                                                    onMouseDown={(e) => {
+                                                        if (!isEligibleAttacker) {
                                                             e.stopPropagation();
-                                                            onAction && onAction('unequip-self', att);
-                                                        }}
-                                                        className="bg-slate-600 w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110"
-                                                        title="Unequip"
-                                                    >
-                                                        <Minus size={16} className="text-white drop-shadow-sm" />
-                                                        {/* Tooltip - Left side */}
-                                                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
-                                                            Unequip
-                                                        </span>
-                                                    </button>
+                                                        }
+                                                    }}
+                                                    onClick={(e) => {
+                                                        if (isEligibleAttacker) return;
+                                                        e.stopPropagation();
+                                                        onAction && onAction('select', att);
+                                                    }}
+                                                >
+                                                    <div className="relative z-10">
+                                                        <TopBanner
+                                                            width={CARD_WIDTH}
+                                                            height={24}
+                                                            colorIdentity={attColors.fillColor}
+                                                        >
+                                                            <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'white' }}>
+                                                                <Sword size={10} className="opacity-50" />
+                                                                {attDisplayName}
+                                                            </div>
+                                                        </TopBanner>
+                                                    </div>
                                                 </div>
-                                            )}
-
-                                            {/* Container for Banner + Art components */}
-                                            <div
-                                                className="flex flex-col items-center cursor-pointer"
-                                                onMouseDown={(e) => {
-                                                    if (!isEligibleAttacker) {
-                                                        e.stopPropagation(); // Prevent creature's onMouseDown from firing unless attacking
-                                                    }
-                                                }}
-                                                onClick={(e) => {
-                                                    if (isEligibleAttacker) return; // Allow bubble to creature for attacking
-                                                    e.stopPropagation();
-                                                    onAction && onAction('select', att);
-                                                }}
-                                            >
-                                                {/* Top Banner (Name) */}
-                                                <div className="relative z-10" style={{ marginBottom: -4 }}>
-                                                    <TopBanner
-                                                        width={CARD_WIDTH}
-                                                        height={28}
-                                                        colorIdentity={attColors.fillColor}
-                                                    >
-                                                        <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'black' }}>
-                                                            <Sword size={10} className="opacity-50" />
-                                                            {attDisplayName}
-                                                        </div>
-                                                    </TopBanner>
-                                                </div>
-
-                                                {/* Art Window */}
-                                                <div className="relative z-0">
-                                                    <ArtWindow
-                                                        width={CARD_WIDTH}
-                                                        height={100}
-                                                    >
-                                                        {att.art_crop ? (
-                                                            <img
-                                                                src={att.art_crop}
-                                                                alt={attDisplayName}
-                                                                className="w-full h-full object-cover"
-                                                                style={{
-                                                                    objectPosition: isAttBackFace ? '100% 15%' : '0% 15%'
-                                                                }}
-                                                            />
-                                                        ) : null}
-                                                    </ArtWindow>
-                                                </div>
-                                            </div>
-                                        </>
-                                    );
-                                })()}
-                            </div>
-                        );
-                    })}
-                </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* Top Banner - Name */}
                 <div className="z-30 relative" style={{ marginBottom: -4 }}>
@@ -506,7 +534,6 @@ const BattlefieldCard = ({
                         colorIdentity={colors.fillColor}
                     >
                         <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: '#ffffff' }}>
-                            {/* Derive display name locally just in case */}
                             {(() => {
                                 const activeIdx = card.activeFaceIndex !== undefined ? card.activeFaceIndex : 0;
                                 const face = (card.card_faces || [])[activeIdx] || card;
@@ -537,16 +564,13 @@ const BattlefieldCard = ({
                     {/* Counter Indicator Overlay on Art (Generic) */}
                     {isModified && card.type === 'Creature' && (
                         <div className="absolute top-2 left-2 flex flex-col gap-1 items-start z-20">
-                            {/* Show +1/+1 separately if present */}
                             {plusOne > 0 &&
                                 <div className="bg-green-600 rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border border-green-800">
                                     <span className="text-white text-[10px] font-bold">+{formatBigNumber(plusOne)}</span>
                                 </div>
                             }
-                            {/* Show generic counter count for others (simplified) */}
                             {Object.entries(countersObj).map(([type, val]) => {
                                 if (type === '+1/+1' || val <= 0) return null;
-                                // Icon mappings or Short text could go here. For now: generic purple bubble
                                 const isBad = type === '-1/-1';
                                 return (
                                     <div key={type} className={`${isBad ? 'bg-red-800 border-red-900' : 'bg-purple-600 border-purple-800'} rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border`}>
@@ -593,6 +617,49 @@ const BattlefieldCard = ({
                         )}
                     </BottomBanner>
                 </div>
+
+                {/* EXTENDED SELECTION CONTROLS (Embedded below card when selected) */}
+                {isSelected && !isDragging && !isTargeting && !isDeclaredAttacker && (
+                    <>
+                        {/* Bottom: Extended Controls (Embedded) */}
+                        <div className="w-full z-10 -mt-1">
+                            <SelectedCardControls
+                                card={card}
+                                stackCount={count}
+                                stackCards={stackCards}
+                                allCards={allCards}
+                                onActivateAbility={onActivateAbility}
+                                onCounterChange={onCounterChange}
+                                onConvertLand={onConvertLand}
+                                onAction={onAction}
+                                isTouch={isTouch}
+                            />
+                        </div>
+
+                        {/* Left Side: Hanging Actions */}
+                        <div className="absolute top-4 left-0 -translate-x-2/3 flex flex-col gap-2 z-[60]">
+                            {getHoverActions().map((action, index) => (
+                                <button
+                                    key={action.id}
+                                    onClick={(e) => handleActionClick(e, action)}
+                                    className={`${action.color} w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110 active:scale-95 touch-target`}
+                                    title={action.label}
+                                    style={{
+                                        transitionDelay: `${index * 50}ms`
+                                    }}
+                                >
+                                    <action.icon size={16} className="text-white drop-shadow-sm" />
+                                    {!isTouch && (
+                                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
+                                            {action.label}
+                                        </span>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    </>
+                )}
+
             </div>
 
             {/* Tapped Indicator */}
@@ -605,15 +672,17 @@ const BattlefieldCard = ({
             }
 
             {/* Touch backdrop - tap outside to close menu */}
-            {isTouch && showActionButtons && (
-                <div
-                    className="fixed inset-0 z-10"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setIsHovered(false);
-                    }}
-                />
-            )}
+            {
+                isTouch && showActionButtons && (
+                    <div
+                        className="fixed inset-0 z-10"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsHovered(false);
+                        }}
+                    />
+                )
+            }
 
             {/* Action Buttons (shown when hovering/tapped - left side) */}
             {
@@ -672,7 +741,22 @@ const BattlefieldCard = ({
                     </div>
                 )
             }
-        </div>
+            {/* Long Press Overlay */}
+            {
+                showOverlay && createPortal(
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-none">
+                        <div className="relative w-[90vw] h-[90vh] flex items-center justify-center p-4">
+                            <img
+                                src={card.image_normal}
+                                alt={card.name}
+                                className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] transform scale-100 transition-transform duration-300"
+                            />
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
+        </div >
     );
 };
 
