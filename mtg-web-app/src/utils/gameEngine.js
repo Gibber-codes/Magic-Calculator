@@ -4,6 +4,7 @@
  */
 import { calculateCardStats } from './cardUtils';
 import localCardData from '../data/scryfall_cards.json';
+import { SIGNATURE_DATA } from '../data/signatureCards';
 
 export class GameEngine {
     constructor(cards) {
@@ -843,14 +844,20 @@ export class GameEngine {
             const s = scryfallName.toLowerCase();
             const pValue = (typeof parsedName === 'function' ? parsedName() : parsedName).toLowerCase();
 
-            // Clean up name for fuzzy matching (e.g. "Virtuous Role" -> "virtuous")
+            // Clean up parsed name (e.g. "Virtuous Role" -> "virtuous")
             const pWord = pValue.replace(' role', '').replace(' token', '').trim();
 
-            // 1. Direct match
+            // 1. Direct/substring match
             if (s === pValue || s.includes(pValue) || pValue.includes(s)) return true;
 
-            // 2. Fuzzy word match (matches "monster // virtuous" if searching for "virtuous")
+            // 2. Fuzzy word match
             if (s.includes(pWord)) return true;
+
+            // 3. DFC face matching: "Monster // Virtuous" should match "Virtuous"
+            if (s.includes('//')) {
+                const faces = s.split('//').map(f => f.trim());
+                if (faces.some(face => face === pWord || face.includes(pWord))) return true;
+            }
 
             return false;
         };
@@ -887,6 +894,26 @@ export class GameEngine {
                     (c.isToken || (c.type_line && c.type_line.includes('Token'))) &&
                     isMatch(c.name, tokenName)
                 );
+            }
+
+            // 4. Fallback: Use SIGNATURE_DATA for known tokens (Virtuous Role, Monster Role, etc.)
+            if (!relatedToken) {
+                const signatureToken = SIGNATURE_DATA[tokenName] || SIGNATURE_DATA[tokenName.replace(' Role', '')];
+                if (signatureToken) {
+                    relatedToken = {
+                        name: signatureToken.name,
+                        type_line: signatureToken.type_line || signatureToken.type,
+                        oracle_text: signatureToken.oracle_text,
+                        isToken: true,
+                        isRole: signatureToken.isRole,
+                        colors: [],
+                        power: 0,
+                        toughness: 0,
+                        // Provide defaults for anything else so it behaves like a "real" card
+                        art_crop: signatureToken.art_crop || '',
+                        image_normal: signatureToken.image_normal || ''
+                    };
+                }
             }
 
             const hardcoded = tokenDefs[tokenName];

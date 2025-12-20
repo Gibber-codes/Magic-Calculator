@@ -159,26 +159,34 @@ export async function fetchRelatedTokens(scryfallCard) {
 
                 const tokenData = await response.json();
 
-                // Handle Double-Faced Tokens (like Roles or Modal Double-Faced Tokens) via splitting
-                // If it has card_faces that are distinct (have their own image_uris), treat them as separate tokens
-                if (tokenData.card_faces && tokenData.card_faces.length > 1 && tokenData.card_faces[0].image_uris) {
+                // Handle Double-Faced Tokens (like Roles)
+                // Split into separate token entries even if faces share images
+                if (tokenData.card_faces && tokenData.card_faces.length > 1) {
                     tokenData.card_faces.forEach(face => {
-                        // Create a synthetic card object for the face
+                        // Create a synthetic card object for each face
                         const faceData = {
                             ...tokenData,
                             name: face.name,
-                            type_line: face.type_line,
+                            type_line: face.type_line || tokenData.type_line,
                             oracle_text: face.oracle_text,
                             colors: face.colors || tokenData.colors,
                             mana_cost: face.mana_cost,
-                            image_uris: face.image_uris,
-                            card_faces: undefined // Prevent recursion/confusion in formatScryfallCard
+                            power: face.power,
+                            toughness: face.toughness,
+                            // Use face-specific image_uris if available, otherwise fall back to parent
+                            image_uris: face.image_uris || tokenData.image_uris,
+                            // Clear card_faces to prevent recursion/confusion downstream
+                            card_faces: undefined
                         };
 
                         const formatted = formatScryfallCard(faceData);
                         formatted.isToken = true;
+                        formatted.isRole = (face.type_line || '').includes('Role');
 
-                        // Add to list if not duplicate
+                        // Store original DFC name for reference (e.g., "Monster // Virtuous")
+                        formatted.originalDfcName = tokenData.name;
+
+                        // Add to list if not duplicate by name
                         if (!tokens.some(t => t.name === formatted.name)) {
                             tokens.push(formatted);
                         }
