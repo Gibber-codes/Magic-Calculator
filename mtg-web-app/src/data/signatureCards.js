@@ -42,5 +42,55 @@ export const SIGNATURE_DATA = {
         isRole: true,
         power: 0,
         toughness: 0
+    },
+    // Basic Lands - minimal display, no abilities
+    'Forest': {
+        name: 'Forest',
+        type: 'Land',
+        type_line: 'Basic Land — Forest',
+        oracle_text: '{T}: Add {G}.',
+        colors: ['G'],
+        isBasicLand: true
+    },
+    'Island': {
+        name: 'Island',
+        type: 'Land',
+        type_line: 'Basic Land — Island',
+        oracle_text: '{T}: Add {U}.',
+        colors: ['U'],
+        isBasicLand: true
+    },
+    'Mountain': {
+        name: 'Mountain',
+        type: 'Land',
+        type_line: 'Basic Land — Mountain',
+        oracle_text: '{T}: Add {R}.',
+        colors: ['R'],
+        isBasicLand: true
+    },
+    'Plains': {
+        name: 'Plains',
+        type: 'Land',
+        type_line: 'Basic Land — Plains',
+        oracle_text: '{T}: Add {W}.',
+        colors: ['W'],
+        isBasicLand: true
+    },
+    'Swamp': {
+        name: 'Swamp',
+        type: 'Land',
+        type_line: 'Basic Land — Swamp',
+        oracle_text: '{T}: Add {B}.',
+        colors: ['B'],
+        isBasicLand: true
+    },
+    // Placeholder Land
+    'Land': {
+        name: 'Land',
+        type: 'Land',
+        type_line: 'Land',
+        oracle_text: '',
+        colors: [],
+        isPlaceholderLand: true
     }
 };

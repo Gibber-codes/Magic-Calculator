@@ -259,3 +259,39 @@ export const calculateCardStats = (card, allCards = [], externalAttachments = nu
         dynamicToughness
     };
 };
+
+// Land type constants
+export const BASIC_LAND_NAMES = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'];
+
+export const BASIC_LAND_COLORS = {
+    'Forest': { colors: ['G'], borderColor: '#15803d', fillColor: '#22c55e', textColor: 'black' },
+    'Island': { colors: ['U'], borderColor: '#2563eb', fillColor: '#60a5fa', textColor: 'black' },
+    'Mountain': { colors: ['R'], borderColor: '#b91c1c', fillColor: '#ef4444', textColor: 'black' },
+    'Plains': { colors: ['W'], borderColor: '#d4d4d8', fillColor: '#fef9c3', textColor: 'black' },
+    'Swamp': { colors: ['B'], borderColor: '#1f2937', fillColor: '#4b5563', textColor: 'black' },
+};
+
+export const PLACEHOLDER_LAND = {
+    name: 'Land',
+    type: 'Land',
+    type_line: 'Land',
+    isPlaceholderLand: true,
+    colors: [],
+    // Grey colors
+    borderColor: '#6b7280',
+    fillColor: '#374151',
+    textColor: 'black'
+};
+
+export const isPlaceholderLand = (card) => {
+    return card?.isPlaceholderLand === true || card?.name === 'Land';
+};
+
+export const isBasicLand = (card) => {
+    if (!card?.name) return false;
+    return BASIC_LAND_NAMES.includes(card.name);
+};
+
+export const isMinimalDisplayLand = (card) => {
+    return isPlaceholderLand(card) || isBasicLand(card);
+};

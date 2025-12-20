@@ -141,6 +141,21 @@ const AddCardPanel = ({
                     </div>
                 ) : (
                     <div className="space-y-4">
+                        {/* Quick Add Land */}
+                        <button
+                            onClick={() => onAddCard({
+                                name: 'Land',
+                                type: 'Land',
+                                type_line: 'Land',
+                                isPlaceholderLand: true,
+                                colors: []
+                            })}
+                            className="w-full py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold transition-all flex items-center justify-center gap-2 border border-slate-600"
+                        >
+                            <Plus size={18} className="text-gray-400" />
+                            <span>Add Placeholder Land</span>
+                        </button>
+
                         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Recent / Common</h3>
                         <div className="grid grid-cols-2 gap-2">
                             {recentCards.map((c, i) => {

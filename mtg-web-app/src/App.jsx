@@ -11,8 +11,9 @@ import GameEngine from './utils/gameEngine';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './components/RedesignedCardFrame';
 import { formatBigNumber } from './utils/formatters';
 import { getCardAbilities, extractActivatedAbilities, extractEffects, parseOracleText } from './utils/keywordParser';
-import { getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard } from './utils/cardUtils';
+import { getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard, isPlaceholderLand, isMinimalDisplayLand, BASIC_LAND_COLORS } from './utils/cardUtils';
 import { searchScryfall, getScryfallCard, formatScryfallCard, fetchRelatedTokens } from './utils/scryfallService';
+import { SIGNATURE_DATA } from './data/signatureCards';
 import TriggeredAbilityStack from './components/TriggeredAbilityStack';
 import AddCardPanel from './components/AddCardPanel';
 import HistoryPanel from './components/HistoryPanel';
@@ -217,9 +218,13 @@ const App = () => {
     // Creatures: Up by 1 spread
     // Others: Center
     // Lands: Down by 1 spread
+    // Dynamic Row Offsets
+    // Creatures: Up by 1 spread
+    // Others: Center
+    // Lands: Down by fixed amount (tight gap) to account for minimal display height
     const creatureRowY = centerY - spread;
     const othersRowY = centerY;
-    const landsRowY = centerY + spread;
+    const landsRowY = centerY + 215; // Tight gap (Others bottom at +100, Land top at +115)
 
     const positions = {};
 
@@ -229,9 +234,10 @@ const App = () => {
 
     // Note: isCreature and isLand are now available in module scope
 
-    const lands = visibleStacks.filter(g => isLand(g.leader));
+    const lands = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
     const creatures = visibleStacks.filter(g => isCreature(g.leader));
-    const others = visibleStacks.filter(g => !isLand(g.leader) && !isCreature(g.leader));
+    // Others now includes Non-Basic Lands (Complex Lands)
+    const others = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
 
     // Helper to position a row of cards
     const layoutRow = (items, yPos, xOffset = 0) => {
@@ -341,6 +347,46 @@ const App = () => {
   };
 
   // --- End Actions ---
+
+  // Land Conversion Handler
+  const handleLandConversion = (landType, count) => {
+    if (!selectedCard || !isPlaceholderLand(selectedCard)) return;
+
+    const stack = visibleStacks.find(s => s.cards.some(c => c.id === selectedCard.id));
+    if (!stack) return;
+
+    const landsToConvert = stack.cards.slice(0, count);
+    const landsToKeep = stack.cards.slice(count);
+
+    const newLands = landsToConvert.map((oldLand) => {
+      const landDef = SIGNATURE_DATA[landType] || {
+        name: landType,
+        type: 'Land',
+        type_line: `Basic Land — ${landType}`,
+        colors: BASIC_LAND_COLORS[landType]?.colors || []
+      };
+
+      return createBattlefieldCard({
+        ...landDef,
+        isBasicLand: true
+      }, {}, { cards, gameEngineRef });
+    });
+
+    setCards(current => {
+      const withoutConverted = current.filter(c => !landsToConvert.some(l => l.id === c.id));
+      return [...withoutConverted, ...newLands];
+    });
+
+    if (landsToKeep.length === 0) {
+      setSelectedCard(newLands[0] || null);
+    } else {
+      // Keep selection on remaining placeholder
+      setSelectedCard(landsToKeep[0]);
+    }
+
+    logAction(`Converted ${count} Land → ${landType}`);
+    saveHistoryState([...cards.filter(c => !landsToConvert.some(l => l.id === c.id)), ...newLands]);
+  };
 
   const handleCardAction = (action, specificCard = null, deleteCount = 1) => {
     const targetCard = specificCard;
@@ -688,6 +734,7 @@ const App = () => {
 
         // Process ETB Triggers for each card
         if (gameEngineRef.current) {
+          gameEngineRef.current.updateBattlefield(currentCards); // Ensure engine has latest state
           const etbTriggers = gameEngineRef.current.processEntersBattlefield(newCard);
           etbTriggers.forEach(t => {
             let description = t.ability.description;
@@ -1076,8 +1123,8 @@ const App = () => {
           let rowCards = [];
 
           if (rowType === 'creatures') rowCards = visibleStacks.filter(g => isCreature(g.leader));
-          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isLand(g.leader));
-          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isLand(g.leader));
+          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
+          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
 
           const rowCount = rowCards.length;
           const rowWidth = rowCount * CARD_WIDTH + (rowCount - 1) * CARD_GAP;
@@ -1173,7 +1220,7 @@ const App = () => {
               // Row baseline Y positions
               const creatureBaseY = centerY - spread;
               const othersBaseY = centerY;
-              const landsBaseY = centerY + spread;
+              const landsBaseY = centerY + 215;
 
               // Target position: Center-to-Center align
               const TARGET_CENTER_Y = centerY;
@@ -1214,7 +1261,7 @@ const App = () => {
 
           const creatureRowY = centerY - spread;
           const othersRowY = centerY;
-          const landsRowY = centerY + spread;
+          const landsRowY = centerY + 215;
 
           const creatureCenterY = creatureRowY + verticalOffsetY;
           const othersCenterY = othersRowY + verticalOffsetY;
@@ -1234,8 +1281,8 @@ const App = () => {
           let rowCards = [];
 
           if (rowType === 'creatures') rowCards = visibleStacks.filter(g => isCreature(g.leader));
-          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isLand(g.leader));
-          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isLand(g.leader));
+          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
+          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
 
           const rowCount = rowCards.length;
           const rowWidth = rowCount * CARD_WIDTH + (rowCount - 1) * CARD_GAP;
@@ -1461,14 +1508,13 @@ const App = () => {
                 stackCards={group.cards}
                 isSelected={selectedCard?.id === card.id}
                 isTargeting={targetingMode.active && targetingMode.mode === 'single'}
-                isEligibleAttacker={isCardEligible(card)}
+                isEligibleAttacker={targetingMode.active && isCardEligible(card)} // Blue glow for ANY potential target
                 isDeclaredAttacker={
                   targetingMode.active &&
                   targetingMode.selectedIds?.includes(card.id)
                 }
                 isSource={isSource}
-
-                isValidTarget={false} // Disable old red ring, use isEligibleAttacker for Blue styling
+                isValidTarget={false} // Use isDeclaredAttacker for red selections now
                 isDragging={isDragging}
                 attachments={attachments}
                 allCards={cards}
@@ -1530,6 +1576,7 @@ const App = () => {
           logAction(`Activated: ${ability.cost}`);
           handleActivateAbility(card, ability);
         }}
+        onConvertLand={handleLandConversion}
         stackCount={(() => {
           if (!selectedCard) return 1;
           const stack = visibleStacks.find(s => s.cards.some(c => c.id === selectedCard.id));

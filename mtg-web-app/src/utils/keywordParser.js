@@ -60,9 +60,9 @@ export const TRIGGER_PATTERNS = [
         trigger: 'on_token_enter_battlefield',
         target: 'self'
     },
-    // Landfall (Mossborn Hydra)
+    // Landfall (Mossborn Hydra / Lotus Cobra)
     {
-        pattern: /Whenever a land you control enters/i,
+        pattern: /Whenever a land (?:you control enters|enters the battlefield under your control)/i,
         trigger: 'on_land_enter_battlefield',
         target: 'self'
     },
@@ -103,12 +103,28 @@ export const EFFECT_PATTERNS = [
         amount: 'this.power',
         target: 'all_creatures_you_control'
     },
-    // Add counters to self (Wildwood Mentor)
+    // Add counters to self (Wildwood Mentor / Mossborn Hydra variations)
     {
-        pattern: /put a \+1\/\+1 counter on this creature/i,
+        pattern: /put (?:a|one|two|three|X) \+1\/\+1 counters? on (?:this creature|it)/i,
         effect: 'add_counters',
-        amount: 1,
+        parseAmount: (match) => {
+            const val = match[1].toLowerCase();
+            const map = { 'a': 1, 'one': 1, 'two': 2, 'three': 3 };
+            if (val === 'x') return 'this.power'; // Heuristic
+            return map[val] || parseInt(val) || 1;
+        },
         target: 'self'
+    },
+    // Add counters to target
+    {
+        pattern: /put (?:a|one|two|three) \+1\/\+1 counters? on target creature/i,
+        effect: 'add_counters',
+        parseAmount: (match) => {
+            const val = match[1].toLowerCase();
+            const map = { 'a': 1, 'one': 1, 'two': 2, 'three': 3 };
+            return map[val] || parseInt(val) || 1;
+        },
+        target: 'target_creature'
     },
     // Double counters on self (Mossborn Hydra)
     {
@@ -116,12 +132,22 @@ export const EFFECT_PATTERNS = [
         effect: 'double_counters',
         target: 'self'
     },
-    // Wildwood Mentor attack trigger - give +X/+X to another attacking creature
+    // Buff creature (generic gets +X/+X)
     {
-        pattern: /another target attacking creature gets \+X\/\+X.*where X is this creature's power/i,
+        pattern: /(.*) (?:gets|gain\(s\)) \+([X\d]+)\/\+([X\d]+)/i,
         effect: 'buff_creature',
-        amount: 'this.power',
-        target: 'another_attacking_creature'
+        parseAmount: (match) => {
+            if (match[2] === 'X') return 'this.power';
+            return parseInt(match[2]);
+        },
+        parseTarget: (match) => {
+            const t = match[1].toLowerCase();
+            if (t.includes('this creature') || t.includes('it')) return 'self';
+            if (t.includes('another target creature')) return 'another_target_creature_you_control';
+            if (t.includes('each other attacking creature')) return 'all_other_attacking_creatures';
+            if (t.includes('each creature you control')) return 'all_creatures_you_control';
+            return 'self';
+        }
     },
     // Battle Cry (Hero of Bladehold)
     {

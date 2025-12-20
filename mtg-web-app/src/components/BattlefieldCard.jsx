@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers, Repeat } from 'lucide-react';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './RedesignedCardFrame';
-import { calculateCardStats } from '../utils/cardUtils';
+import { calculateCardStats, isPlaceholderLand, isBasicLand, isMinimalDisplayLand, BASIC_LAND_COLORS } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
 import { useIsTouchDevice } from '../hooks/useTouchInteractions';
 
@@ -186,15 +186,113 @@ const BattlefieldCard = ({
         handleStackChange(e, nextCount);
     };
 
+    const useMinimalLandDisplay = isMinimalDisplayLand(card);
+
+    // Get land-specific colors
+    const getLandColors = () => {
+        if (isPlaceholderLand(card)) {
+            return {
+                borderColor: '#6b7280',
+                fillColor: '#374151',
+                textColor: 'black'
+            };
+        }
+        if (isBasicLand(card)) {
+            return BASIC_LAND_COLORS[card.name] || {
+                borderColor: '#6b7280',
+                fillColor: '#374151',
+                textColor: 'black'
+            };
+        }
+        return null;
+    };
+
+    const landColors = useMinimalLandDisplay ? getLandColors() : null;
+
+    if (useMinimalLandDisplay) {
+        const displayText = isPlaceholderLand(card)
+            ? `Land: ${count}`
+            : `${card.name}: ${count}`;
+
+        return (
+            <div
+                className={`absolute cursor-pointer flex flex-col items-center
+                    ${isHovered ? 'z-50' : ''}
+                    ${isSelected ? 'ring-4 ring-green-400 shadow-[0_0_20px_rgba(34,197,94,0.8)] scale-105 z-40 rounded-lg' : ''}
+                    ${card.tapped ? 'opacity-70' : ''}
+                    ${!isDragging ? 'transition-all duration-200 ease-out' : ''}`}
+                style={{
+                    width: CARD_WIDTH,
+                    left: x,
+                    top: y,
+                    touchAction: 'none'
+                }}
+                onMouseDown={(e) => onMouseDown(e, card)}
+                onMouseEnter={() => !isTargeting && setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+            >
+                {/* Tap Indicator */}
+                {card.tapped && (
+                    <div className="absolute -top-2 -right-2 z-50">
+                        <div className="bg-amber-500 text-black text-[8px] font-bold px-1.5 py-0.5 rounded shadow-lg border border-amber-400">
+                            TAPPED
+                        </div>
+                    </div>
+                )}
+
+                {/* Single Banner for Land */}
+                <div className="relative">
+                    <TopBanner
+                        width={CARD_WIDTH}
+                        height={28}
+                        colorIdentity={landColors.fillColor}
+                    >
+                        <div
+                            className="w-full text-center text-sm font-bold truncate leading-tight"
+                            style={{ color: landColors.textColor }}
+                        >
+                            {displayText}
+                        </div>
+                    </TopBanner>
+                </div>
+
+                {/* Hover Actions (Tap/Delete) */}
+                {isHovered && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex gap-1 z-50">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onAction('tap', card); }}
+                            className="w-7 h-7 rounded-full bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center shadow-lg border border-slate-500"
+                            title="Tap/Untap"
+                        >
+                            <RotateCcw size={14} />
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onAction('delete', card, count); }}
+                            className="w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg border border-red-400"
+                            title="Remove"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    const cardGlowClass = isSource
+        ? 'shadow-[0_0_25px_rgba(59,130,246,1)] scale-105 z-40 animate-pulse'
+        : isValidTarget || isDeclaredAttacker ? 'shadow-[0_0_25px_rgba(220,38,38,1)] scale-105 z-40'
+            : isSelected ? 'shadow-[0_0_25px_rgba(34,197,94,1)] scale-105 z-40'
+                : isEligibleAttacker ? 'shadow-[0_0_20px_rgba(59,130,246,1)] z-40'
+                    : '';
+
     return (
         <div
             className={`absolute cursor-pointer flex flex-col items-center
                 ${isHovered ? 'z-50' : ''}
-                ${isSelected && !isDeclaredAttacker ? 'ring-4 ring-green-400 shadow-[0_0_20px_rgba(34,197,94,0.8)] scale-105 z-40 rounded-xl' : ''}
-                ${isEligibleAttacker ? 'shadow-[0_0_20px_rgba(59,130,246,0.8)]' : ''}
-                ${isDeclaredAttacker ? 'shadow-[0_0_25px_rgba(220,38,38,1)]' : ''}
                 ${!isDragging ? 'transition-all duration-200 ease-out' : ''}
-                ${card.tapped ? 'opacity-80' : ''}`}
+                ${card.tapped ? 'opacity-80' : ''}
+                rounded-xl ${cardGlowClass}`}
             style={{
                 width: CARD_WIDTH,
                 left: x,
@@ -241,284 +339,261 @@ const BattlefieldCard = ({
                 }
             )}
         >
-            {/* Targeting Visuals */}
-            {
-                isSource && (
-                    <div className="absolute inset-0 z-40 rounded-xl ring-4 ring-blue-500 ring-offset-2 ring-offset-slate-900 animate-pulse pointer-events-none" />
-                )
-            }
-            {
-                isValidTarget && (
-                    <div className="absolute inset-0 z-40 rounded-xl ring-4 ring-red-500 ring-offset-2 ring-offset-slate-900 pointer-events-none" />
-                )
-            }
+            {/* Targeting Visuals - Background highlights if needed, but shadows are now on container */}
+            {/* Keeping relative wrapper for content */}
+            <div className="w-full flex flex-col items-center rounded-xl overflow-hidden relative">
 
-            {/* Attached Equipment Banners - Stacked Above */}
-            <div className="absolute bottom-full left-0 w-full flex flex-col-reverse items-center z-20 pointer-events-auto transition-all duration-300 ease-out"
-                style={{
-                    marginBottom: -98,
-                }}
-                onMouseMove={(e) => {
-                    // Coordinate-Based Detection with Z-Awareness
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const offsetFromBottom = rect.bottom - e.clientY;
+                {/* Attached Equipment Banners - Stacked Above */}
+                <div className="absolute bottom-full left-0 w-full flex flex-col-reverse items-center z-20 pointer-events-auto transition-all duration-300 ease-out"
+                    style={{
+                        marginBottom: -98,
+                    }}
+                    onMouseMove={(e) => {
+                        // Coordinate-Based Detection with Z-Awareness
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const offsetFromBottom = rect.bottom - e.clientY;
 
-                    // Card Layout Constants
-                    const VISIBLE_STRIP = 28;
-                    const CARD_HEIGHT = 124;
+                        // Card Layout Constants
+                        const VISIBLE_STRIP = 28;
+                        const CARD_HEIGHT = 124;
 
-                    // Find the front-most card (lowest index) that contains the mouse
-                    let hitIndex = -1;
+                        // Find the front-most card (lowest index) that contains the mouse
+                        let hitIndex = -1;
 
-                    for (let i = 0; i < attachments.length; i++) {
-                        const itemBottom = i * VISIBLE_STRIP;
-                        const itemTop = itemBottom + CARD_HEIGHT;
+                        for (let i = 0; i < attachments.length; i++) {
+                            const itemBottom = i * VISIBLE_STRIP;
+                            const itemTop = itemBottom + CARD_HEIGHT;
 
-                        if (offsetFromBottom >= itemBottom && offsetFromBottom <= itemTop) {
-                            hitIndex = i;
-                            break;
+                            if (offsetFromBottom >= itemBottom && offsetFromBottom <= itemTop) {
+                                hitIndex = i;
+                                break;
+                            }
                         }
-                    }
 
-                    // Fallback to last item if we are way above
-                    if (hitIndex === -1 && attachments.length > 0) {
-                        const maxTop = (attachments.length - 1) * VISIBLE_STRIP + CARD_HEIGHT;
-                        if (offsetFromBottom > maxTop) hitIndex = attachments.length - 1;
-                    }
+                        // Fallback to last item if we are way above
+                        if (hitIndex === -1 && attachments.length > 0) {
+                            const maxTop = (attachments.length - 1) * VISIBLE_STRIP + CARD_HEIGHT;
+                            if (offsetFromBottom > maxTop) hitIndex = attachments.length - 1;
+                        }
 
-                    if (hitIndex !== -1) {
-                        setHoveredAttachmentId(attachments[hitIndex].id);
-                        setIsEquipmentHovered(true);
-                    }
-                }}
-                onMouseLeave={() => {
-                    setIsEquipmentHovered(false);
-                    setHoveredAttachmentId(null);
-                }}
-            >
-                {attachments.map((att, index) => {
-                    const attColors = getCardHexColors(att.colors);
+                        if (hitIndex !== -1) {
+                            setHoveredAttachmentId(attachments[hitIndex].id);
+                            setIsEquipmentHovered(true);
+                        }
+                    }}
+                    onMouseLeave={() => {
+                        setIsEquipmentHovered(false);
+                        setHoveredAttachmentId(null);
+                    }}
+                >
+                    {attachments.map((att, index) => {
+                        const attColors = getCardHexColors(att.colors);
 
-                    // Calculate Hovered Index
-                    const hoveredIndex = attachments.findIndex(a => a.id === hoveredAttachmentId);
+                        // Calculate Hovered Index
+                        const hoveredIndex = attachments.findIndex(a => a.id === hoveredAttachmentId);
 
-                    // Cascade Lift Logic
-                    const shouldLift = hoveredIndex !== -1 && index >= hoveredIndex;
+                        // Cascade Lift Logic
+                        const shouldLift = hoveredIndex !== -1 && index >= hoveredIndex;
 
-                    // Fixed tight stack spread
-                    const fixedSpread = -96;
+                        // Fixed tight stack spread
+                        const fixedSpread = -96;
 
-                    // Lift logic
-                    const baseTransform = index * 2;
-                    const activeLift = shouldLift ? (baseTransform - 18) : baseTransform;
+                        // Lift logic
+                        const baseTransform = index * 2;
+                        const activeLift = shouldLift ? (baseTransform - 18) : baseTransform;
 
-                    return (
-                        <div key={att.id}
-                            className="relative transition-all duration-300 ease-out flex flex-col items-center pointer-events-auto"
-                            style={{
-                                zIndex: attachments.length - index,
-                                marginTop: index === attachments.length - 1 ? 0 : fixedSpread,
-                                transform: `translateY(${activeLift}px)`,
-                            }}
-                            onMouseLeave={() => setHoveredAttachmentId(null)}
-                        >
-                            {/* Derive display name and face index */}
+                        return (
+                            <div key={att.id}
+                                className="relative transition-all duration-300 ease-out flex flex-col items-center pointer-events-auto"
+                                style={{
+                                    zIndex: attachments.length - index,
+                                    marginTop: index === attachments.length - 1 ? 0 : fixedSpread,
+                                    transform: `translateY(${activeLift}px)`,
+                                }}
+                                onMouseLeave={() => setHoveredAttachmentId(null)}
+                            >
+                                {/* Derive display name and face index */}
+                                {(() => {
+                                    const attActiveIdx = att.activeFaceIndex !== undefined ? att.activeFaceIndex : 0;
+                                    const attFaces = att.card_faces || [];
+                                    const attDisplayFace = attFaces[attActiveIdx] || att;
+                                    const attDisplayName = attDisplayFace.name || att.name;
+                                    const isAttBackFace = attActiveIdx === 1;
+
+                                    return (
+                                        <>
+                                            {/* Unequip Action Button (Circular Overlay - Left Edge) */}
+                                            {hoveredAttachmentId === att.id && (
+                                                <div className="absolute left-0 top-0 z-50 pt-2 -translate-x-1/2">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            onAction && onAction('unequip-self', att);
+                                                        }}
+                                                        className="bg-slate-600 w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110"
+                                                        title="Unequip"
+                                                    >
+                                                        <Minus size={16} className="text-white drop-shadow-sm" />
+                                                        {/* Tooltip - Left side */}
+                                                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
+                                                            Unequip
+                                                        </span>
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {/* Container for Banner + Art components */}
+                                            <div
+                                                className="flex flex-col items-center cursor-pointer"
+                                                onMouseDown={(e) => {
+                                                    if (!isEligibleAttacker) {
+                                                        e.stopPropagation(); // Prevent creature's onMouseDown from firing unless attacking
+                                                    }
+                                                }}
+                                                onClick={(e) => {
+                                                    if (isEligibleAttacker) return; // Allow bubble to creature for attacking
+                                                    e.stopPropagation();
+                                                    onAction && onAction('select', att);
+                                                }}
+                                            >
+                                                {/* Top Banner (Name) */}
+                                                <div className="relative z-10" style={{ marginBottom: -4 }}>
+                                                    <TopBanner
+                                                        width={CARD_WIDTH}
+                                                        height={28}
+                                                        colorIdentity={attColors.fillColor}
+                                                    >
+                                                        <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'black' }}>
+                                                            <Sword size={10} className="opacity-50" />
+                                                            {attDisplayName}
+                                                        </div>
+                                                    </TopBanner>
+                                                </div>
+
+                                                {/* Art Window */}
+                                                <div className="relative z-0">
+                                                    <ArtWindow
+                                                        width={CARD_WIDTH}
+                                                        height={100}
+                                                    >
+                                                        {att.art_crop ? (
+                                                            <img
+                                                                src={att.art_crop}
+                                                                alt={attDisplayName}
+                                                                className="w-full h-full object-cover"
+                                                                style={{
+                                                                    objectPosition: isAttBackFace ? '100% 15%' : '0% 15%'
+                                                                }}
+                                                            />
+                                                        ) : null}
+                                                    </ArtWindow>
+                                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Top Banner - Name */}
+                <div className="z-30 relative" style={{ marginBottom: -4 }}>
+                    <TopBanner
+                        width={CARD_WIDTH}
+                        height={bannerHeight}
+                        colorIdentity={colors.fillColor}
+                    >
+                        <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: '#ffffff' }}>
+                            {/* Derive display name locally just in case */}
                             {(() => {
-                                const attActiveIdx = att.activeFaceIndex !== undefined ? att.activeFaceIndex : 0;
-                                const attFaces = att.card_faces || [];
-                                const attDisplayFace = attFaces[attActiveIdx] || att;
-                                const attDisplayName = attDisplayFace.name || att.name;
-                                const isAttBackFace = attActiveIdx === 1;
-
-                                return (
-                                    <>
-                                        {/* Unequip Action Button (Circular Overlay - Left Edge) */}
-                                        {hoveredAttachmentId === att.id && (
-                                            <div className="absolute left-0 top-0 z-50 pt-2 -translate-x-1/2">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        onAction && onAction('unequip-self', att);
-                                                    }}
-                                                    className="bg-slate-600 w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110"
-                                                    title="Unequip"
-                                                >
-                                                    <Minus size={16} className="text-white drop-shadow-sm" />
-                                                    {/* Tooltip - Left side */}
-                                                    <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
-                                                        Unequip
-                                                    </span>
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {/* Container for Banner + Art components */}
-                                        <div
-                                            className="flex flex-col items-center cursor-pointer"
-                                            onMouseDown={(e) => {
-                                                if (!isEligibleAttacker) {
-                                                    e.stopPropagation(); // Prevent creature's onMouseDown from firing unless attacking
-                                                }
-                                            }}
-                                            onClick={(e) => {
-                                                if (isEligibleAttacker) return; // Allow bubble to creature for attacking
-                                                e.stopPropagation();
-                                                onAction && onAction('select', att);
-                                            }}
-                                        >
-                                            {/* Top Banner (Name) */}
-                                            <div className="relative z-10" style={{ marginBottom: -4 }}>
-                                                <TopBanner
-                                                    width={CARD_WIDTH}
-                                                    height={28}
-                                                    borderColor={attColors.borderColor}
-                                                    fillColor={attColors.fillColor}
-                                                >
-                                                    <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'black' }}>
-                                                        <Sword size={10} className="opacity-50" />
-                                                        {attDisplayName}
-                                                    </div>
-                                                </TopBanner>
-                                            </div>
-
-                                            {/* Art Window */}
-                                            <div className="relative z-0">
-                                                <ArtWindow
-                                                    width={CARD_WIDTH}
-                                                    height={100}
-                                                    borderColor={attColors.borderColor}
-                                                >
-                                                    {att.art_crop ? (
-                                                        <img
-                                                            src={att.art_crop}
-                                                            alt={attDisplayName}
-                                                            className="w-full h-full object-cover"
-                                                            style={{
-                                                                objectPosition: isAttBackFace ? '100% 15%' : '0% 15%'
-                                                            }}
-                                                        />
-                                                    ) : null}
-                                                </ArtWindow>
-                                            </div>
-                                        </div>
-                                    </>
-                                );
+                                const activeIdx = card.activeFaceIndex !== undefined ? card.activeFaceIndex : 0;
+                                const face = (card.card_faces || [])[activeIdx] || card;
+                                return face.name || card.name;
                             })()}
                         </div>
-                    );
-                })}
-            </div>
+                    </TopBanner>
+                </div>
 
-            {/* Top Banner - Name */}
-            <div className="z-30 relative" style={{ marginBottom: -4 }}>
-                <TopBanner
-                    width={CARD_WIDTH}
-                    height={bannerHeight}
-                    borderColor={colors.borderColor}
-                    fillColor={colors.fillColor}
-                >
-                    <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: 'black' }}>
-                        {/* Derive display name locally just in case */}
-                        {(() => {
-                            const activeIdx = card.activeFaceIndex !== undefined ? card.activeFaceIndex : 0;
-                            const face = (card.card_faces || [])[activeIdx] || card;
-                            return face.name || card.name;
-                        })()}
-                    </div>
-                </TopBanner>
-            </div>
+                {/* Art Window */}
+                <div className="z-30 relative">
+                    <ArtWindow
+                        width={CARD_WIDTH}
+                        height={artHeight}
+                    >
+                        {card.art_crop ? (
+                            <img
+                                src={card.art_crop}
+                                alt={card.name}
+                                className="w-full h-full object-cover"
+                                style={{
+                                    objectPosition: (card.activeFaceIndex === 1) ? '100% 15%' : '0% 15%'
+                                }}
+                            />
+                        ) : null}
+                    </ArtWindow>
 
-            {/* Art Window */}
-            <div className="z-30 relative">
-                <ArtWindow
-                    width={CARD_WIDTH}
-                    height={artHeight}
-                    borderColor={colors.borderColor}
-                >
-                    {card.art_crop ? (
-                        <img
-                            src={card.art_crop}
-                            alt={card.name}
-                            className="w-full h-full object-cover"
-                            style={{
-                                objectPosition: (card.activeFaceIndex === 1) ? '100% 15%' : '0% 15%'
-                            }}
-                        />
-                    ) : null}
-                </ArtWindow>
-
-                {/* Counter Indicator Overlay on Art (Generic) */}
-                {isModified && card.type === 'Creature' && (
-                    <div className="absolute top-2 left-2 flex flex-col gap-1 items-start z-20">
-                        {/* Show +1/+1 separately if present */}
-                        {plusOne > 0 &&
-                            <div className="bg-green-600 rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border border-green-800">
-                                <span className="text-white text-[10px] font-bold">+{formatBigNumber(plusOne)}</span>
-                            </div>
-                        }
-                        {/* Show generic counter count for others (simplified) */}
-                        {Object.entries(countersObj).map(([type, val]) => {
-                            if (type === '+1/+1' || val <= 0) return null;
-                            // Icon mappings or Short text could go here. For now: generic purple bubble
-                            const isBad = type === '-1/-1';
-                            return (
-                                <div key={type} className={`${isBad ? 'bg-red-800 border-red-900' : 'bg-purple-600 border-purple-800'} rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border`}>
-                                    <span className="text-white text-[10px] font-bold">{isBad ? '-' : ''}{val} {type === '-1/-1' ? '' : type.substring(0, 3)}</span>
+                    {/* Counter Indicator Overlay on Art (Generic) */}
+                    {isModified && card.type === 'Creature' && (
+                        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start z-20">
+                            {/* Show +1/+1 separately if present */}
+                            {plusOne > 0 &&
+                                <div className="bg-green-600 rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border border-green-800">
+                                    <span className="text-white text-[10px] font-bold">+{formatBigNumber(plusOne)}</span>
                                 </div>
-                            )
-                        })}
-                    </div>
-                )}
+                            }
+                            {/* Show generic counter count for others (simplified) */}
+                            {Object.entries(countersObj).map(([type, val]) => {
+                                if (type === '+1/+1' || val <= 0) return null;
+                                // Icon mappings or Short text could go here. For now: generic purple bubble
+                                const isBad = type === '-1/-1';
+                                return (
+                                    <div key={type} className={`${isBad ? 'bg-red-800 border-red-900' : 'bg-purple-600 border-purple-800'} rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border`}>
+                                        <span className="text-white text-[10px] font-bold">{isBad ? '-' : ''}{val} {type === '-1/-1' ? '' : type.substring(0, 3)}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
 
-                {/* Stack Count Indicator (always visible for stacks) */}
-                {isStack && (
-                    <div className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${isHovered && displayCount > 0
-                        ? (isEligibleAttacker || isDeclaredAttacker ? 'bg-blue-600 border-blue-400' : 'bg-red-600 border-red-400') + ' text-white'
-                        : 'bg-slate-800 border-slate-600 text-white'
-                        }`}>
-                        <span className="text-xs font-bold">
-                            {isHovered && displayCount > 0 ? `${displayCount}/${count}` : `x${count}`}
-                        </span>
-                    </div>
-                )}
-            </div>
+                    {/* Stack Count Indicator (always visible for stacks) */}
+                    {isStack && (
+                        <div className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${isHovered && displayCount > 0
+                            ? (isEligibleAttacker || isDeclaredAttacker ? 'bg-blue-600 border-blue-400' : 'bg-red-600 border-red-400') + ' text-white'
+                            : 'bg-slate-800 border-slate-600 text-white'
+                            }`}>
+                            <span className="text-xs font-bold">
+                                {isHovered && displayCount > 0 ? `${displayCount}/${count}` : `x${count}`}
+                            </span>
+                        </div>
+                    )}
+                </div>
 
-            {/* Bottom Banner - Type Line */}
-            <div className="z-30 relative" style={{ marginTop: -4 }}>
-                <BottomBanner
-                    width={CARD_WIDTH}
-                    height={bannerHeight}
-                    borderColor={colors.borderColor}
-                    fillColor={colors.fillColor}
-                >
-                    <div className="w-full flex justify-between items-center px-1">
-                        <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: 'black' }}>
-                            {cardType}
-                        </span>
-                    </div>
-                </BottomBanner>
-            </div>
-
-            {/* Floating P/T Banner - Creatures Only */}
-            {
-                card.type === 'Creature' && (
-                    <div className="absolute -bottom-3 -right-2 filter drop-shadow-md z-40">
-                        <PowerToughnessBanner
-                            width={46}
-                            height={34}
-                            borderColor={colors.borderColor}
-                            fillColor={colors.fillColor}
-                        >
-                            <div className={`text-[10px] font-bold flex gap-0.5 ${isBuffed ? 'text-blue-700' : isModified ? 'text-green-900' : 'text-black'}`}>
+                {/* Bottom Banner - Type Line */}
+                <div className="z-30 relative" style={{ marginTop: 4 }}>
+                    <BottomBanner
+                        width={CARD_WIDTH}
+                        height={bannerHeight}
+                    >
+                        <div style={{ width: '80%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                            <div className="w-full flex justify-between items-center px-1">
+                                <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>
+                                    {cardType}
+                                </span>
+                            </div>
+                        </div>
+                        {/* P/T - Inline if Creature */}
+                        {card.type === 'Creature' && (
+                            <div className="text-[10px] font-bold flex gap-0.5 text-white">
                                 <span>{formatBigNumber(totalPower)}</span>
                                 <span>/</span>
                                 <span>{formatBigNumber(totalToughness)}</span>
                             </div>
-                        </PowerToughnessBanner>
-                    </div>
-                )
-            }
+                        )}
+                    </BottomBanner>
+                </div>
+            </div>
 
             {/* Tapped Indicator */}
             {

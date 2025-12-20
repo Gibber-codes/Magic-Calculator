@@ -2,25 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { X, Zap, Plus, Minus, Sparkles, Layers, ChevronDown, Shield } from 'lucide-react';
 import { extractActivatedAbilities } from '../utils/keywordParser';
 import { formatBigNumber } from '../utils/formatters';
-import { calculateCardStats } from '../utils/cardUtils';
+import { calculateCardStats, isPlaceholderLand, BASIC_LAND_NAMES, BASIC_LAND_COLORS } from '../utils/cardUtils';
 
 const SelectedCardPanel = ({
     card,
     onClose,
     onActivateAbility,
     onCounterChange,
+    onConvertLand,
     stackCount = 1,
     stackCards = [],
     allCards = []
 }) => {
     // Local state for how many cards in the stack to modify
     const [modifyCount, setModifyCount] = useState(1);
+    const [convertCount, setConvertCount] = useState(1);
     const [selectedCounterType, setSelectedCounterType] = useState('+1/+1');
     const [showCounterDropdown, setShowCounterDropdown] = useState(false);
 
-    // Reset modifyCount when card changes or stack changes
+    // Reset modifyCount and convertCount when card changes or stack changes
     useEffect(() => {
-        setModifyCount(stackCount > 1 ? stackCount : 1);
+        const count = stackCount > 1 ? stackCount : 1;
+        setModifyCount(count);
+        setConvertCount(count);
     }, [card?.id, stackCount]);
 
     if (!card) return null;
@@ -91,8 +95,64 @@ const SelectedCardPanel = ({
                     </button>
                 </div>
 
+                {/* Land Conversion UI - Only for Placeholder Lands */}
+                {isPlaceholderLand(card) && (
+                    <div className="space-y-4">
+                        {/* Conversion Amount Selector */}
+                        {stackCount > 1 && (
+                            <div className="bg-slate-700/50 rounded-xl p-3 border border-slate-600">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm text-slate-300">Convert Amount</span>
+                                    <span className="text-lg font-bold text-white">{convertCount} / {stackCount}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max={stackCount}
+                                    value={convertCount}
+                                    onChange={(e) => setConvertCount(parseInt(e.target.value))}
+                                    className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                        )}
+
+                        {/* Land Type Buttons */}
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Convert to Basic Land</h4>
+                            <div className="grid grid-cols-1 gap-2">
+                                {BASIC_LAND_NAMES.map(landName => {
+                                    const landStyle = BASIC_LAND_COLORS[landName];
+                                    return (
+                                        <button
+                                            key={landName}
+                                            onClick={() => onConvertLand && onConvertLand(landName, convertCount)}
+                                            className="flex items-center justify-between p-3 rounded-xl shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] border-2"
+                                            style={{
+                                                backgroundColor: landStyle.fillColor,
+                                                borderColor: landStyle.borderColor,
+                                                color: landStyle.textColor
+                                            }}
+                                        >
+                                            <span className="font-bold text-lg">{landName}</span>
+                                            <span
+                                                className="text-xs px-2 py-1 rounded-lg font-semibold"
+                                                style={{
+                                                    backgroundColor: landStyle.borderColor,
+                                                    color: landStyle.textColor === 'white' ? 'white' : 'black'
+                                                }}
+                                            >
+                                                +{convertCount}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Card Image */}
-                {card.image_normal && (
+                {!isPlaceholderLand(card) && card.image_normal && (
                     <div className="flex justify-center mb-4">
                         <div className="relative rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700 w-64 aspect-[2.5/3.5] bg-black">
                             <img
