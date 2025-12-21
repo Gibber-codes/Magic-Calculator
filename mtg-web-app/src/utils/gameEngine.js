@@ -570,7 +570,18 @@ export class GameEngine {
                         ? targets[0].name
                         : 'another attacking creature';
 
-            log.description = `${source.name} triggered: Give +${finalValue}/+${finalValue} to ${targetDesc}`;
+            const buffType = ability.buffType || 'both';
+            let buffNotation;
+
+            if (buffType === 'power') {
+                buffNotation = `+${finalValue}/+0`;
+            } else if (buffType === 'toughness') {
+                buffNotation = `+0/+${finalValue}`;
+            } else {
+                buffNotation = `+${finalValue}/+${finalValue}`;
+            }
+
+            log.description = `${source.name} triggered: Give ${buffNotation} to ${targetDesc}`;
             log.equation = `X = ${source.name}'s power (${baseValue})`;
         }
 

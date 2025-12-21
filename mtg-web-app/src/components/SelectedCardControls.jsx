@@ -194,15 +194,37 @@ const SelectedCardControls = ({
             {/* Creature Stats & Counters */}
             {isCreature && (
                 <div className="space-y-3">
-                    {/* Stats Breakdown Text Only (P/T + Modifiers) */}
-                    <div className="px-2 pt-2 pb-1 bg-slate-900 flex flex-col items-center">
-                        {/* Optional: Show mod breakdown text here if desired, otherwise just P/T is on card frame */}
-                        <div className="text-[10px] text-slate-400 flex gap-2">
-                            <span>Counters:</span>
-                            <span className="text-white font-mono">
-                                {counterPower >= 0 ? '+' : ''}{counterPower}/{counterToughness >= 0 ? '+' : ''}{counterToughness}
-                            </span>
-                        </div>
+                    {/* Stats Breakdown - Show each modifier type if applicable */}
+                    <div className="px-2 pt-2 pb-1 bg-slate-900 flex flex-col items-center gap-0.5">
+                        {/* Counters */}
+                        {(counterPower !== 0 || counterToughness !== 0) && (
+                            <div className="text-[10px] text-slate-400 flex gap-2">
+                                <span>Counters:</span>
+                                <span className="text-white font-mono">
+                                    {counterPower >= 0 ? '+' : ''}{counterPower}/{counterToughness >= 0 ? '+' : ''}{counterToughness}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Attachments (Equipment, Roles, etc.) */}
+                        {(dynamicPower !== 0 || dynamicToughness !== 0) && (
+                            <div className="text-[10px] text-slate-400 flex gap-2">
+                                <span>Attachments:</span>
+                                <span className="text-white font-mono">
+                                    {dynamicPower >= 0 ? '+' : ''}{dynamicPower}/{dynamicToughness >= 0 ? '+' : ''}{dynamicToughness}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Temporary Modifiers */}
+                        {(tempPower !== 0 || tempToughness !== 0) && (
+                            <div className="text-[10px] text-slate-400 flex gap-2">
+                                <span>Temp Modifiers:</span>
+                                <span className="text-white font-mono">
+                                    {tempPower >= 0 ? '+' : ''}{tempPower}/{tempToughness >= 0 ? '+' : ''}{tempToughness}
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Compact Dark Box Counter Controls */}

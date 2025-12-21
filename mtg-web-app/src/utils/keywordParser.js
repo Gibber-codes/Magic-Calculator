@@ -1,4 +1,16 @@
 import { SIGNATURE_DATA } from '../data/signatureCards';
+import {
+    KEYWORD_HANDLERS,
+    getKeywordType,
+    parseKeywordAbility,
+    ABILITY_KEYWORDS,
+    EVASION_KEYWORDS,
+    COMBAT_KEYWORDS,
+    PROTECTION_KEYWORDS,
+    POWER_TOUGHNESS_KEYWORDS,
+    RESTRICTION_KEYWORDS
+} from './keywordHandlers';
+import { parseTokenProperties, parseTokenAmount, parseTappedAndAttacking } from './tokenParsing';
 
 // ============================================
 // TRIGGER PATTERNS
@@ -132,13 +144,47 @@ export const EFFECT_PATTERNS = [
         effect: 'double_counters',
         target: 'self'
     },
-    // Buff creature (generic gets +X/+X)
+    // Battle Cry (Hero of Bladehold) - MUST come before generic buff pattern
+    {
+        pattern: /each other attacking creature gets \+1\/\+0/i,
+        effect: 'buff_creature',
+        amount: 1,
+        target: 'all_other_attacking_creatures',
+        buffType: 'power' // Only add to power
+    },
+    // Buff creature (generic gets +X/+X or +X/+Y)
     {
         pattern: /(.*) (?:gets|gain\(s\)) \+([X\d]+)\/\+([X\d]+)/i,
         effect: 'buff_creature',
         parseAmount: (match) => {
             if (match[2] === 'X') return 'this.power';
             return parseInt(match[2]);
+        },
+        parseToughnessAmount: (match) => {
+            if (match[3] === 'X') return 'this.power';
+            return parseInt(match[3]);
+        },
+        parseBuffType: (match) => {
+            const powerVal = match[2];
+            const toughnessVal = match[3];
+
+            // If power and toughness are different, we need to handle them separately
+            if (powerVal !== toughnessVal) {
+                // Return 'split' to indicate different values for power and toughness
+                return 'split';
+            }
+
+            // If both are 0, no buff
+            if (powerVal === '0' && toughnessVal === '0') return 'none';
+
+            // If only power is non-zero
+            if (powerVal !== '0' && toughnessVal === '0') return 'power';
+
+            // If only toughness is non-zero
+            if (powerVal === '0' && toughnessVal !== '0') return 'toughness';
+
+            // Both are the same and non-zero
+            return 'both';
         },
         parseTarget: (match) => {
             const t = match[1].toLowerCase();
@@ -148,14 +194,6 @@ export const EFFECT_PATTERNS = [
             if (t.includes('each creature you control')) return 'all_creatures_you_control';
             return 'self';
         }
-    },
-    // Battle Cry (Hero of Bladehold)
-    {
-        pattern: /each other attacking creature gets \+1\/\+0/i,
-        effect: 'buff_creature',
-        amount: 1,
-        target: 'all_other_attacking_creatures',
-        buffType: 'power' // Only add to power
     },
     // Create Attached Token (Ellivere)
     {
@@ -198,20 +236,8 @@ export const EFFECT_PATTERNS = [
         pattern: /create (?:an?|two|three|four|five|\d+) (?:\d+\/\d+ )?(?!tokens? that)[^.]*?tokens?(?: that are)?(?: tapped and attacking)?/i,
         effect: 'create_related_token',
         target: 'self',
-        parseAmount: (match) => {
-            const fullMatch = match[0].toLowerCase();
-            if (fullMatch.includes('two')) return 2;
-            if (fullMatch.includes('three')) return 3;
-            if (fullMatch.includes('four')) return 4;
-            if (fullMatch.includes('five')) return 5;
-            // Check for numeric (e.g., "create 3 tokens")
-            const numMatch = fullMatch.match(/create (\d+)/);
-            if (numMatch) return parseInt(numMatch[1]);
-            return 1;
-        },
-        parseTappedAndAttacking: (match) => {
-            return match[0].toLowerCase().includes('tapped and attacking');
-        }
+        parseAmount: (match) => parseTokenAmount(match[0]),
+        parseTappedAndAttacking: (match) => parseTappedAndAttacking(match[0])
     },
     // Create named token (e.g. "Create a Lander token") and optionally parse props from reminder text
     // E.g. "create a Lander token. (It's an artifact with...)"
@@ -219,47 +245,9 @@ export const EFFECT_PATTERNS = [
         pattern: /create (?:an?|two|three|four) (.*?) tokens?[\s\S]*?(?:\(It(?:'s| is) ([\s\S]*?)\))?/i,
         effect: 'create_named_token',
         target: 'self',
-        parseAmount: (match) => {
-            const fullMatch = match[0].toLowerCase();
-            if (fullMatch.includes('two')) return 2;
-            if (fullMatch.includes('three')) return 3;
-            return 1;
-        },
+        parseAmount: (match) => parseTokenAmount(match[0]),
         parseName: (match) => match[1].trim(),
-        parseProperties: (match) => {
-            const description = match[2]; // Capture group 2 is the description part (because of non-capturing groups)
-            if (!description) return null;
-
-            // Simple heuristics
-            const props = { type: 'Token', power: 0, toughness: 0, colors: [] };
-            const lowerDesc = description.toLowerCase();
-
-            // Type
-            if (lowerDesc.includes('artifact')) props.type = 'Token Artifact';
-            if (lowerDesc.includes('creature')) props.type = 'Token Creature';
-            if (lowerDesc.includes('enchantment')) props.type = 'Token Enchantment';
-            if (lowerDesc.includes('construct')) props.type_line += ' — Construct'; // Example
-            // Stats (e.g. "2/2")
-            const statMatch = description.match(/(\d+)\/(\d+)/);
-            if (statMatch) {
-                props.power = parseInt(statMatch[1]);
-                props.toughness = parseInt(statMatch[2]);
-            }
-            // Colors
-            if (lowerDesc.includes('red')) props.colors.push('R');
-            if (lowerDesc.includes('green')) props.colors.push('G');
-            if (lowerDesc.includes('blue')) props.colors.push('U');
-            if (lowerDesc.includes('black')) props.colors.push('B');
-            if (lowerDesc.includes('white')) props.colors.push('W');
-            if (lowerDesc.includes('colorless')) props.colors = [];
-
-            // Refine Type Line if it's a creature
-            if (lowerDesc.includes('creature')) {
-                // Try to find subtypes? Too complex for regex, just default to Token Creature
-            }
-
-            return props;
-        }
+        parseProperties: (match) => parseTokenProperties(match[2])
     }
 ];
 
@@ -295,11 +283,83 @@ export const REPLACEMENT_PATTERNS = [
 ];
 
 // ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Parse an activated ability string into cost and effect components
+ * @param {string} abilityText - The ability text in "Cost: Effect" format
+ * @returns {Object} Object with cost and effect properties
+ */
+export function parseActivatedAbility(abilityText) {
+    if (!abilityText) return null;
+
+    const separatorIndex = abilityText.indexOf(':');
+    if (separatorIndex === -1) return null;
+
+    const cost = abilityText.substring(0, separatorIndex).trim();
+    const effect = abilityText.substring(separatorIndex + 1).trim();
+
+    return { cost, effect };
+}
+
+/**
+ * Parse mana cost from a cost string
+ * @param {string} costString - The cost string (e.g., "{2}{R}")
+ * @returns {Object} Parsed mana cost
+ */
+export function parseManaCost(costString) {
+    if (!costString) return { generic: 0, colors: [] };
+
+    const manaSymbols = costString.match(/\{[^}]+\}/g) || [];
+    const colors = [];
+    let generic = 0;
+
+    for (const symbol of manaSymbols) {
+        const inner = symbol.slice(1, -1); // Remove { }
+
+        if (/^\d+$/.test(inner)) {
+            generic += parseInt(inner);
+        } else if (['W', 'U', 'B', 'R', 'G'].includes(inner)) {
+            colors.push(inner);
+        } else if (inner === 'C') {
+            // Colorless mana
+            generic += 1;
+        }
+        // Could extend for hybrid, phyrexian, etc.
+    }
+
+    return { generic, colors };
+}
+
+/**
+ * Determine if an ability requires a target
+ * @param {string} effectText - The effect text
+ * @returns {boolean} True if the ability requires targeting
+ */
+export function requiresTarget(effectText) {
+    if (!effectText) return false;
+
+    const targetPatterns = [
+        /target creature/i,
+        /target player/i,
+        /target permanent/i,
+        /target opponent/i,
+        /target artifact/i,
+        /target enchantment/i,
+    ];
+
+    return targetPatterns.some(pattern => pattern.test(effectText));
+}
+
+// ============================================
 // PARSER FUNCTIONS
 // ============================================
 
 /**
  * Extract triggered abilities from oracle text
+ * @param {string} oracleText - The card's oracle text
+ * @returns {Array<Object>} List of triggered abilities found
  */
 export function extractTriggers(oracleText) {
     if (!oracleText) return [];
@@ -341,18 +401,26 @@ export function extractTriggers(oracleText) {
 
 /**
  * Extract effects from oracle text
+ * @param {string} oracleText - The card's oracle text
+ * @returns {Array<Object>} List of effects found
  */
 export function extractEffects(oracleText) {
     if (!oracleText) return [];
 
     const effects = [];
 
-    for (const { pattern, parseAmount, parseName, parseProperties, parseTarget, parseTokenName, parseTappedAndAttacking, ...effectData } of EFFECT_PATTERNS) {
+    for (const { pattern, parseAmount, parseName, parseProperties, parseTarget, parseTokenName, parseTappedAndAttacking, parseBuffType, parseToughnessAmount, ...effectData } of EFFECT_PATTERNS) {
         const match = oracleText.match(pattern);
         if (match) {
             const effect = { ...effectData };
             if (parseAmount) {
                 effect.amount = parseAmount(match);
+            }
+            if (parseToughnessAmount) {
+                effect.toughnessAmount = parseToughnessAmount(match);
+            }
+            if (parseBuffType) {
+                effect.buffType = parseBuffType(match);
             }
             if (parseName) {
                 effect.tokenName = parseName(match);
@@ -378,6 +446,8 @@ export function extractEffects(oracleText) {
 
 /**
  * Extract "Enters the battlefield with X +1/+1 counters"
+ * @param {string} oracleText - The card's oracle text
+ * @returns {number} The number of counters (0 if none)
  */
 export function extractEntersWithCounters(oracleText) {
     if (!oracleText) return 0;
@@ -402,6 +472,8 @@ export function extractEntersWithCounters(oracleText) {
 
 /**
  * Extract replacement effects from oracle text
+ * @param {string} oracleText - The card's oracle text
+ * @returns {Array<Object>} List of replacement effects
  */
 export function extractReplacementEffects(oracleText) {
     if (!oracleText) return [];
@@ -420,30 +492,32 @@ export function extractReplacementEffects(oracleText) {
 /**
  * Extract activated abilities from oracle text
  * Looks for "Cost: Effect" pattern
+ * @param {string} oracleText - The card's oracle text
+ * @returns {Array<Object>} List of activated abilities
  */
 export function extractActivatedAbilities(oracleText) {
     if (!oracleText) return [];
 
     return oracleText.split('\n')
         .map(line => {
-            const separatorIndex = line.indexOf(':');
-            if (separatorIndex === -1) return null;
+            const parsed = parseActivatedAbility(line);
+            if (!parsed) return null;
 
-            const cost = line.substring(0, separatorIndex).trim();
-            const effect = line.substring(separatorIndex + 1).trim();
-
-            // Filter out non-ability lines that might have colons (unlikely in oracle text but good to be safe)
-            // e.g. "Flavor text: quoted" - Scryfall oracle text shouldn't have flavor text usually, but
-            // some keywords might be formatted differently.
-            // Valid costs mostly contain symbols {}, numbers, or keywords "Sacrifice", "Pay".
-
-            return { cost, effect, original: line };
+            return {
+                cost: parsed.cost,
+                effect: parsed.effect,
+                requiresTarget: requiresTarget(parsed.effect),
+                original: line
+            };
         })
         .filter(Boolean);
 }
 
 /**
  * Full parse of oracle text into game-ready structure
+ * @param {Object} card - The card object
+ * @param {string} [card.oracle_text] - The oracle text to parse
+ * @returns {Object} Structured ability data
  */
 export function parseOracleText(card) {
     const oracleText = card.oracle_text || '';
@@ -464,6 +538,9 @@ export function parseOracleText(card) {
 
 /**
  * Get card abilities - prefers manual definitions, falls back to parsing
+ * Uses granular fallback to avoid re-parsing when only some parts are missing
+ * @param {Object} card - The card object
+ * @returns {Object} Complete abilities, keywords, and replacement effects
  */
 export function getCardAbilities(card) {
     // Priority 1: Use Signature Data for special cards
@@ -478,80 +555,93 @@ export function getCardAbilities(card) {
         };
     }
 
-    // Priority 2: Use manually defined abilities
-    let abilities = card.abilities || [];
-    let replacements = card.replacementEffects || [];
-    let keywords = card.keywords || [];
+    // Priority 2: Check what's already defined
+    const hasAbilities = card.abilities && card.abilities.length > 0;
+    const hasReplacements = card.replacementEffects && card.replacementEffects.length > 0;
+    const hasKeywords = card.keywords && card.keywords.length > 0;
 
-    // If no abilities are manually defined, or if replacement effects/keywords are missing,
-    // we proceed to parse the oracle text.
-    if (abilities.length === 0 || replacements.length === 0 || keywords.length === 0) {
-        // Priority 3: Parse from oracle text
-        const parsed = parseOracleText(card);
-
-        // Convert triggers to abilities format expected by gameEngine
-        const triggeredAbilities = [];
-        parsed.triggers.forEach(t => {
-            const baseAbility = {
-                condition: t.condition,
-                grantedBy: t.grantedBy,
-                effect: t.effects[0]?.effect || 'unknown',
-                target: t.effects[0]?.target || 'self',
-                amount: t.effects[0]?.amount,
-                tokenName: t.effects[0]?.tokenName,
-                tokenProps: t.effects[0]?.tokenProps,
-                tappedAndAttacking: t.effects[0]?.tappedAndAttacking,
-                buffType: t.effects[0]?.buffType,
-                delayedEffect: t.effects[0]?.delayedEffect,
-                description: t.description || t.effects[0]?.effect || 'Triggered ability'
-            };
-
-            if (t.trigger === 'on_enter_or_attack') {
-                triggeredAbilities.push({ ...baseAbility, trigger: 'on_enter_battlefield' });
-                triggeredAbilities.push({ ...baseAbility, trigger: 'on_attack' });
-            } else {
-                triggeredAbilities.push({ ...baseAbility, trigger: t.trigger });
-            }
-        });
-
-        // Convert Activated Abilities to gameEngine format
-        const activatedAbilities = parsed.activated.map((ability) => {
-            const found = extractEffects(ability.effect);
-            let effectData = (found && found.length > 0) ? found[0] : { effect: 'unknown' };
-
-            return {
-                trigger: 'activated',
-                cost: ability.cost,
-                effect: effectData.effect,
-                target: effectData.target || 'target_creature_you_control',
-                amount: effectData.amount,
-                tokenName: effectData.tokenName,
-                tokenProps: effectData.tokenProps,
-                buffType: effectData.buffType,
-                description: ability.original
-            };
-        });
-
-        abilities = abilities.length > 0 ? abilities : [...triggeredAbilities, ...activatedAbilities];
-        replacements = replacements.length > 0 ? replacements : parsed.replacementEffects;
-        keywords = keywords.length > 0 ? keywords : parsed.keywords;
+    // If everything is defined, return early
+    if (hasAbilities && hasReplacements && hasKeywords) {
+        return {
+            abilities: card.abilities,
+            replacementEffects: card.replacementEffects,
+            keywords: card.keywords,
+            parsed: false
+        };
     }
 
+    // Priority 3: Parse only what's missing from oracle text
+    const parsed = parseOracleText(card);
+
+    // Convert triggers to abilities format expected by gameEngine
+    const triggeredAbilities = [];
+    parsed.triggers.forEach(t => {
+        const baseAbility = {
+            condition: t.condition,
+            grantedBy: t.grantedBy,
+            effect: t.effects[0]?.effect || 'unknown',
+            target: t.effects[0]?.target || 'self',
+            amount: t.effects[0]?.amount,
+            tokenName: t.effects[0]?.tokenName,
+            tokenProps: t.effects[0]?.tokenProps,
+            tappedAndAttacking: t.effects[0]?.tappedAndAttacking,
+            buffType: t.effects[0]?.buffType,
+            delayedEffect: t.effects[0]?.delayedEffect,
+            description: t.description || t.effects[0]?.effect || 'Triggered ability'
+        };
+
+        if (t.trigger === 'on_enter_or_attack') {
+            triggeredAbilities.push({ ...baseAbility, trigger: 'on_enter_battlefield' });
+            triggeredAbilities.push({ ...baseAbility, trigger: 'on_attack' });
+        } else {
+            triggeredAbilities.push({ ...baseAbility, trigger: t.trigger });
+        }
+    });
+
+    // Convert Activated Abilities to gameEngine format
+    const activatedAbilities = parsed.activated.map((ability) => {
+        const found = extractEffects(ability.effect);
+        let effectData = (found && found.length > 0) ? found[0] : { effect: 'unknown' };
+
+        return {
+            trigger: 'activated',
+            cost: ability.cost,
+            effect: effectData.effect,
+            target: effectData.target || 'target_creature_you_control',
+            amount: effectData.amount,
+            tokenName: effectData.tokenName,
+            tokenProps: effectData.tokenProps,
+            buffType: effectData.buffType,
+            requiresTarget: ability.requiresTarget,
+            description: ability.original
+        };
+    });
+
+    // Use granular fallback - only use parsed data for missing components
     return {
-        abilities,
-        replacementEffects: replacements,
-        keywords,
-        parsed: true
+        abilities: card.abilities || [...triggeredAbilities, ...activatedAbilities],
+        replacementEffects: card.replacementEffects || parsed.replacementEffects,
+        keywords: card.keywords || parsed.keywords,
+        parsed: !(hasAbilities && hasReplacements && hasKeywords)
     };
 }
 
 export default {
+    // Main parsing functions
     extractTriggers,
     extractEffects,
     extractReplacementEffects,
     extractActivatedAbilities,
     parseOracleText,
     getCardAbilities,
+    extractEntersWithCounters,
+
+    // Helper functions
+    parseActivatedAbility,
+    parseManaCost,
+    requiresTarget,
+
+    // Pattern constants
     TRIGGER_PATTERNS,
     EFFECT_PATTERNS,
     REPLACEMENT_PATTERNS,
