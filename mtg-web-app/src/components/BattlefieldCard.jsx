@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers, Repeat, Maximize2, Zap } from 'lucide-react';
+import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers, Repeat, Maximize2, Zap, X } from 'lucide-react';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './RedesignedCardFrame';
 import { calculateCardStats, isPlaceholderLand, isBasicLand, isMinimalDisplayLand, BASIC_LAND_COLORS } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
@@ -56,7 +56,8 @@ const BattlefieldCard = ({
     allCards = [],
     onActivateAbility,
     onCounterChange,
-    onConvertLand
+    onConvertLand,
+    isRelative = false
 }) => {
     const stats = calculateCardStats(card, allCards, attachments);
     const colors = getCardHexColors(card.colors);
@@ -296,15 +297,14 @@ const BattlefieldCard = ({
 
         return (
             <div
-                className={`absolute cursor-pointer flex flex-col items-center
+                className={`${isRelative ? 'relative' : 'absolute'} cursor-pointer flex flex-col items-center
                     ${isHovered ? 'z-50' : ''}
                     ${isSelected ? 'ring-4 ring-green-400 shadow-[0_0_20px_rgba(34,197,94,0.8)] scale-105 z-40 rounded-lg' : ''}
                     ${card.tapped ? 'opacity-70' : ''}
                     ${!isDragging ? 'transition-all duration-200 ease-out' : ''}`}
                 style={{
                     width: CARD_WIDTH,
-                    left: x,
-                    top: y,
+                    ...(isRelative ? {} : { left: x, top: y }),
                     touchAction: 'none'
                 }}
                 onMouseDown={(e) => onMouseDown(e, card)}
@@ -366,78 +366,61 @@ const BattlefieldCard = ({
                 : isEligibleAttacker ? 'shadow-[0_0_20px_rgba(59,130,246,1)] z-40'
                     : '';
 
-    return (
-        <div
-            className={`absolute cursor-pointer flex flex-col items-center
-                ${isHovered ? 'z-50' : ''}
-                ${!isDragging ? 'transition-all duration-200 ease-out' : ''}
-                ${card.tapped ? 'opacity-80' : ''}
-                rounded-xl ${cardGlowClass}`}
-            style={{
-                width: CARD_WIDTH,
-                left: x,
-                top: y,
-                touchAction: 'none'
-            }}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-            onPointerMove={handlePointerMove}
-            onMouseDown={(e) => {
-                if (!isTouch && !isLongPressingRef.current) {
-                    e.stopPropagation();
-                    onMouseDown(e, card);
-                }
-            }}
-            {...(isTouch
-                ? {
-                    // Touch: first tap shows buttons, second tap opens info panel
-                    // Touch: Immediate selection (no more hover/first-tap logic)
-                    onClick: (e) => {
-                        if (isLongPressingRef.current) return;
-                        e.stopPropagation();
-                        onMouseDown(e, card);
-                    }
-                }
-                : {
-                    // Desktop: now click-to-select only (hover effect removed)
-                }
-            )}
-        >
-            {/* Targeting Visuals - Background highlights if needed, but shadows are now on container */}
-            {/* Keeping relative wrapper for content */}
+    // --- Render Logic Extracted ---
+    const renderCardContent = (isOverlay = false) => {
+        // Dynamic scale for overlay
+        // FIX: List view card should NOT scale or glow when selected. Only overlay.
+        const scaleClass = isOverlay ? 'scale-[1.75]' : '';
 
-            {/* MAIN CARD CONTENT (Standard Frame) - Glow wraps attachments + card */}
-            <div className={`relative flex flex-col items-center rounded-xl transition-all duration-300 w-full ${isSelected && !isDragging && !isTargeting && !isDeclaredAttacker ? 'shadow-[0_0_25px_rgba(34,197,94,0.6)]' : ''}`}
+        // FIX: Shadow/Glow only on overlay if selected
+        const shadowClass = isOverlay
+            ? 'shadow-[0_0_30px_rgba(34,197,94,0.6)] shadow-2xl' // Green glow on overlay
+            : isDragging || isTargeting || isDeclaredAttacker // Keep other operational glows
+                ? ''
+                : ''; // No selection glow on base card
+
+        // Show controls only if it's the overlay AND selected
+        // MODIFICATION: Controls now moved to bottom sticky SelectionMenu
+        const showControls = false;
+
+        // Determine which glow to apply
+        let activeGlow = '';
+        if (isOverlay && isSelected) {
+            // Overlay gets the selection glow
+            // We use ring for overlay to make it sharp
+            activeGlow = 'ring-2 ring-green-500/50';
+        } else if (!isOverlay) {
+            // List view card: use cardGlowClass EXCLUDING selection
+            // Re-derive non-selection glow:
+            if (isSource) activeGlow = 'shadow-[0_0_25px_rgba(59,130,246,1)] scale-105 z-40 animate-pulse';
+            else if (isValidTarget || isDeclaredAttacker) activeGlow = 'shadow-[0_0_25px_rgba(220,38,38,1)] scale-105 z-40';
+            else if (isEligibleAttacker) activeGlow = 'shadow-[0_0_20px_rgba(59,130,246,1)] z-40';
+        }
+
+        return (
+            <div className={`relative flex flex-col items-center rounded-xl transition-all duration-300 w-full ${scaleClass} ${shadowClass} ${activeGlow}`}
                 style={{
-                    paddingTop: attachments.length > 0 ? `${attachments.length * 28}px` : 0 // Space for attachments at top
+                    paddingTop: attachments.length > 0 ? `${attachments.length * 28}px` : 0
+                }}
+                onClick={(e) => {
+                    // Stop propagation to prevent auto-close when clicking card in overlay
+                    if (isOverlay) e.stopPropagation();
                 }}
             >
-
-                {/* Attached Equipment Banners - Positioned at top of container */}
+                {/* Attached Equipment Banners */}
                 {attachments.length > 0 && (
                     <div className="absolute top-0 left-0 w-full flex flex-col items-center z-20 pointer-events-auto transition-all duration-300 ease-out"
                         onMouseMove={(e) => {
-                            // Coordinate-Based Detection with Z-Awareness
+                            // Logic retained from original
                             const rect = e.currentTarget.getBoundingClientRect();
                             const offsetFromTop = e.clientY - rect.top;
-
-                            // Card Layout Constants
                             const BANNER_HEIGHT = 28;
-
-                            // Find which banner is hovered
                             let hitIndex = -1;
-
                             for (let i = 0; i < attachments.length; i++) {
-                                const itemTop = i * BANNER_HEIGHT;
-                                const itemBottom = itemTop + BANNER_HEIGHT;
-
-                                if (offsetFromTop >= itemTop && offsetFromTop <= itemBottom) {
-                                    hitIndex = i;
-                                    break;
+                                if (offsetFromTop >= i * BANNER_HEIGHT && offsetFromTop <= (i + 1) * BANNER_HEIGHT) {
+                                    hitIndex = i; break;
                                 }
                             }
-
                             if (hitIndex !== -1) {
                                 setHoveredAttachmentId(attachments[hitIndex].id);
                                 setIsEquipmentHovered(true);
@@ -464,75 +447,44 @@ const BattlefieldCard = ({
                                     }}
                                     onMouseLeave={() => setHoveredAttachmentId(null)}
                                 >
-                                    {(() => {
-                                        const attActiveIdx = att.activeFaceIndex !== undefined ? att.activeFaceIndex : 0;
-                                        const attFaces = att.card_faces || [];
-                                        const attDisplayFace = attFaces[attActiveIdx] || att;
-                                        const attDisplayName = attDisplayFace.name || att.name;
-
-                                        return (
-                                            <>
-                                                {hoveredAttachmentId === att.id && (
-                                                    <div className="absolute left-0 top-0 z-50 pt-2 -translate-x-1/2">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                e.stopPropagation();
-                                                                onAction && onAction('unequip-self', att);
-                                                            }}
-                                                            className="bg-slate-600 w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110"
-                                                            title="Unequip"
-                                                        >
-                                                            <Minus size={16} className="text-white drop-shadow-sm" />
-                                                            <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
-                                                                Unequip
-                                                            </span>
-                                                        </button>
-                                                    </div>
-                                                )}
-
-                                                <div
-                                                    className="flex flex-col items-center cursor-pointer transition-all duration-300"
-                                                    onMouseDown={(e) => {
-                                                        if (!isEligibleAttacker) {
-                                                            e.stopPropagation();
-                                                        }
-                                                    }}
-                                                    onClick={(e) => {
-                                                        if (isEligibleAttacker) return;
-                                                        e.stopPropagation();
-                                                        onAction && onAction('select', att);
-                                                    }}
-                                                >
-                                                    <div className="relative z-10">
-                                                        <TopBanner
-                                                            width={CARD_WIDTH}
-                                                            height={24}
-                                                            colorIdentity={attColors.fillColor}
-                                                        >
-                                                            <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'white' }}>
-                                                                <Sword size={10} className="opacity-50" />
-                                                                {attDisplayName}
-                                                            </div>
-                                                        </TopBanner>
-                                                    </div>
+                                    {/* Attachment Content */}
+                                    <div
+                                        className="flex flex-col items-center cursor-pointer transition-all duration-300"
+                                        onClick={(e) => {
+                                            if (isEligibleAttacker) return;
+                                            e.stopPropagation();
+                                            onAction && onAction('select', att);
+                                        }}
+                                    >
+                                        <div className="relative z-10">
+                                            <TopBanner width={CARD_WIDTH} height={24} colorIdentity={attColors.fillColor}>
+                                                <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'white' }}>
+                                                    <Sword size={10} className="opacity-50" />
+                                                    {att.name}
                                                 </div>
-                                            </>
-                                        );
-                                    })()}
+                                            </TopBanner>
+                                        </div>
+                                    </div>
+                                    {/* Unequip Button for Attachment (Overlay Only or Hover) */}
+                                    {showControls && (
+                                        <div className="absolute -left-10 top-0 z-50">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onAction && onAction('unequip-self', att); }}
+                                                className="bg-slate-600 w-8 h-8 rounded-full shadow-lg border border-white/20 flex items-center justify-center hover:scale-110 active:scale-95"
+                                            >
+                                                <Minus size={14} className="text-white" />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
                     </div>
                 )}
 
-                {/* Top Banner - Name */}
+                {/* Top Banner */}
                 <div className="z-30 relative" style={{ marginBottom: -4 }}>
-                    <TopBanner
-                        width={CARD_WIDTH}
-                        height={bannerHeight}
-                        colorIdentity={colors.fillColor}
-                    >
+                    <TopBanner width={CARD_WIDTH} height={bannerHeight} colorIdentity={colors.fillColor}>
                         <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: '#ffffff' }}>
                             {(() => {
                                 const activeIdx = card.activeFaceIndex !== undefined ? card.activeFaceIndex : 0;
@@ -545,10 +497,7 @@ const BattlefieldCard = ({
 
                 {/* Art Window */}
                 <div className="z-30 relative">
-                    <ArtWindow
-                        width={CARD_WIDTH}
-                        height={artHeight}
-                    >
+                    <ArtWindow width={CARD_WIDTH} height={artHeight}>
                         {card.art_crop ? (
                             <img
                                 src={card.art_crop}
@@ -561,7 +510,7 @@ const BattlefieldCard = ({
                         ) : null}
                     </ArtWindow>
 
-                    {/* Counter Indicator Overlay on Art (Generic) */}
+                    {/* Counter Indicators */}
                     {isModified && card.type === 'Creature' && (
                         <div className="absolute top-2 left-2 flex flex-col gap-1 items-start z-20">
                             {plusOne > 0 &&
@@ -581,48 +530,36 @@ const BattlefieldCard = ({
                         </div>
                     )}
 
-                    {/* Stack Count Indicator (always visible for stacks) */}
+                    {/* Stack Count */}
                     {isStack && (
-                        <div className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${isHovered && displayCount > 0
-                            ? (isEligibleAttacker || isDeclaredAttacker ? 'bg-blue-600 border-blue-400' : 'bg-red-600 border-red-400') + ' text-white'
-                            : 'bg-slate-800 border-slate-600 text-white'
-                            }`}>
-                            <span className="text-xs font-bold">
-                                {isHovered && displayCount > 0 ? `${displayCount}/${count}` : `x${count}`}
-                            </span>
+                        <div className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${displayCount > 0 ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-600 text-white'}`}>
+                            <span className="text-xs font-bold">x{count}</span>
                         </div>
                     )}
                 </div>
 
-                {/* Bottom Banner - Type Line */}
+                {/* Bottom Banner */}
                 <div className="z-30 relative" style={{ marginTop: 4 }}>
-                    <BottomBanner
-                        width={CARD_WIDTH}
-                        height={bannerHeight}
-                    >
+                    <BottomBanner width={CARD_WIDTH} height={bannerHeight}>
                         <div style={{ width: '80%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                             <div className="w-full flex justify-between items-center px-1">
-                                <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>
-                                    {cardType}
-                                </span>
+                                <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>{cardType}</span>
                             </div>
                         </div>
-                        {/* P/T - Inline if Creature */}
                         {card.type === 'Creature' && (
                             <div className="text-[10px] font-bold flex gap-0.5 text-white">
-                                <span>{formatBigNumber(totalPower)}</span>
-                                <span>/</span>
-                                <span>{formatBigNumber(totalToughness)}</span>
+                                <span>{formatBigNumber(totalPower)}</span>/<span>{formatBigNumber(totalToughness)}</span>
                             </div>
                         )}
                     </BottomBanner>
                 </div>
 
-                {/* EXTENDED SELECTION CONTROLS (Embedded below card when selected) */}
-                {isSelected && !isDragging && !isTargeting && !isDeclaredAttacker && (
+                {/* EXTENDED SELECTION CONTROLS (Only in Overlay) */}
+                {showControls && !isDragging && !isTargeting && !isDeclaredAttacker && (
                     <>
-                        {/* Bottom: Extended Controls (Embedded) */}
-                        <div className="w-full z-10 -mt-1">
+                        {/* Bottom: Extended Controls */}
+                        <div className="w-full z-10 -mt-1 scale-[0.85] origin-top">
+                            {/* Scaled down slightly to fit width nicely */}
                             <SelectedCardControls
                                 card={card}
                                 stackCount={count}
@@ -637,126 +574,82 @@ const BattlefieldCard = ({
                         </div>
 
                         {/* Left Side: Hanging Actions */}
-                        <div className="absolute top-4 left-0 -translate-x-2/3 flex flex-col gap-2 z-[60]">
+                        <div className="absolute top-4 -left-12 flex flex-col gap-3 z-[60]">
                             {getHoverActions().map((action, index) => (
                                 <button
                                     key={action.id}
                                     onClick={(e) => handleActionClick(e, action)}
-                                    className={`${action.color} w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110 active:scale-95 touch-target`}
+                                    className={`${action.color} w-10 h-10 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110 active:scale-95 touch-target`}
                                     title={action.label}
-                                    style={{
-                                        transitionDelay: `${index * 50}ms`
-                                    }}
                                 >
-                                    <action.icon size={16} className="text-white drop-shadow-sm" />
-                                    {!isTouch && (
-                                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
-                                            {action.label}
-                                        </span>
-                                    )}
+                                    <action.icon size={18} className="text-white drop-shadow-sm" />
                                 </button>
                             ))}
                         </div>
                     </>
                 )}
-
             </div>
+        );
+    };
 
-            {/* Tapped Indicator */}
-            {
-                card.tapped && (
+    return (
+        <>
+            {/* 1. Normal List Render (Placeholder) */}
+            <div
+                className={`${isRelative ? 'relative' : 'absolute'} cursor-pointer flex flex-col items-center
+                    ${isHovered ? 'z-50' : ''}
+                    ${!isDragging ? 'transition-all duration-200 ease-out' : ''}
+                    ${card.tapped && !isSelected ? 'opacity-80' : ''}
+                    rounded-xl`}
+                style={{
+                    width: CARD_WIDTH,
+                    ...(isRelative ? {} : { left: x, top: y }),
+                    touchAction: 'none'
+                }}
+                onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUp}
+                onPointerLeave={handlePointerUp}
+                onPointerMove={handlePointerMove}
+                onMouseDown={(e) => {
+                    if (!isTouch && !isLongPressingRef.current) {
+                        e.stopPropagation();
+                        onMouseDown(e, card);
+                    }
+                }}
+                onClick={(e) => {
+                    if (isTouch && !isLongPressingRef.current) {
+                        e.stopPropagation();
+                        onMouseDown(e, card);
+                    }
+                }}
+            >
+                {/* Render content without controls for list view */}
+                {renderCardContent(false)}
+
+                {/* Tapped Indicator (Visual only, List view) */}
+                {card.tapped && !isSelected && (
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
                         <RotateCcw size={32} className="text-white drop-shadow-md opacity-80" />
                     </div>
-                )
-            }
+                )}
+            </div>
 
-            {/* Touch backdrop - tap outside to close menu */}
-            {
-                isTouch && showActionButtons && (
-                    <div
-                        className="fixed inset-0 z-10"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setIsHovered(false);
-                        }}
-                    />
-                )
-            }
+            {/* Selection overlay moved to SelectionMenu component */}
 
-            {/* Action Buttons (shown when hovering/tapped - left side) */}
-            {
-                showActionButtons && (
-                    <div className={`absolute left-0 top-0 flex flex-col gap-3 z-50 pt-2 -translate-x-1/2 ${isTouch ? 'visible' : ''}`}>
-                        {getHoverActions().map((action, index) => (
-                            <button
-                                key={action.id}
-                                onClick={(e) => handleActionClick(e, action.id)}
-                                className={`${action.color} w-9 h-9 rounded-full shadow-lg border-2 border-white/20 flex items-center justify-center group relative transform transition-all hover:scale-110 active:scale-95 hover:z-50 touch-target`}
-                                title={action.label}
-                                style={{
-                                    transitionDelay: `${index * 50}ms`
-                                }}
-                            >
-                                <action.icon size={16} className="text-white drop-shadow-sm" />
-
-                                {/* Tooltip - Left side (hidden on touch) */}
-                                {!isTouch && (
-                                    <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl z-50 border border-white/10">
-                                        {action.label}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
+            {/* Long Press Overlay (Original Image View) */}
+            {showOverlay && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-none">
+                    <div className="relative w-[90vw] h-[90vh] flex items-center justify-center p-4">
+                        <img
+                            src={card.image_normal}
+                            alt={card.name}
+                            className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] transform scale-100 transition-transform duration-300"
+                        />
                     </div>
-                )
-            }
-
-            {/* Vertical Stack Sidebar (Right Edge) */}
-            {
-                showStackUI && (
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 flex flex-col items-center gap-3 z-50 py-3 px-1.5 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-600 shadow-2xl">
-
-                        {/* Cycle Button */}
-                        <button
-                            onClick={cycleSelection}
-                            className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow-lg border border-blue-400 transition-all hover:scale-110 active:scale-95"
-                            title="Toggle Amount (1 / Half / All)"
-                        >
-                            <Layers size={16} />
-                        </button>
-
-                        {/* Vertical Slider Wrapper */}
-                        <div className="py-2 h-32 flex items-center justify-center w-8">
-                            <input
-                                type="range"
-                                min="1"
-                                max={count}
-                                step="1"
-                                value={displayCount}
-                                onChange={(e) => handleStackChange(e, parseInt(e.target.value))}
-                                className="-rotate-90 w-32 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400"
-                            />
-                        </div>
-                    </div>
-                )
-            }
-            {/* Long Press Overlay */}
-            {
-                showOverlay && createPortal(
-                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-none">
-                        <div className="relative w-[90vw] h-[90vh] flex items-center justify-center p-4">
-                            <img
-                                src={card.image_normal}
-                                alt={card.name}
-                                className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] transform scale-100 transition-transform duration-300"
-                            />
-                        </div>
-                    </div>,
-                    document.body
-                )
-            }
-        </div >
+                </div>,
+                document.body
+            )}
+        </>
     );
 };
 

@@ -38,6 +38,7 @@ const useGameState = () => {
     // --- Core State ---
     const [cards, setCards] = useState([]);
     const [history, setHistory] = useState([]);
+    const [future, setFuture] = useState([]);
     const [actionLog, setActionLog] = useState([]);
 
     // --- Phase State ---
@@ -72,15 +73,26 @@ const useGameState = () => {
     const saveHistoryState = useCallback((newCards) => {
         setHistory(prev => [...prev, JSON.parse(JSON.stringify(cards))]);
         setCards(newCards);
+        setFuture([]); // Clear redo stack on new action
     }, [cards]);
 
     const undo = useCallback(() => {
         if (history.length > 0) {
             const prev = history[history.length - 1];
+            setFuture(prevFuture => [JSON.parse(JSON.stringify(cards)), ...prevFuture]); // Push current to future
             setCards(prev);
             setHistory(prevHist => prevHist.slice(0, -1));
         }
-    }, [history]);
+    }, [history, cards]);
+
+    const redo = useCallback(() => {
+        if (future.length > 0) {
+            const next = future[0];
+            setHistory(prevHist => [...prevHist, JSON.parse(JSON.stringify(cards))]); // Push current to history
+            setCards(next);
+            setFuture(prevFuture => prevFuture.slice(1));
+        }
+    }, [future, cards]);
 
     // --- Phase Management ---
 
@@ -380,6 +392,8 @@ const useGameState = () => {
         logAction,
         saveHistoryState,
         undo,
+        redo,
+        future,
         handlePhaseChange,
         advanceCombatStep,
         advancePhase,

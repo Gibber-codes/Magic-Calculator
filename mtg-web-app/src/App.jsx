@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X, Plus, Minus, Copy, Trash2, RotateCcw,
-  History, Zap, Skull, Mountain, Hexagon, Sparkles, Ghost, User, Ban, Sword, ArrowLeft, ArrowRight, Play, CheckCircle, Search, ShieldOff
+  History, Zap, Skull, Mountain, Hexagon, Sparkles, Ghost, User, Ban, Sword, ArrowLeft, ArrowRight, Play, CheckCircle, Search, ShieldOff,
+  Menu, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 // Load card data from consolidated JSON file
@@ -22,6 +23,13 @@ import HistoryPanel from './components/HistoryPanel';
 
 import PhaseTracker from './components/PhaseTracker';
 import BattlefieldCard from './components/BattlefieldCard';
+import CreatureList from './components/CreatureList';
+import PermanentList from './components/PermanentList';
+import CalculationMenu from './components/CalculationMenu';
+import SelectionMenu from './components/SelectionMenu';
+import BottomControlPanel from './components/BottomControlPanel';
+import LandsPanel from './components/LandsPanel';
+
 import useGameState from './hooks/useGameState';
 import useTargetingMode from './hooks/useTargetingMode';
 
@@ -78,7 +86,7 @@ const App = () => {
     currentCombatStep, setCurrentCombatStep,
     abilityStack, setAbilityStack, isStackCollapsed, setIsStackCollapsed,
     gameEngineRef,
-    logAction, saveHistoryState, undo,
+    logAction, saveHistoryState, undo, redo, future,
     handlePhaseChange: baseHandlePhaseChange, advanceCombatStep: baseAdvanceCombatStep,
     advancePhase: baseAdvancePhase, endTurn,
     addToStack, resolveStackAbility, removeFromStack, resolveAllStack, clearStack,
@@ -109,6 +117,7 @@ const App = () => {
   const [previewCard, setPreviewCard] = useState(null);
   const [loadingPreset, setLoadingPreset] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [showCalculationMenu, setShowCalculationMenu] = useState(false);
 
 
   const battlefieldRef = useRef(null);
@@ -1032,50 +1041,105 @@ const App = () => {
 
   // --- Render ---
 
+  // Unified Eligibility Check
+  const isCardEligible = (c) => {
+    if (!targetingMode.active) return false;
+    if (targetingMode.sourceId === c.id) return false;
+    if (targetingMode.action === 'declare-attackers') {
+      const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature'));
+      // Allow clicking even if already selected to enable deselect/reselect-count
+      return isCreature && !c.tapped;
+    }
+    if (targetingMode.action === 'equip') return c.type === 'Creature';
+    if (targetingMode.action === 'activate-ability' || targetingMode.action === 'resolve-trigger') {
+      const targetType = targetingMode.data?.targetType || 'creature';
+      if (targetType.toLowerCase() === 'creature') {
+        const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
+        if (targetingMode.action === 'resolve-trigger') {
+          const abilityTarget = targetingMode.data?.stackAbility?.triggerObj?.ability?.target || '';
+          if (abilityTarget.includes('attacking')) return isCreature && c.attacking;
+        }
+        return isCreature;
+      }
+      return true;
+    }
+    if (targetingMode.action === 'enchant') {
+      const auraTarget = targetingMode.data?.auraTarget;
+      if (!auraTarget || auraTarget.includes('permanent')) return true;
+      if (auraTarget.includes('creature')) return isCreature(c);
+      if (auraTarget.includes('land')) return isLand(c);
+      if (auraTarget.includes('planeswalker')) return c.type_line?.toLowerCase().includes('planeswalker');
+      return true;
+    }
+    if (targetingMode.action === 'remove-to-zone') return true;
+    return false;
+  };
+
+  const creatures = visibleStacks.filter(g => isCreature(g.leader));
+  // Keep lands for count but DO NOT render them in main view anymore
+  const lands = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
+  const permanents = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
+  const nonCreatures = [...permanents]; // Removed lands from display
+
+  // Calculate Land Count for Badge
+  const landCount = cards.filter(c => c.zone === 'battlefield' && isLand(c)).length;
+
   return (
     <div
-      className="w-full h-screen bg-slate-900 flex flex-col overflow-hidden select-none relative"
+      className="flex flex-col h-screen w-full text-white overflow-hidden relative selection-none touch-none"
+      style={{
+        backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)',
+        backgroundSize: '40px 40px',
+        backgroundColor: '#0f172a'
+      }}
     >
-      {/* Floating Header Controls - Hidden when a card is selected */}
-      {!selectedCard && (
-        <div className="absolute top-0 right-0 p-4 pt-[env(safe-area-inset-top)] z-50 pointer-events-none">
-          <div className="flex gap-2 pointer-events-auto">
-            <button
-              onClick={() => setActivePanel(activePanel === 'history' ? null : 'history')}
-              className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'history' ? 'bg-amber-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
-            >
-              <History size={16} /> History
-            </button>
-            <button
-              onClick={() => setActivePanel(activePanel === 'add' ? null : 'add')}
-              className={`px-4 py-2 rounded-full shadow-lg border border-white/10 backdrop-blur-md text-sm flex items-center gap-2 transition-all ${activePanel === 'add' ? 'bg-blue-700 text-white' : 'bg-slate-800/80 hover:bg-slate-700 text-gray-200'}`}
-            >
-              <Plus size={16} /> Add
-            </button>
-          </div>
+      {/* Top Bar: Navigation & Menu */}
+      <div className="absolute top-0 left-0 w-full px-4 py-3 z-50 flex justify-between items-center pointer-events-none">
+
+        {/* Left: Menu Button */}
+        <button
+          onClick={() => setShowCalculationMenu(true)}
+          className="pointer-events-auto w-10 h-10 flex items-center justify-center rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-600/50 text-gray-300 active:scale-95 transition-all shadow-lg backdrop-blur-sm"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        {/* Center: Title */}
+        <h1 className="text-white font-bold text-lg drop-shadow-md select-none pointer-events-auto">
+          Magic Calculator
+        </h1>
+
+        {/* Right: History Navigation (Undo/Redo) */}
+        <div className="pointer-events-auto flex gap-2">
+          {/* Back / Undo */}
+          <button
+            onClick={undo}
+            disabled={history.length === 0}
+            className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
+              ${history.length > 0
+                ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
+                : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
+              }`}
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+
+          {/* Forward / Redo */}
+          <button
+            onClick={redo}
+            disabled={!future || future.length === 0}
+            className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
+              ${future && future.length > 0
+                ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
+                : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
+              }`}
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
         </div>
-      )}
+      </div>
 
-
-      {/* Targeting Mode Cancel Banner */}
-      {
-        targetingMode.active && (
-          <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200">
-            <button
-              onClick={cancelTargeting}
-              className="bg-slate-800 border border-slate-600 text-white px-6 py-2 rounded-full shadow-2xl flex items-center gap-2 hover:bg-slate-700 transition-colors"
-            >
-              <span className="text-blue-400 font-bold">
-                {targetingMode.action === 'remove-to-zone' ? 'Select Zone' : 'Targeting Mode'}
-              </span>
-              <span className="text-gray-400 text-sm">Esc to Cancel</span>
-            </button>
-          </div>
-        )
-      }
-
-      {/* Triggered Ability Stack - Right side overlay */}
-      {/* Triggered Ability Stack - Hidden when a card is selected */}
+      {/* Triggered Ability Stack (Overlay) */}
       {!selectedCard && (
         <TriggeredAbilityStack
           items={abilityStack}
@@ -1089,536 +1153,192 @@ const App = () => {
         />
       )}
 
-      {/* Battlefield */}
-      <div
-        ref={battlefieldRef}
-        className={`flex-1 relative battlefield-bg overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-        style={{
-          backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)',
-          backgroundSize: '40px 40px',
-          backgroundColor: '#0f172a', // slate-900
-          userSelect: 'none', // Prevent text selection while dragging
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => {
-          if (e.target !== battlefieldRef.current && !e.target.classList.contains('battlefield-bg')) return;
-
-          setIsDragging(true);
-          if (navigator.vibrate) navigator.vibrate(20); // Haptic: Drag Start
-
-          const rect = battlefieldRef.current.getBoundingClientRect();
-          const relativeY = e.clientY - rect.top;
-
-          // Determine which row based on Y position
-          let rowType = null;
-          const centerY = rect.height / 2;
-          const creatureY = centerY - 250 + verticalOffsetY;
-          const othersY = centerY - 20 + verticalOffsetY;
-          const landsY = centerY + 200 + verticalOffsetY;
-
-          // Find closest row
-          const distances = [
-            { type: 'creatures', dist: Math.abs(relativeY - creatureY), scroll: creatureScrollX },
-            { type: 'others', dist: Math.abs(relativeY - othersY), scroll: othersScrollX },
-            { type: 'lands', dist: Math.abs(relativeY - landsY), scroll: landsScrollX }
-          ];
-          const closest = distances.sort((a, b) => a.dist - b.dist)[0];
-          rowType = closest.type;
-
-          // Check Horizontal Scroll Eligibility
-          let canScrollX = true;
-          let rowCards = [];
-
-          if (rowType === 'creatures') rowCards = visibleStacks.filter(g => isCreature(g.leader));
-          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
-          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
-
-          const rowCount = rowCards.length;
-          const rowWidth = rowCount * CARD_WIDTH + (rowCount - 1) * CARD_GAP;
-
-          // Allow scroll only if content is wider than container (plus padding)
-          if (rowWidth <= rect.width - 40) { // 40px padding buffer
-            canScrollX = false;
-          }
-
-          // Check Vertical Scroll Eligibility
-          let canScrollY = true;
-          // Calculate total content height (Top of Creatures to Bottom of Lands)
-          // Re-calculate dynamic spread (same logic as useEffect)
-          const h_containerHeight = window.innerHeight;
-          const h_usableHeight = h_containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
-          const h_baseSpread = 250;
-          const h_scaleFactor = Math.min(1, h_usableHeight / 900);
-          const h_spread = Math.max(220, h_baseSpread * h_scaleFactor);
-
-          const totalContentHeight = (h_spread * 2) + CARD_HEIGHT; // Distance implies center-to-center is 2*spread. + half height top/bottom = CARD_HEIGHT.
-
-          if (totalContentHeight <= h_usableHeight + 20) { // 20px buffer
-            canScrollY = false;
-          }
-
-          dragRef.current = {
-            startX: e.clientX,
-            startY: e.clientY,
-            initialScrollX: closest.scroll,
-            initialOffsetY: verticalOffsetY,
-            axis: null,
-            rowType: rowType,
-            canScrollX,
-            canScrollY
-          };
-
-          const onMouseMove = (mv) => {
-            const dx = mv.clientX - dragRef.current.startX;
-            const dy = mv.clientY - dragRef.current.startY;
-
-            // Determine axis if not set
-            if (!dragRef.current.axis) {
-              if (Math.abs(dx) > Math.abs(dy)) dragRef.current.axis = 'h';
-              else dragRef.current.axis = 'v';
-            }
-
-            if (dragRef.current.axis === 'h') {
-              if (!dragRef.current.canScrollX) return; // Block horizontal scroll if fits
-
-              // Horizontal: Scroll the specific row
-              const newScroll = dragRef.current.initialScrollX + dx;
-              if (dragRef.current.rowType === 'creatures') setCreatureScrollX(newScroll);
-              else if (dragRef.current.rowType === 'others') setOthersScrollX(newScroll);
-              else if (dragRef.current.rowType === 'lands') setLandsScrollX(newScroll);
-            } else {
-              if (!dragRef.current.canScrollY) return; // Block vertical scroll if fits
-
-              // Vertical: Pan everything
-              setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
-            }
-          };
-
-          const onMouseUp = () => {
-            setIsDragging(false);
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', onMouseUp);
-
-            // Snap Logic
-            const CARD_TOTAL_WIDTH = CARD_WIDTH + CARD_GAP; // 152
-
-            // 1. Horizontal Snap
-            if (dragRef.current.axis === 'h') {
-              const snap = (val) => Math.round(val / CARD_TOTAL_WIDTH) * CARD_TOTAL_WIDTH;
-
-              if (dragRef.current.rowType === 'creatures') setCreatureScrollX(prev => snap(prev));
-              else if (dragRef.current.rowType === 'others') setOthersScrollX(prev => snap(prev));
-              else if (dragRef.current.rowType === 'lands') setLandsScrollX(prev => snap(prev));
-            }
-            // 2. Vertical Snap - Dynamic targets based on container size
-            else if (dragRef.current.axis === 'v') {
-              if (navigator.vibrate) navigator.vibrate(15); // Haptic: Snap
-              const containerHeight = window.innerHeight;
-              // Use component-level constants (BOTTOM_BAR_HEIGHT = 110, TOP_BAR_HEIGHT = 80)
-              const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
-              // CenterY in LOCAL coordinates
-              const centerY = usableHeight / 2;
-
-              // Dynamic spread based on available height for Snap Logic
-              const baseSpread = 250;
-              const scaleFactor = Math.min(1, usableHeight / 900);
-              const spread = Math.max(220, baseSpread * scaleFactor);
-
-              // Row baseline Y positions
-              const creatureBaseY = centerY - spread;
-              const othersBaseY = centerY;
-              const landsBaseY = centerY + 215;
-
-              // Target position: Center-to-Center align
-              const TARGET_CENTER_Y = centerY;
-              const targets = [
-                TARGET_CENTER_Y - creatureBaseY,
-                TARGET_CENTER_Y - othersBaseY,
-                TARGET_CENTER_Y - landsBaseY
-              ];
-
-              setVerticalOffsetY(prev => {
-                return targets.reduce((closest, curr) =>
-                  Math.abs(curr - prev) < Math.abs(closest - prev) ? curr : closest
-                );
+      {/* Main Content Area - Split View */}
+      <div className="flex-1 flex flex-col pt-16 pb-0 overflow-hidden">
+        {/* Top Half: Creatures */}
+        <div className="flex-1 relative min-h-0">
+          <CreatureList
+            creatures={creatures}
+            onCardAction={handleCardAction}
+            onStackSelectionChange={updateStackSelection}
+            allCards={cards}
+            onActivateAbility={(card, ability) => {
+              logAction(`Activated: ${ability.cost}`);
+              handleActivateAbility(card, ability);
+            }}
+            onConvertLand={handleLandConversion}
+            onCounterChange={(action, cardsToModify, count) => {
+              if (!gameEngineRef.current) return;
+              let updatedCards = [...cards];
+              cardsToModify.forEach(cardToModify => {
+                const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
+                updatedCards = result.newCards;
               });
-            }
-          };
-
-          window.addEventListener('mousemove', onMouseMove);
-          window.addEventListener('mouseup', onMouseUp);
-        }}
-        onTouchStart={(e) => {
-          if (e.target !== battlefieldRef.current && !e.target.classList.contains('battlefield-bg')) return;
-          const touch = e.touches[0];
-          const rect = battlefieldRef.current.getBoundingClientRect();
-          const relativeY = touch.clientY - rect.top;
-
-          // Determine which row based on Y position
-          let rowType = null;
-          const containerHeight = window.innerHeight;
-          const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
-          // CenterY in LOCAL coordinates
-          const centerY = usableHeight / 2;
-
-          // Dynamic spread based on available height for touch detection
-          const baseSpread = 250;
-          const scaleFactor = Math.min(1, usableHeight / 900);
-          const spread = Math.max(220, baseSpread * scaleFactor);
-
-          const creatureRowY = centerY - spread;
-          const othersRowY = centerY;
-          const landsRowY = centerY + 215;
-
-          const creatureCenterY = creatureRowY + verticalOffsetY;
-          const othersCenterY = othersRowY + verticalOffsetY;
-          const landsCenterY = landsRowY + verticalOffsetY;
-
-          // Find closest row
-          const distances = [
-            { type: 'creatures', dist: Math.abs(relativeY - creatureCenterY), scroll: creatureScrollX },
-            { type: 'others', dist: Math.abs(relativeY - othersCenterY), scroll: othersScrollX },
-            { type: 'lands', dist: Math.abs(relativeY - landsCenterY), scroll: landsScrollX }
-          ];
-          const closest = distances.sort((a, b) => a.dist - b.dist)[0];
-          rowType = closest.type;
-
-          // Check Horizontal Scroll Eligibility
-          let canScrollX = true;
-          let rowCards = [];
-
-          if (rowType === 'creatures') rowCards = visibleStacks.filter(g => isCreature(g.leader));
-          else if (rowType === 'lands') rowCards = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
-          else rowCards = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
-
-          const rowCount = rowCards.length;
-          const rowWidth = rowCount * CARD_WIDTH + (rowCount - 1) * CARD_GAP;
-
-          if (rowWidth <= rect.width - 20) {
-            canScrollX = false;
-          }
-
-          // Check Vertical Scroll Eligibility
-          let canScrollY = true;
-          // Re-calculate dynamic spread
-          // containerHeight/usableHeight are already defined in scope above
-          const h_scaleFactor = Math.min(1, usableHeight / 900);
-          const h_spread = Math.max(220, 250 * h_scaleFactor);
-
-          const totalContentHeight = (h_spread * 2) + CARD_HEIGHT;
-
-          if (totalContentHeight <= usableHeight + 20) {
-            canScrollY = false;
-          }
-
-          setIsDragging(true);
-          if (navigator.vibrate) navigator.vibrate(20); // Haptic: Touch Drag Start
-
-          dragRef.current = {
-            startX: touch.clientX,
-            startY: touch.clientY,
-            initialScrollX: closest.scroll,
-            initialOffsetY: verticalOffsetY,
-            axis: null,
-            rowType: rowType,
-            canScrollX,
-            canScrollY
-          };
-        }}
-        onTouchMove={(e) => {
-          if (!isDragging || !dragRef.current) return;
-          const touch = e.touches[0];
-          const dx = touch.clientX - dragRef.current.startX;
-          const dy = touch.clientY - dragRef.current.startY;
-
-          // Direction Locking
-          if (!dragRef.current.axis) {
-            // Threshold to lock
-            if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-              if (Math.abs(dx) > Math.abs(dy)) dragRef.current.axis = 'h';
-              else dragRef.current.axis = 'v';
-            }
-          }
-
-          if (dragRef.current.axis === 'h') {
-            if (!dragRef.current.canScrollX) return;
-
-            // Horizontal Swipe: Scroll the specific row
-            const newScroll = dragRef.current.initialScrollX + dx;
-            if (dragRef.current.rowType === 'creatures') setCreatureScrollX(newScroll);
-            else if (dragRef.current.rowType === 'others') setOthersScrollX(newScroll);
-            else if (dragRef.current.rowType === 'lands') setLandsScrollX(newScroll);
-          } else if (dragRef.current.axis === 'v') {
-            if (!dragRef.current.canScrollY) return;
-
-            // Vertical Swipe: Move Rows (now allowed in portrait too)
-            setVerticalOffsetY(dragRef.current.initialOffsetY + dy);
-          }
-        }}
-        onTouchEnd={() => {
-          setIsDragging(false);
-          if (!dragRef.current) return;
-
-          // Snap Logic
-          const CARD_TOTAL_WIDTH = CARD_WIDTH + CARD_GAP; // 152
-
-          // 1. Horizontal Snap
-          if (dragRef.current.axis === 'h') {
-            const snap = (val) => Math.round(val / CARD_TOTAL_WIDTH) * CARD_TOTAL_WIDTH;
-
-            if (dragRef.current.rowType === 'creatures') setCreatureScrollX(prev => snap(prev));
-            else if (dragRef.current.rowType === 'others') setOthersScrollX(prev => snap(prev));
-            else if (dragRef.current.rowType === 'lands') setLandsScrollX(prev => snap(prev));
-          }
-          // 2. Vertical Snap - Dynamic targets based on container size
-          else if (dragRef.current.axis === 'v') {
-            if (navigator.vibrate) navigator.vibrate(15); // Haptic: Snap
-            const containerHeight = window.innerHeight;
-            const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
-            // CenterY in LOCAL coordinates
-            const centerY = usableHeight / 2;
-
-            // Dynamic spread based on available height for Snap Logic
-            const baseSpread = 250;
-            const scaleFactor = Math.min(1, usableHeight / 900);
-            const spread = Math.max(220, baseSpread * scaleFactor);
-
-            // Row baseline Y positions (center lines)
-            const creatureBaseY = centerY - spread;
-            const othersBaseY = centerY;
-            const landsBaseY = centerY + spread;
-
-            // Target position: Center-to-Center align
-            const TARGET_CENTER_Y = centerY;
-            const snapTargets = [
-              TARGET_CENTER_Y - creatureBaseY,
-              TARGET_CENTER_Y - othersBaseY,
-              TARGET_CENTER_Y - landsBaseY
-            ];
-
-            setVerticalOffsetY(prev => {
-              return snapTargets.reduce((closest, curr) =>
-                Math.abs(curr - prev) < Math.abs(closest - prev) ? curr : closest
-              );
-            });
-          }
-        }}
-        onClick={(e) => {
-          handleBgClick(e);
-        }}
-      >
-        {/* Empty State Message */}
-        {
-          visibleStacks.length === 0 && (
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-              <div className="text-gray-500 font-medium mb-2">Battlefield Empty</div>
-              <div className="text-gray-600 text-sm">Add a card to begin</div>
-            </div>
-          )
-        }
-
-
-
-
-        {/* Focus Backdrop - Dims battlefield when a card is selected */}
-        {selectedCard && (
-          <div
-            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-40 transition-all duration-500 animate-in fade-in"
-            onClick={() => setSelectedCard(null)}
-          />
-        )}
-        {
-          visibleStacks.map(group => {
-            const card = group.leader;
-            const isSelected = selectedCard?.id === card.id;
-            const pos = cardPositions[card.id];
-
-            // Focus Mode: Bring to center and enlarge
-            let x = pos ? pos.x : 100;
-            let y = pos ? pos.y : 100;
-
-            if (isSelected && !isDragging) {
-              const containerWidth = window.innerWidth;
-              const containerHeight = window.innerHeight;
-              x = (containerWidth / 2) - (CARD_WIDTH / 2);
-              y = (containerHeight / 2) - (CARD_HEIGHT / 2) - 40; // Slightly higher to account for controls below
-            }
-
-            // Targeting Logic
-            // Unified Eligibility Check
-            const isCardEligible = (c) => {
-              if (!targetingMode.active) return false;
-
-              // Check Source (can't target self usually)
-              if (targetingMode.sourceId === c.id) return false;
-
-              // Mode check
-              if (targetingMode.action === 'declare-attackers') {
-                const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature'));
-                // Allow clicking even if already selected to enable deselect/reselect-count
-                return isCreature && !c.tapped;
+              const actionLabel = action === 'counter+' ? 'Added +1/+1 counter to' : 'Removed +1/+1 counter from';
+              logAction(`${actionLabel} ${count} ${selectedCard?.name || 'creature'}(s)`);
+              saveHistoryState(updatedCards);
+              if (selectedCard) {
+                const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
+                if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
               }
-              if (targetingMode.action === 'equip') {
-                return c.type === 'Creature';
-              }
-              if (targetingMode.action === 'activate-ability' || targetingMode.action === 'resolve-trigger') {
-                // Check specific target type from ability definition
-                const targetType = targetingMode.data?.targetType || 'creature';
-                if (targetType.toLowerCase() === 'creature') {
-                  // Robust creature check
-                  const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
-
-                  // For 'resolve-trigger', only require attacking if the ability target text says so
-                  if (targetingMode.action === 'resolve-trigger') {
-                    const abilityTarget = targetingMode.data?.stackAbility?.triggerObj?.ability?.target || '';
-                    if (abilityTarget.includes('attacking')) {
-                      return isCreature && c.attacking;
-                    }
-                  }
-                  return isCreature;
-                }
-                // Add more types here as needed (e.g. 'permanent', 'artifact')
-                return true; // Default to allow if unsure
-              }
-              if (targetingMode.action === 'enchant') {
-                const auraTarget = targetingMode.data?.auraTarget;
-                if (!auraTarget || auraTarget.includes('permanent')) return true;
-                if (auraTarget.includes('creature')) return isCreature(c);
-                if (auraTarget.includes('land')) return isLand(c);
-                if (auraTarget.includes('planeswalker')) return c.type_line?.toLowerCase().includes('planeswalker');
-                return true;
-              }
-              if (targetingMode.action === 'remove-to-zone') {
-                return true;
-              }
-              return false;
-            };
-
-            const isSource = targetingMode.active && targetingMode.sourceId === card.id;
-            const isValidTarget = isCardEligible(card); // Now behaves same as isEligibleAttacker for visuals if we map it
-
-            // Attachments need to search across ALL cards to find ones attached to THIS stack leader
-            // But wait, if we have 5 Bears, and one has a Sword..
-            // The "attached" card isn't in visibleRawCards, so it's not in the stack logic. It's safe.
-            // But visually, we only render attachments for the 'leader'.
-            // If the user equipped the Sword to Bear #3 (not leader), it might be weird.
-            // But our stacking logic splits stacks if state differs.
-            // "attachedTo" is part of the state? NO, I removed it from 'key' in step 1 patch above because "attachedTo" checks what THIS card attaches TO.
-            // But verifying: Does a card know what is attached TO IT? No, we filter `cards.filter(c => c.attachedTo === card.id)`.
-            // So if Bear A has Sword attached, and Bear B has nothing.
-            // Bear A and Bear B look identical (same power/toughness/name).
-            // But functionally they are different.
-            // We should probably check if `cards` has any attachments pointing to them.
-            // For now, let's assume tokens are vanilla. If you equip one, they are technically visually identical
-            // but we might want to split them?
-            // Actually, if we just render attachments for the leader, and they're stacked...
-            // It just looks like the stack has the sword. Which is fine if they're all equipped?
-            // But if only 1 is equipped...
-            // Let's settle for basic stacking for now. User asked for high volume tokens (Helm copies), which are usually identical.
-            // If you equip one, it's a specific action.
-
-            const attachments = cards.filter(c => c.attachedTo === card.id);
-
-            return (
-              <BattlefieldCard
-                key={card.id}
-                card={card}
-                x={x}
-                y={y}
-                count={group.count}
-                stackCards={group.cards}
-                isSelected={selectedCard?.id === card.id}
-                isTargeting={targetingMode.active && targetingMode.mode === 'single'}
-                isEligibleAttacker={targetingMode.active && isCardEligible(card)} // Blue glow for ANY potential target
-                isDeclaredAttacker={
-                  targetingMode.active &&
-                  targetingMode.selectedIds?.includes(card.id)
-                }
-                isSource={isSource}
-                isValidTarget={false} // Use isDeclaredAttacker for red selections now
-                isDragging={isDragging}
-                attachments={attachments}
-                allCards={cards}
-                selectedCount={targetingMode.active ? targetingMode.selectedIds.filter(id => group.cards.some(c => c.id === id)).length : 0}
-                onMouseDown={(e) => {
+            }}
+            getCardProps={(card) => {
+              const group = visibleStacks.find(g => g.cards.some(c => c.id === card.id));
+              const stackCards = group ? group.cards : [card];
+              const attachments = cards.filter(c => c.attachedTo === card.id);
+              const eligible = isCardEligible(card);
+              return {
+                isSelected: selectedCard?.id === card.id,
+                stackCards: stackCards,
+                attachments: attachments,
+                isTargeting: targetingMode.active && targetingMode.mode === 'single',
+                isEligibleAttacker: targetingMode.active && eligible,
+                isDeclaredAttacker: targetingMode.active && targetingMode.selectedIds?.includes(card.id),
+                isSource: targetingMode.active && targetingMode.sourceId === card.id,
+                isValidTarget: false,
+                selectedCount: targetingMode.active ? targetingMode.selectedIds.filter(id => stackCards.some(c => c.id === id)).length : 0,
+                onMouseDown: (e) => {
                   if (targetingMode.active) {
                     e.stopPropagation();
-                    // Check eligibility using our unified helper
-                    const eligible = isCardEligible(card);
                     if (eligible) {
-                      if (targetingMode.mode === 'multiple') {
-                        handleMultiSelect(card);
-                      } else {
-                        handleTargetSelection(card);
-                      }
+                      if (targetingMode.mode === 'multiple') handleMultiSelect(card);
+                      else handleTargetSelection(card);
                     }
                   } else {
-                    // Toggle card selection
-                    if (selectedCard?.id === card.id) {
-                      setSelectedCard(null);
-                    } else {
-                      setSelectedCard(card);
-                    }
+                    if (selectedCard?.id === card.id) setSelectedCard(null);
+                    else setSelectedCard(card);
                   }
-                }}
-                onAction={(action, cardVal, deleteCount) => {
-                  handleCardAction(action, cardVal, deleteCount);
-                }}
-                onStackSelectionChange={updateStackSelection}
-                onActivateAbility={(card, ability) => {
-                  logAction(`Activated: ${ability.cost}`);
-                  handleActivateAbility(card, ability);
-                }}
-                onConvertLand={handleLandConversion}
-                onCounterChange={(action, cardsToModify, count) => {
-                  if (!gameEngineRef.current) return;
+                }
+              };
+            }}
+          />
+        </div>
 
-                  let updatedCards = [...cards];
-                  cardsToModify.forEach(cardToModify => {
-                    const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
-                    updatedCards = result.newCards;
-                  });
-
-                  const actionLabel = action === 'counter+' ? 'Added +1/+1 counter to' : 'Removed +1/+1 counter from';
-                  logAction(`${actionLabel} ${count} ${selectedCard?.name || 'creature'}(s)`);
-                  saveHistoryState(updatedCards);
-
-                  if (selectedCard) {
-                    const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
-                    if (updatedSelectedCard) {
-                      setSelectedCard(updatedSelectedCard);
+        {/* Bottom Half: Permanents Only (No Lands) */}
+        <div className="flex-1 relative min-h-0">
+          <PermanentList
+            permanents={nonCreatures} // Now excludes lands
+            onCardAction={handleCardAction}
+            onStackSelectionChange={updateStackSelection}
+            allCards={cards}
+            onActivateAbility={(card, ability) => {
+              logAction(`Activated: ${ability.cost}`);
+              handleActivateAbility(card, ability);
+            }}
+            onConvertLand={handleLandConversion}
+            onCounterChange={(action, cardsToModify, count) => {
+              if (!gameEngineRef.current) return;
+              let updatedCards = [...cards];
+              cardsToModify.forEach(cardToModify => {
+                const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
+                updatedCards = result.newCards;
+              });
+              saveHistoryState(updatedCards);
+              if (selectedCard) {
+                const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
+                if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
+              }
+            }}
+            getCardProps={(card) => {
+              const group = visibleStacks.find(g => g.cards.some(c => c.id === card.id));
+              const stackCards = group ? group.cards : [card];
+              const attachments = cards.filter(c => c.attachedTo === card.id);
+              const eligible = isCardEligible(card);
+              return {
+                isSelected: selectedCard?.id === card.id,
+                stackCards: stackCards,
+                attachments: attachments,
+                isTargeting: targetingMode.active && targetingMode.mode === 'single',
+                isEligibleAttacker: targetingMode.active && eligible,
+                isDeclaredAttacker: false,
+                isSource: targetingMode.active && targetingMode.sourceId === card.id,
+                selectedCount: 0,
+                onMouseDown: (e) => {
+                  if (targetingMode.active) {
+                    e.stopPropagation();
+                    if (eligible) {
+                      if (targetingMode.mode === 'multiple') handleMultiSelect(card);
+                      else handleTargetSelection(card);
                     }
+                  } else {
+                    if (selectedCard?.id === card.id) setSelectedCard(null);
+                    else setSelectedCard(card);
                   }
-                }}
-              />
-            );
-          })
-        }
+                }
+              };
+            }}
+          />
+        </div>
       </div>
 
-      {/* Info / Navigation Panel - Floating Bottom Pill */}
-      {/* Info / Navigation Panel - Hidden when a card is selected */}
-      {!selectedCard && (
-        <PhaseTracker
-          isVisible={!activePanel}
-          currentPhase={currentPhase}
-          currentCombatStep={currentCombatStep}
-          phaseInfo={PHASE_INFO}
-          onPhaseChange={handlePhaseChange}
-          onAdvancePhase={advancePhase}
-          onAdvanceCombatStep={advanceCombatStep}
-          onEndTurn={endTurn}
-          isAttackerStep={targetingMode.active && targetingMode.action === 'declare-attackers'}
-          onToggleSelectAll={handleToggleSelectAll}
-          onConfirmAttackers={handleConfirmAttackers}
+      {/* Legacy Targeting Mode Banner */}
+      {targetingMode.active && (
+        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200">
+          <div className="bg-slate-800/90 backdrop-blur-md px-6 py-2 rounded-full border border-slate-600 shadow-2xl flex gap-4 items-center">
+            <span className="text-blue-400 font-bold text-sm">Targeting Mode</span>
+            <button onClick={cancelTargeting} className="bg-red-900/50 hover:bg-red-900 px-3 py-1 rounded text-xs text-red-200 uppercase font-bold tracking-wider transition-colors">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* New Bottom Control Panel or Selection Menu */}
+      {selectedCard ? (
+        <SelectionMenu
+          selectedCard={selectedCard}
+          stackCount={visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards.length || 1}
+          stackCards={visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard]}
+          allCards={cards}
+          onAction={handleCardAction}
+          onDeselect={() => setSelectedCard(null)}
+          onActivateAbility={(card, ability) => {
+            logAction(`Activated: ${ability.cost}`);
+            handleActivateAbility(card, ability);
+          }}
+          onConvertLand={handleLandConversion}
+          onCounterChange={(action, cardsToModify, count) => {
+            if (!gameEngineRef.current) return;
+            let updatedCards = [...cards];
+            cardsToModify.forEach(cardToModify => {
+              const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
+              updatedCards = result.newCards;
+            });
+            saveHistoryState(updatedCards);
+            if (selectedCard) {
+              const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
+              if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
+            }
+          }}
+        />
+      ) : (
+        <BottomControlPanel
+          onStartTurn={() => handlePhaseChange('Beginning')}
+          onAddCard={() => setActivePanel('add')}
+          onSelectAll={handleToggleSelectAll}
+          onOpenLands={() => setActivePanel(activePanel === 'lands' ? null : 'lands')}
+          landCount={landCount}
         />
       )}
 
-      {/* --- Overlays & Panels --- */}
+      {/* Lands Management Panel */}
+      {activePanel === 'lands' && (
+        <LandsPanel
+          cards={cards}
+          onClose={() => setActivePanel(null)}
+          onAddLand={(landName) => {
+            getScryfallCard(landName).then(def => {
+              if (def) handleAddCard(def, 1);
+            });
+          }}
+          onRemoveLand={(landId) => {
+            const result = gameEngineRef.current.processAction('delete', { id: landId }, cards);
+            setCards(result.newCards);
+            saveHistoryState(result.newCards);
+          }}
+        />
+      )}
 
-      {/* Selected Card Panel */}
+      <CalculationMenu isOpen={showCalculationMenu} onClose={() => setShowCalculationMenu(false)} />
 
-      {/* Add Card Panel */}
       <AddCardPanel
         isOpen={activePanel === 'add'}
         onClose={() => setActivePanel(null)}
@@ -1638,7 +1358,6 @@ const App = () => {
         onLoadPreset={handleLoadPreset}
       />
 
-      {/* History Panel */}
       <HistoryPanel
         isOpen={activePanel === 'history'}
         onClose={() => setActivePanel(null)}
@@ -1646,8 +1365,9 @@ const App = () => {
         historyLength={history.length}
         onUndo={undo}
       />
-    </div >
+    </div>
   );
+
 };
 
 export default App;
