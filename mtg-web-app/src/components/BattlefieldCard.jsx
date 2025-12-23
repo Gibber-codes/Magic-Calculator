@@ -305,7 +305,6 @@ const BattlefieldCard = ({
                 style={{
                     width: CARD_WIDTH,
                     ...(isRelative ? {} : { left: x, top: y }),
-                    touchAction: 'none'
                 }}
                 onMouseDown={(e) => onMouseDown(e, card)}
                 onMouseEnter={() => !isTargeting && setIsHovered(true)}
@@ -458,8 +457,7 @@ const BattlefieldCard = ({
                                     >
                                         <div className="relative z-10">
                                             <TopBanner width={CARD_WIDTH} height={24} colorIdentity={attColors.fillColor}>
-                                                <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center gap-1" style={{ color: 'white' }}>
-                                                    <Sword size={10} className="opacity-50" />
+                                                <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center" style={{ color: 'white' }}>
                                                     {att.name}
                                                 </div>
                                             </TopBanner>
@@ -604,7 +602,6 @@ const BattlefieldCard = ({
                 style={{
                     width: CARD_WIDTH,
                     ...(isRelative ? {} : { left: x, top: y }),
-                    touchAction: 'none'
                 }}
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}

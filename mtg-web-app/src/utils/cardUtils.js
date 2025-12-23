@@ -137,9 +137,11 @@ export const calculateCardStats = (card, allCards = [], externalAttachments = nu
     const counterPower = plusOne - minusOne;
     const counterToughness = plusOne - minusOne;
 
-    // 2. Process Temporary Buffs
+    // 2. Process Temporary & Permanent Buffs
     const tempPowerBonus = parseInt(card.tempPowerBonus) || 0;
     const tempToughnessBonus = parseInt(card.tempToughnessBonus) || 0;
+    const permPowerBonus = parseInt(card.permPowerBonus) || 0;
+    const permToughnessBonus = parseInt(card.permToughnessBonus) || 0;
 
     // 3. Process Attachments and Dynamic/Static Buffs
     let dynamicPower = 0;
@@ -226,15 +228,25 @@ export const calculateCardStats = (card, allCards = [], externalAttachments = nu
     });
 
     // Also check the card itself (using ACTIVE face)
-    const isSelfDynamic = activeOracle.toLowerCase().includes('for each') && activeOracle.toLowerCase().includes('enchantment');
+    // Strip reminder text (in parentheses) to avoid double-counting buffs from attached enchantments
+    const oracleWithoutReminder = activeOracle.replace(/\([^)]*\)/g, '').toLowerCase();
+    const isSelfDynamic = oracleWithoutReminder.includes('for each') && oracleWithoutReminder.includes('enchantment');
 
-    if (isSelfDynamic) {
+    // Check if this card has enchantment attachments
+    const hasEnchantmentAttachment = attachments.some(att => {
+        const attType = (att.type_line || att.type || '').toLowerCase();
+        return attType.includes('enchantment') || attType.includes('aura') || att.isRole || att.isAura;
+    });
+
+    // Only apply self-dynamic buff if the oracle text itself (not reminder text) has "for each enchantment"
+    // AND the card has enchantment attachments
+    if (isSelfDynamic && hasEnchantmentAttachment) {
         let count = getEnchantmentCount();
-        if (activeOracle.toLowerCase().includes('each other enchantment')) {
+        if (oracleWithoutReminder.includes('each other enchantment')) {
             count = Math.max(0, count - 1);
         }
 
-        const staticMatch = activeOracle.match(/gets \+?(-?\d+)\/\+?(-?\d+)/i);
+        const staticMatch = oracleWithoutReminder.match(/gets \+?(-?\d+)\/\+?(-?\d+)/i);
         if (staticMatch) {
             const mP = parseInt(staticMatch[1]);
             const mT = parseInt(staticMatch[2]);
@@ -247,14 +259,16 @@ export const calculateCardStats = (card, allCards = [], externalAttachments = nu
     }
 
     return {
-        power: basePower + counterPower + tempPowerBonus + dynamicPower,
-        toughness: baseToughness + counterToughness + tempToughnessBonus + dynamicToughness,
+        power: basePower + counterPower + tempPowerBonus + permPowerBonus + dynamicPower,
+        toughness: baseToughness + counterToughness + tempToughnessBonus + permToughnessBonus + dynamicToughness,
         basePower,
         baseToughness,
         counterPower,
         counterToughness,
         tempPowerBonus,
         tempToughnessBonus,
+        permPowerBonus,
+        permToughnessBonus,
         dynamicPower,
         dynamicToughness
     };

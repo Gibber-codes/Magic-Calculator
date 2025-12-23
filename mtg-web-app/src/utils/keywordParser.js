@@ -214,6 +214,12 @@ export const EFFECT_PATTERNS = [
         parseTokenName: (match) => match[1], // Extract just the subtype (e.g., "Warrior")
         delayedEffect: 'sacrifice_at_end_step'
     },
+    // Equip / Attach effect
+    {
+        pattern: /Attach\s+(?:to\s+)?target\s+creature/i, // Match "Attach to target creature" or "Attach target creature"
+        effect: 'attach',
+        target: 'target_creature_you_control'
+    },
 
     // =====================
     // GENERIC FALLBACK PATTERNS (Must be LAST)
@@ -293,6 +299,16 @@ export const REPLACEMENT_PATTERNS = [
  */
 export function parseActivatedAbility(abilityText) {
     if (!abilityText) return null;
+
+    // Handle "Equip [Cost]" specially
+    const equipMatch = abilityText.match(/^Equip\s+(.+?)(?:\s*\(.*\))?$/i);
+    if (equipMatch) {
+        return {
+            cost: equipMatch[1].trim(),
+            effect: 'Attach to target creature you control.',
+            isEquip: true
+        };
+    }
 
     const separatorIndex = abilityText.indexOf(':');
     if (separatorIndex === -1) return null;

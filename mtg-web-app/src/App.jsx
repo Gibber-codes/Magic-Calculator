@@ -28,6 +28,7 @@ import PermanentList from './components/PermanentList';
 import CalculationMenu from './components/CalculationMenu';
 import SelectionMenu from './components/SelectionMenu';
 import BottomControlPanel from './components/BottomControlPanel';
+import ConfirmOverlay from './components/ConfirmOverlay';
 import LandsPanel from './components/LandsPanel';
 
 import useGameState from './hooks/useGameState';
@@ -299,6 +300,7 @@ const App = () => {
   // --- Actions (using hooks with local wrappers) ---
 
   // Wrap phase change to add triggers to stack with position sorting
+  // Returns true if triggers were added to the stack
   const handlePhaseChange = (phase) => {
     const triggers = baseHandlePhaseChange(phase, cardPositions);
     if (triggers && triggers.length > 0) {
@@ -322,7 +324,63 @@ const App = () => {
           `At the beginning of combat: ${t.ability?.effect || 'triggered ability'}`;
         addToStack(t.source, description, 'at', t);
       });
+      return true; // Triggers were added
     }
+    return false; // No triggers added
+  };
+
+  // Smart Phase Advance (Game Flow Button)
+  const handleSmartPhaseAdvance = () => {
+    // 1. Safety Check: Stack must be empty
+    if (abilityStack && abilityStack.length > 0) {
+      logAction(`Must resolve ${abilityStack.length} item(s) on the stack first!`);
+      return;
+    }
+
+    if (!currentPhase) {
+      handlePhaseChange('Main 1');
+      return;
+    }
+
+    if (currentPhase === 'Beginning') {
+      handlePhaseChange('Main 1');
+    } else if (currentPhase === 'Main 1') {
+      // Transition to Combat - beginning of combat triggers will go on stack
+      // User must resolve them before declaring attackers
+      handlePhaseChange('Combat');
+    } else if (currentPhase === 'Combat') {
+      // In Combat phase: if not already in targeting mode, trigger attacker selection
+      // Otherwise, advance to Main 2
+      if (!targetingMode.active) {
+        setTargetingMode({
+          active: true,
+          mode: 'multiple',
+          action: 'declare-attackers',
+          sourceId: null,
+          selectedIds: []
+        });
+        logAction("Select creatures to attack, then Confirm.");
+      } else {
+        // Already declared attackers (or in some other targeting mode), go to Main 2
+        handlePhaseChange('Main 2');
+      }
+    } else if (currentPhase === 'Main 2') {
+      endTurn();
+    }
+  };
+
+  // Handle Start Turn - goes to Beginning phase which triggers untap and beginning_step abilities
+  const handleStartTurn = () => {
+    // Clear attacking status from previous turn
+    setCards(prev => prev.map(c => ({
+      ...c,
+      attacking: false
+    })));
+
+    // Go to Beginning phase - this will:
+    // 1. Call untapAll() to untap all permanents
+    // 2. Call processPhaseChange('beginning') to trigger beginning_step abilities
+    handlePhaseChange('Beginning');
   };
 
   // Wrap advanceCombatStep to handle declare attackers mode
@@ -1010,10 +1068,14 @@ const App = () => {
 
       // Determine target type from ability
       const abilityDef = ability.triggerObj.ability;
-      let targetType = 'creature';
+      const targetSpec = abilityDef.target || 'creature';
 
-      if (abilityDef.target.includes('creature')) {
+      // Parse target type from the target spec
+      let targetType = 'permanent'; // Default to any permanent
+      if (targetSpec.includes('creature')) {
         targetType = 'creature';
+      } else if (targetSpec.includes('nonland_permanent') || targetSpec.includes('nonland')) {
+        targetType = 'nonland_permanent';
       }
 
       // Start targeting mode with the ability stored in data
@@ -1023,7 +1085,8 @@ const App = () => {
         mode: 'single',
         data: {
           stackAbility: ability,
-          targetType: targetType
+          targetType: targetType,
+          targetSpec: targetSpec // Pass full spec for advanced filtering
         }
       });
     }
@@ -1053,13 +1116,21 @@ const App = () => {
     if (targetingMode.action === 'equip') return c.type === 'Creature';
     if (targetingMode.action === 'activate-ability' || targetingMode.action === 'resolve-trigger') {
       const targetType = targetingMode.data?.targetType || 'creature';
+      const targetSpec = targetingMode.data?.targetSpec || '';
+
+      // Handle nonland permanent targeting (e.g., Extravagant Replication)
+      if (targetType === 'nonland_permanent' || targetSpec.includes('nonland')) {
+        const isLandCard = c.type_line?.toLowerCase().includes('land');
+        return !isLandCard; // Allow any permanent except lands
+      }
+
       if (targetType.toLowerCase() === 'creature') {
-        const isCreature = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
+        const isCreatureCard = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
         if (targetingMode.action === 'resolve-trigger') {
           const abilityTarget = targetingMode.data?.stackAbility?.triggerObj?.ability?.target || '';
-          if (abilityTarget.includes('attacking')) return isCreature && c.attacking;
+          if (abilityTarget.includes('attacking')) return isCreatureCard && c.attacking;
         }
-        return isCreature;
+        return isCreatureCard;
       }
       return true;
     }
@@ -1271,17 +1342,38 @@ const App = () => {
         </div>
       </div>
 
-      {/* Legacy Targeting Mode Banner */}
-      {targetingMode.active && (
-        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200">
-          <div className="bg-slate-800/90 backdrop-blur-md px-6 py-2 rounded-full border border-slate-600 shadow-2xl flex gap-4 items-center">
-            <span className="text-blue-400 font-bold text-sm">Targeting Mode</span>
-            <button onClick={cancelTargeting} className="bg-red-900/50 hover:bg-red-900 px-3 py-1 rounded text-xs text-red-200 uppercase font-bold tracking-wider transition-colors">Cancel</button>
+
+
+      {/* Phase Tracker - Floating above Controls */}
+      <PhaseTracker
+        isVisible={!!currentPhase}
+        currentPhase={currentPhase}
+        currentCombatStep={currentCombatStep}
+        onPhaseChange={handlePhaseChange}
+        onAdvancePhase={advancePhase}
+        onAdvanceCombatStep={advanceCombatStep}
+        onEndTurn={endTurn}
+        isAttackerStep={currentCombatStep === 'Declare Attackers'}
+        onToggleSelectAll={handleToggleSelectAll}
+        onConfirmAttackers={handleConfirmAttackers}
+      />
+
+      {/* Declare Attackers Title - Floating above Control Panel */}
+      {targetingMode.active && targetingMode.action === 'declare-attackers' && (
+        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-6 py-3 rounded-lg border border-red-500/50 shadow-2xl">
+            <Sword className="w-7 h-7 text-red-500" />
+            <h2 className="text-white font-bold text-2xl">Declare Attackers</h2>
+            {targetingMode.selectedIds && targetingMode.selectedIds.length > 0 && (
+              <span className="bg-red-900/40 text-red-400 text-sm px-3 py-1 rounded-full font-bold">
+                {targetingMode.selectedIds.length} Selected
+              </span>
+            )}
           </div>
         </div>
       )}
 
-      {/* New Bottom Control Panel or Selection Menu */}
+      {/* New Bottom Control Panel, Selection Menu, or Attacker Confirmation */}
       {selectedCard ? (
         <SelectionMenu
           selectedCard={selectedCard}
@@ -1309,13 +1401,44 @@ const App = () => {
             }
           }}
         />
+      ) : targetingMode.active ? (
+        <ConfirmOverlay
+          isVisible={true}
+          mode={targetingMode.action}
+          eligibleTargets={cards.filter(c => c.zone === 'battlefield' && isCardEligible(c))}
+          selectedIds={targetingMode.selectedIds || []}
+          sourceCard={targetingMode.sourceId ? cards.find(c => c.id === targetingMode.sourceId) : null}
+          allCards={cards}
+          onSelectCard={(cardId) => {
+            const card = cards.find(c => c.id === cardId);
+            if (card) {
+              if (targetingMode.mode === 'multiple') {
+                handleMultiSelect(card);
+              } else {
+                handleTargetSelection(card);
+              }
+            }
+          }}
+          onSelectAll={handleToggleSelectAll}
+          onConfirm={targetingMode.action === 'declare-attackers' ? handleConfirmAttackers : () => { }}
+          onCancel={cancelTargeting}
+        />
       ) : (
         <BottomControlPanel
-          onStartTurn={() => handlePhaseChange('Beginning')}
+          onStartTurn={handleStartTurn}
           onAddCard={() => setActivePanel('add')}
           onSelectAll={handleToggleSelectAll}
           onOpenLands={() => setActivePanel(activePanel === 'lands' ? null : 'lands')}
           landCount={landCount}
+          // New Props for Navigation
+          currentPhase={currentPhase}
+          currentCombatStep={currentCombatStep}
+          onAdvancePhase={handleSmartPhaseAdvance}
+          onEndTurn={endTurn}
+          stackCount={abilityStack.length}
+          // Targeting Mode Props
+          isTargetingMode={targetingMode.active}
+          onCancelTargeting={cancelTargeting}
         />
       )}
 

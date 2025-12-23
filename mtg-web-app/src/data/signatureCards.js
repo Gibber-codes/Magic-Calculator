@@ -4,6 +4,21 @@
  * or cards that require unique engine-level logic.
  */
 export const SIGNATURE_DATA = {
+    'Extravagant Replication': {
+        name: 'Extravagant Replication',
+        type: 'Enchantment',
+        type_line: 'Enchantment',
+        abilities: [
+            {
+                trigger: 'beginning_step',
+                effect: 'create_copy_token',
+                target: 'another_nonland_permanent_you_control',
+                amount: 1,
+                requiresTarget: true,
+                description: 'create a token copy of another target nonland permanent you control'
+            }
+        ]
+    },
     'Ellivere of the Wild Court': {
         name: 'Ellivere of the Wild Court',
         abilities: [

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Zap, Plus, Minus, Sparkles, ChevronDown, Trash2, RotateCcw, Sword, Repeat } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Zap, Plus, Minus, Sparkles, ChevronDown, Trash2, RotateCcw, Sword, Repeat, Lock, Unlock } from 'lucide-react';
 import { extractActivatedAbilities } from '../utils/keywordParser';
 import { formatBigNumber } from '../utils/formatters';
 import { calculateCardStats, isPlaceholderLand, BASIC_LAND_NAMES, BASIC_LAND_COLORS } from '../utils/cardUtils';
@@ -10,16 +10,23 @@ const SelectedCardControls = ({
     onCounterChange,
     onConvertLand,
     onAction,
+    onDeselect,
     stackCount = 1,
     stackCards = [],
     allCards = [],
     isTouch = false
 }) => {
-    // Local state for how many cards in the stack to modify
+    // Local state
     const [modifyCount, setModifyCount] = useState(1);
     const [convertCount, setConvertCount] = useState(1);
     const [selectedCounterType, setSelectedCounterType] = useState('+1/+1');
     const [showCounterDropdown, setShowCounterDropdown] = useState(false);
+
+    // New State for Modifier Interface
+    const [activeModifierMode, setActiveModifierMode] = useState('counters'); // 'counters' | 'pt-perm' | 'pt-temp'
+    const [isPTLocked, setIsPTLocked] = useState(true);
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
 
     // Reset modifyCount and convertCount when card changes or stack changes
     useEffect(() => {
@@ -28,67 +35,73 @@ const SelectedCardControls = ({
         setConvertCount(count);
     }, [card?.id, stackCount]);
 
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     if (!card) return null;
 
-    // Use pre-parsed/manual abilities if available, otherwise parse text
-    const activatedAbilities = (card.abilities && card.abilities.length > 0)
-        ? card.abilities
-        : extractActivatedAbilities(card.oracle_text);
+    // Use centralized stats calculation
+    const liveCard = allCards.find(c => c.id === card.id) || card;
+    const stats = calculateCardStats(liveCard, allCards);
 
-    // Check if this is a creature (can have +1/+1 counters)
     const isCreature = card.type === 'Creature' || (card.type_line && card.type_line.includes('Creature'));
     const isStack = stackCount > 1;
 
-    // Parse counters object
+    // Determine current count of SELECTED type (for display)
     const countersObj = typeof card.counters === 'number' ? { '+1/+1': card.counters } : (card.counters || {});
-
-    // Use centralized stats calculation
-    // Important: find the "live" version of the card in allCards to ensure we have latest state
-    const liveCard = allCards.find(c => c.id === card.id) || card;
-    const stats = calculateCardStats(liveCard, allCards);
-    const totalPower = stats.power;
-    const totalToughness = stats.toughness;
-    const basePower = stats.basePower;
-    const baseToughness = stats.baseToughness;
-    const counterPower = stats.counterPower;
-    const counterToughness = stats.counterToughness;
-    const tempPower = stats.tempPowerBonus;
-    const tempToughness = stats.tempToughnessBonus;
-    const dynamicPower = stats.dynamicPower;
-    const dynamicToughness = stats.dynamicToughness;
-
-    // Determine current count of SELECTED type
     const currentSelectedCount = countersObj[selectedCounterType] || 0;
 
-    const handleCounterAction = (change) => {
+    const handlePTUpdate = (powerChange, toughnessChange, type) => {
+        if (!onCounterChange) return;
+        const targets = isStack ? stackCards.slice(0, modifyCount) : [card];
+        const proxyTargets = targets.map(target => ({
+            ...target,
+            type: type === 'pt-perm' ? 'permanent' : 'temporary',
+            powerChange,
+            toughnessChange
+        }));
+        onCounterChange('pt-update', proxyTargets, modifyCount);
+    };
+
+    const handleCounterUpdate = (change) => {
         if (onCounterChange) {
-            // Pass the cards to modify based on modifyCount
             const targets = isStack ? stackCards.slice(0, modifyCount) : [card];
-
-            // Map targets to include the payload instructions (type/change)
             const proxyTargets = targets.map(t => ({ ...t, type: selectedCounterType, change }));
-
-            // Pass the ARRAY of proxies as the second argument
             onCounterChange('counter-update', proxyTargets, modifyCount);
         }
     };
 
-    const KNOWN_COUNTERS = [
-        '+1/+1',
-        '-1/-1',
-        'Oil',
-        'Charge',
-        'Loyalty',
-        'Shield',
-        'Stun',
-        'Time',
-        'Verse'
+    const MODIFIER_OPTIONS = [
+        { id: 'counters', label: 'Counters', icon: Plus, color: 'text-indigo-400', border: 'border-slate-700' },
+        { id: 'pt-perm', label: 'P/T Modifier (perm)', icon: Zap, color: 'text-emerald-400', border: 'border-emerald-600' },
+        { id: 'pt-temp', label: 'P/T Modifier (temp)', icon: Zap, color: 'text-amber-400', border: 'border-amber-500' }
     ];
 
-    // Gather all hanging action buttons
-    const hangingActions = [];
+    const currentMode = MODIFIER_OPTIONS.find(o => o.id === activeModifierMode);
 
-    // 1. Activated Abilities (Zap)
+    const KNOWN_COUNTERS = [
+        '+1/+1', '-1/-1', 'Oil', 'Charge', 'Loyalty', 'Shield', 'Stun', 'Time', 'Verse'
+    ];
+
+    // Gather hanging actions logic (Activated Abilities, etc.)
+    const rawAbilities = (card.abilities && card.abilities.length > 0)
+        ? card.abilities
+        : extractActivatedAbilities(card.oracle_text);
+
+    // Filter out triggered abilities (only show Activated abilities or manual ones)
+    const activatedAbilities = rawAbilities.filter(ability =>
+        !ability.trigger || ability.trigger === 'activated'
+    );
+
+    const hangingActions = [];
     activatedAbilities.forEach((ability, idx) => {
         hangingActions.push({
             id: `ability-${idx}`,
@@ -99,202 +112,284 @@ const SelectedCardControls = ({
         });
     });
 
-    // 2. Standard Actions (Tap, Delete)
     hangingActions.push({
-        id: 'tap',
-        icon: RotateCcw,
-        label: 'Tap/Untap',
-        color: 'bg-slate-700',
+        id: 'tap', icon: RotateCcw, label: 'Tap/Untap', color: 'bg-slate-700',
         onClick: () => onAction && onAction('tap', card)
     });
 
     hangingActions.push({
-        id: 'delete',
-        icon: Trash2,
-        label: 'Remove',
-        color: 'bg-red-600',
+        id: 'delete', icon: Trash2, label: 'Remove', color: 'bg-red-600',
         onClick: () => onAction && onAction('delete', card, stackCount)
     });
 
-    // 3. Conditional Actions (Equip, Transform)
-    if (card.type_line?.includes('Equipment')) {
-        hangingActions.push({
-            id: 'equip',
-            icon: Sword,
-            label: 'Equip',
-            color: 'bg-amber-600',
-            onClick: () => onAction && onAction('equip', card)
-        });
-    }
+
 
     if (card.card_faces && card.card_faces.length > 1) {
         hangingActions.push({
-            id: 'transform',
-            icon: Repeat,
-            label: 'Transform',
-            color: 'bg-emerald-600',
+            id: 'transform', icon: Repeat, label: 'Transform', color: 'bg-emerald-600',
             onClick: () => onAction && onAction('transform', card)
         });
     }
 
     return (
+        <div className="w-full rounded-b-xl overflow-hidden pointer-events-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-3 bg-black/50 backdrop-blur-md">
 
-        <div className="w-full bg-slate-900 rounded-b-xl overflow-hidden pointer-events-auto" onClick={e => e.stopPropagation()}>
+                {/* Activated Abilities */}
+                {activatedAbilities.length > 0 && (
+                    <div className="space-y-2 mb-4">
+                        {activatedAbilities.map((ability, idx) => (
+                            <button
+                                key={idx}
+                                onClick={() => {
+                                    if (onActivateAbility) {
+                                        onActivateAbility(card, ability);
+                                        // Close the menu if the ability requires targeting
+                                        if (ability.requiresTarget && onDeselect) {
+                                            onDeselect();
+                                        }
+                                    }
+                                }}
+                                className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 rounded-lg px-3 py-2 text-left transition-all active:scale-98 group"
+                            >
+                                <div className="flex items-start gap-2">
+                                    <Zap className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5 group-hover:text-indigo-300" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-indigo-300 text-xs font-semibold truncate">{ability.cost}</div>
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                )}
 
-
-
-            {/* Land Conversion UI */}
-            {isPlaceholderLand(card) && (
-                <div className="space-y-3">
-                    {/* Conversion Amount Selector */}
-                    {stackCount > 1 && (
-                        <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700">
-                            <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs text-slate-400">Convert Amount</span>
-                                <span className="text-sm font-bold text-white">{convertCount} / {stackCount}</span>
+                {/* Land Conversion UI */}
+                {isPlaceholderLand(card) && (
+                    <div className="space-y-3 mb-4">
+                        {stackCount > 1 && (
+                            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-xs text-slate-400">Convert Amount</span>
+                                    <span className="text-sm font-bold text-white">{convertCount} / {stackCount}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max={stackCount}
+                                    value={convertCount}
+                                    onChange={(e) => setConvertCount(parseInt(e.target.value))}
+                                    className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
                             </div>
-                            <input
-                                type="range"
-                                min="1"
-                                max={stackCount}
-                                value={convertCount}
-                                onChange={(e) => setConvertCount(parseInt(e.target.value))}
-                                className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                            />
-                        </div>
-                    )}
-
-                    {/* Land Type Buttons */}
-                    <div className="space-y-1">
+                        )}
                         <div className="grid grid-cols-2 gap-1.5">
-                            {BASIC_LAND_NAMES.map(landName => {
-                                const landStyle = BASIC_LAND_COLORS[landName];
-                                return (
-                                    <button
-                                        key={landName}
-                                        onClick={() => onConvertLand && onConvertLand(landName, convertCount)}
-                                        className="flex items-center justify-center p-2 rounded-lg shadow-sm transition-all hover:scale-105 active:scale-95 border"
-                                        style={{
-                                            backgroundColor: landStyle.fillColor,
-                                            borderColor: landStyle.borderColor,
-                                            color: landStyle.textColor
-                                        }}
-                                        title={`Convert to ${landName}`}
-                                    >
-                                        <span className="font-bold text-xs">{landName.substring(0, 1)}</span>
-                                    </button>
-                                );
-                            })}
+                            {BASIC_LAND_NAMES.map(landName => (
+                                <button
+                                    key={landName}
+                                    onClick={() => onConvertLand && onConvertLand(landName, convertCount)}
+                                    className="flex items-center justify-center p-2 rounded-lg shadow-sm transition-all hover:scale-105 active:scale-95 border"
+                                    style={{
+                                        backgroundColor: BASIC_LAND_COLORS[landName].fillColor,
+                                        borderColor: BASIC_LAND_COLORS[landName].borderColor,
+                                        color: BASIC_LAND_COLORS[landName].textColor
+                                    }}
+                                >
+                                    <span className="font-bold text-xs">{landName.substring(0, 1)}</span>
+                                </button>
+                            ))}
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
+                {/* Creature Modification Interface */}
+                {isCreature && (
+                    <div className="w-full space-y-2 animate-in fade-in duration-300">
 
-            {/* Creature Stats & Counters */}
-            {isCreature && (
-                <div className="space-y-3">
-                    {/* Stats Breakdown - Show each modifier type if applicable */}
-                    <div className="px-2 pt-2 pb-1 bg-slate-900 flex flex-col items-center gap-0.5">
-                        {/* Counters */}
-                        {(counterPower !== 0 || counterToughness !== 0) && (
-                            <div className="text-[10px] text-slate-400 flex gap-2">
-                                <span>Counters:</span>
-                                <span className="text-white font-mono">
-                                    {counterPower >= 0 ? '+' : ''}{counterPower}/{counterToughness >= 0 ? '+' : ''}{counterToughness}
-                                </span>
-                            </div>
-                        )}
+                        {/* Mode Dropdown */}
+                        <div className="relative mb-2" ref={dropdownRef}>
+                            <button
+                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                className="w-full bg-slate-800 hover:bg-slate-750 border border-slate-600 rounded-lg px-3 py-2 flex items-center justify-between text-white text-sm font-medium transition-colors"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <currentMode.icon className={`w-4 h-4 ${currentMode.color}`} />
+                                    <span>
+                                        {activeModifierMode === 'counters' ?
+                                            (selectedCounterType === '+1/+1' ? '+1/+1 Counter' : selectedCounterType) :
+                                            currentMode.label}
+                                    </span>
+                                </div>
+                                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
 
-                        {/* Attachments (Equipment, Roles, etc.) */}
-                        {(dynamicPower !== 0 || dynamicToughness !== 0) && (
-                            <div className="text-[10px] text-slate-400 flex gap-2">
-                                <span>Attachments:</span>
-                                <span className="text-white font-mono">
-                                    {dynamicPower >= 0 ? '+' : ''}{dynamicPower}/{dynamicToughness >= 0 ? '+' : ''}{dynamicToughness}
-                                </span>
-                            </div>
-                        )}
+                            {isDropdownOpen && (
+                                <div className="fixed inset-x-0 top-auto bottom-0 mb-1 bg-white rounded-t-lg shadow-2xl overflow-hidden z-50 animate-in slide-in-from-bottom duration-200 max-h-[60vh] overflow-y-auto">
+                                    {/* Counters Section */}
+                                    <div className="bg-slate-100 px-3 py-2 border-b border-slate-200">
+                                        <div className="text-slate-600 text-xs font-bold uppercase">Counters</div>
+                                    </div>
+                                    {KNOWN_COUNTERS.map(type => (
+                                        <button key={type}
+                                            onClick={() => {
+                                                setActiveModifierMode('counters');
+                                                setSelectedCounterType(type);
+                                                setIsDropdownOpen(false);
+                                            }}
+                                            className="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2"
+                                        >
+                                            <Plus className="w-3 h-3 text-indigo-500" />
+                                            <span>{type} {type !== '+1/+1' && type !== '-1/-1' ? 'Counter' : ''}</span>
+                                        </button>
+                                    ))}
 
-                        {/* Temporary Modifiers */}
-                        {(tempPower !== 0 || tempToughness !== 0) && (
-                            <div className="text-[10px] text-slate-400 flex gap-2">
-                                <span>Temp Modifiers:</span>
-                                <span className="text-white font-mono">
-                                    {tempPower >= 0 ? '+' : ''}{tempPower}/{tempToughness >= 0 ? '+' : ''}{tempToughness}
-                                </span>
-                            </div>
-                        )}
-                    </div>
+                                    {/* Modifiers Section */}
+                                    <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 border-t">
+                                        <div className="text-slate-600 text-xs font-bold uppercase">Power/Toughness</div>
+                                    </div>
+                                    {MODIFIER_OPTIONS.slice(1).map(opt => (
+                                        <button key={opt.id}
+                                            onClick={() => { setActiveModifierMode(opt.id); setIsDropdownOpen(false); }}
+                                            className="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2"
+                                        >
+                                            <opt.icon className={`w-4 h-4 ${opt.id === 'pt-perm' ? 'text-emerald-500' : 'text-amber-500'}`} />
+                                            <span>{opt.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
 
-                    {/* Compact Dark Box Counter Controls */}
-                    <div className="bg-slate-800 rounded-xl p-1.5 shadow-lg border-2 border-slate-700 mt-1">
-                        <div className="flex items-center justify-between gap-1">
-
-                            {/* Counter Type Selector (Minimal) */}
-                            <div className="relative flex-1">
-                                <button
-                                    onClick={() => setShowCounterDropdown(!showCounterDropdown)}
-                                    className="flex items-center gap-1 bg-slate-900 hover:bg-slate-950 px-1.5 py-1 rounded text-[10px] text-slate-200 font-bold border border-slate-700 w-full justify-between"
-                                >
-                                    <span className="truncate">{selectedCounterType}</span>
-                                    <ChevronDown size={8} />
+                        {/* Controls Area */}
+                        {activeModifierMode === 'counters' && (
+                            <div className="flex items-center justify-center gap-3 mb-2">
+                                <button onClick={() => handleCounterUpdate(-1)} className="w-12 h-12 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                    <Minus className="w-5 h-5" />
                                 </button>
-                                {showCounterDropdown && (
+                                <div className="w-16 h-12 bg-slate-900 rounded-lg flex items-center justify-center">
+                                    <span className={`text-white text-2xl font-bold`}>
+                                        {selectedCounterType === '+1/+1' ? (card.counters?.['+1/+1'] || (typeof card.counters === 'number' ? card.counters : 0)) : (card.counters?.[selectedCounterType] || 0)}
+                                    </span>
+                                </div>
+                                <button onClick={() => handleCounterUpdate(1)} className="w-12 h-12 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                    <Plus className="w-5 h-5" />
+                                </button>
+                            </div>
+                        )}
+
+                        {(activeModifierMode === 'pt-perm' || activeModifierMode === 'pt-temp') && (
+                            <>
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-slate-400 text-xs font-semibold">Link P/T</span>
+                                    <button
+                                        onClick={() => setIsPTLocked(!isPTLocked)}
+                                        className={`flex items-center gap-1.5 px-2 py-1 rounded transition-all active:scale-95 ${isPTLocked ? (activeModifierMode === 'pt-perm' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-amber-600 hover:bg-amber-500') : 'bg-slate-600 hover:bg-slate-500'}`}
+                                    >
+                                        {isPTLocked ? <Lock className="w-3.5 h-3.5 text-white" /> : <Unlock className="w-3.5 h-3.5 text-white" />}
+                                        <span className="text-white text-xs font-bold">{isPTLocked ? 'Locked' : 'Unlocked'}</span>
+                                    </button>
+                                </div>
+
+                                {isPTLocked ? (
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-16 text-slate-400 text-xs font-semibold">P/T</div>
+                                        <button onClick={() => handlePTUpdate(-1, -1, activeModifierMode)} className="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                            <Minus className="w-4 h-4" />
+                                        </button>
+                                        <div className="flex-1 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
+                                            <span className={`${activeModifierMode === 'pt-perm' ? 'text-emerald-400' : 'text-amber-400'} text-lg font-bold`}>
+                                                {activeModifierMode === 'pt-perm' ?
+                                                    `+${stats.permPowerBonus}/+${stats.permToughnessBonus}` :
+                                                    `+${stats.tempPowerBonus}/+${stats.tempToughnessBonus}`}
+                                            </span>
+                                        </div>
+                                        <button onClick={() => handlePTUpdate(1, 1, activeModifierMode)} className="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                            <Plus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ) : (
                                     <>
-                                        <div className="fixed inset-0 z-[60]" onClick={() => setShowCounterDropdown(false)} />
-                                        <div className="absolute left-0 bottom-full mb-1 w-32 bg-white border border-slate-300 rounded-lg shadow-xl z-[70] max-h-32 overflow-y-auto">
-                                            {KNOWN_COUNTERS.map(type => (
-                                                <button
-                                                    key={type}
-                                                    onClick={() => {
-                                                        setSelectedCounterType(type);
-                                                        setShowCounterDropdown(false);
-                                                    }}
-                                                    className="w-full text-left px-2 py-1.5 text-[10px] hover:bg-slate-100 text-slate-800"
-                                                >
-                                                    {type}
-                                                </button>
-                                            ))}
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className="w-16 text-slate-400 text-xs font-semibold">Power</div>
+                                            <button onClick={() => handlePTUpdate(-1, 0, activeModifierMode)} className="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                                <Minus className="w-4 h-4" />
+                                            </button>
+                                            <div className="flex-1 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
+                                                <span className={`${activeModifierMode === 'pt-perm' ? 'text-emerald-400' : 'text-amber-400'} text-lg font-bold`}>
+                                                    {activeModifierMode === 'pt-perm' ? `+${stats.permPowerBonus}` : `+${stats.tempPowerBonus}`}
+                                                </span>
+                                            </div>
+                                            <button onClick={() => handlePTUpdate(1, 0, activeModifierMode)} className="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                                <Plus className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className="w-16 text-slate-400 text-xs font-semibold">Toughness</div>
+                                            <button onClick={() => handlePTUpdate(0, -1, activeModifierMode)} className="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                                <Minus className="w-4 h-4" />
+                                            </button>
+                                            <div className="flex-1 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
+                                                <span className={`${activeModifierMode === 'pt-perm' ? 'text-emerald-400' : 'text-amber-400'} text-lg font-bold`}>
+                                                    {activeModifierMode === 'pt-perm' ? `+${stats.permToughnessBonus}` : `+${stats.tempToughnessBonus}`}
+                                                </span>
+                                            </div>
+                                            <button onClick={() => handlePTUpdate(0, 1, activeModifierMode)} className="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                                                <Plus className="w-4 h-4" />
+                                            </button>
                                         </div>
                                     </>
                                 )}
-                            </div>
+                            </>
+                        )}
 
-                            {/* Buttons */}
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={() => handleCounterAction(-1)}
-                                    className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-200 active:scale-95"
-                                >
-                                    <Minus size={12} />
-                                </button>
-                                <button
-                                    onClick={() => handleCounterAction(1)}
-                                    className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-200 active:scale-95"
-                                >
-                                    <Plus size={12} />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Minimal Stack Slider */}
-                        {isStack && (
-                            <div className="mt-1.5 px-0.5">
+                        {/* Apply Slider (Shared) */}
+                        {stackCount > 1 && (
+                            <div className="px-2">
                                 <input
                                     type="range"
                                     min="1"
                                     max={stackCount}
                                     value={modifyCount}
                                     onChange={(e) => setModifyCount(parseInt(e.target.value))}
-                                    className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer accent-blue-500"
+                                    className={`w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer ${activeModifierMode === 'pt-perm' ? 'accent-emerald-500' :
+                                        activeModifierMode === 'pt-temp' ? 'accent-amber-500' :
+                                            'accent-indigo-500'
+                                        }`}
                                 />
-                                <div className="text-[8px] text-slate-400 text-center mt-0.5">Apply to {modifyCount}</div>
+                                <div className="text-xs text-slate-400 text-center mt-1">
+                                    Apply to {modifyCount} of {stackCount}
+                                </div>
                             </div>
                         )}
+
+                        {/* Action Buttons */}
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                onClick={() => onAction && onAction('tap', card)}
+                                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50 text-white font-semibold text-sm transition-all active:scale-95"
+                            >
+                                <RotateCcw size={16} />
+                                <span>{card.tapped ? 'Untap' : 'Tap'}</span>
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (onAction) {
+                                        onAction('delete', card, stackCount);
+                                        // Close the menu if we're removing the last card or the entire stack
+                                        if ((stackCount === 1 || modifyCount === stackCount) && onDeselect) {
+                                            onDeselect();
+                                        }
+                                    }
+                                }}
+                                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-600/50 hover:bg-red-500/50 border border-red-500/50 text-white font-semibold text-sm transition-all active:scale-95"
+                            >
+                                <Trash2 size={16} />
+                                <span>Remove</span>
+                            </button>
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+
+            </div>
         </div>
     );
 };

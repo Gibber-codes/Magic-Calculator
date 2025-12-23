@@ -483,15 +483,23 @@ export class GameEngine {
                     (c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')))
                 );
 
+            case 'another_nonland_permanent_you_control':
+                // Return all nonland permanents except the source
+                return pool.filter(c =>
+                    c.zone === 'battlefield' &&
+                    c.id !== source?.id &&
+                    !(c.type_line?.toLowerCase().includes('land'))
+                );
+
             default:
                 return [];
         }
     }
 
     /**
-     * Find replacement effects that apply to this effect type
-     * Uses current board state (cards param)
-     */
+         * Find replacement effects that apply to this effect type
+         * Uses current board state (cards param)
+         */
     findReplacementEffects(effectType, cards = this.cards) {
         const modifiers = [];
         const pool = cards || [];
@@ -593,6 +601,12 @@ export class GameEngine {
         if (ability.effect === 'create_token_copy') {
             log.description = `${source.name} triggered: Create ${finalValue} token copy(s)`;
             log.equation = `Base: ${baseValue} copy(s)`;
+        }
+
+        if (ability.effect === 'create_copy_token') {
+            const targetName = targets[0]?.name || 'target permanent';
+            log.description = `${source.name} triggered: Create a token copy of ${targetName}`;
+            log.equation = `Base: ${baseValue} copy`;
         }
 
         if (ability.effect === 'create_named_token') {
@@ -764,7 +778,7 @@ export class GameEngine {
                     cleanTypeLine = `Token ${cleanTypeLine}`;
                 }
 
-                return {
+                const tokenCopy = {
                     ...target,
                     id: Date.now() + i + Math.random(),
                     type_line: cleanTypeLine,
@@ -774,6 +788,63 @@ export class GameEngine {
                     attachedTo: null,
                     zone: target.zone || 'battlefield',
                 };
+
+                // Process the token copy's OWN ETB abilities
+                if (tokenCopy.abilities) {
+                    tokenCopy.abilities.forEach(ability => {
+                        if (ability.trigger === 'on_enter_battlefield') {
+                            const triggerObj = this.resolveEffect({ source: tokenCopy, ability });
+                            newTriggers.push(triggerObj);
+                        }
+                    });
+                }
+
+                // Also check for other cards' "when a token enters" triggers
+                const otherTriggers = this.findTokenEntryTriggers(newCards, [tokenCopy]);
+                newTriggers.push(...otherTriggers);
+
+                return tokenCopy;
+            });
+        }
+
+        // create_copy_token: Creates a token copy of any nonland permanent (for Extravagant Replication)
+        if (ability.effect === 'create_copy_token') {
+            const target = targets[0];
+            if (!target) return { newCards, triggers: [] };
+
+            return processSequentialTokens((i) => {
+                // Build type line for the token copy
+                let cleanTypeLine = target.type_line || target.type || 'Permanent';
+                if (!cleanTypeLine.toLowerCase().includes('token')) {
+                    cleanTypeLine = `Token ${cleanTypeLine}`;
+                }
+
+                const tokenCopy = {
+                    ...target,
+                    id: Date.now() + i + Math.random(),
+                    type_line: cleanTypeLine,
+                    isToken: true,
+                    tapped: false,
+                    counters: 0,
+                    attachedTo: null,
+                    zone: 'battlefield',
+                };
+
+                // Process the token copy's OWN ETB abilities
+                if (tokenCopy.abilities) {
+                    tokenCopy.abilities.forEach(ability => {
+                        if (ability.trigger === 'on_enter_battlefield') {
+                            const triggerObj = this.resolveEffect({ source: tokenCopy, ability });
+                            newTriggers.push(triggerObj);
+                        }
+                    });
+                }
+
+                // Check for other cards' "when a token enters" triggers
+                const otherTriggers = this.findTokenEntryTriggers(newCards, [tokenCopy]);
+                newTriggers.push(...otherTriggers);
+
+                return tokenCopy;
             });
         }
 
@@ -1406,6 +1477,39 @@ export class GameEngine {
 
             const nowTapped = !targetCard.tapped;
             result.log.description = `${nowTapped ? 'Tapped' : 'Untapped'} ${targetCard.name}`;
+            result.log.equation = '';
+        }
+
+        if (action === 'pt-update') {
+            // payload: { type: 'permanent' | 'temporary', powerChange, toughnessChange }
+            const { type = 'permanent', powerChange = 0, toughnessChange = 0 } = targetCard;
+
+            result.newCards = result.newCards.map(c => {
+                if (c.id !== targetCard.id) return c;
+
+                if (type === 'permanent') {
+                    const currentP = c.permPowerBonus || 0;
+                    const currentT = c.permToughnessBonus || 0;
+                    return {
+                        ...c,
+                        permPowerBonus: currentP + powerChange,
+                        permToughnessBonus: currentT + toughnessChange
+                    };
+                } else {
+                    const currentP = c.tempPowerBonus || 0;
+                    const currentT = c.tempToughnessBonus || 0;
+                    return {
+                        ...c,
+                        tempPowerBonus: currentP + powerChange,
+                        tempToughnessBonus: currentT + toughnessChange
+                    };
+                }
+            });
+
+            const label = type === 'permanent' ? 'Permanent' : 'Temporary';
+            const signP = powerChange >= 0 ? '+' : '';
+            const signT = toughnessChange >= 0 ? '+' : '';
+            result.log.description = `${label} Buff: ${signP}${powerChange}/${signT}${toughnessChange} to ${targetCard.name}`;
             result.log.equation = '';
         }
 

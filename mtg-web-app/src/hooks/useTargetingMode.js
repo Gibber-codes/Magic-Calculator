@@ -14,7 +14,8 @@ const useTargetingMode = (gameState) => {
         gameEngineRef,
         addToStack,
         setCurrentCombatStep,
-        setAbilityStack
+        setAbilityStack,
+        setCurrentPhase
     } = gameState;
 
     // --- Targeting Mode State ---
@@ -102,7 +103,18 @@ const useTargetingMode = (gameState) => {
             }
         } else if (targetingMode.action === 'activate-ability') {
             const abilityDef = targetingMode.data;
-            if (abilityDef && gameEngineRef.current) {
+
+            // Special handling for equip/attach effects
+            if (abilityDef && (abilityDef.effect === 'attach' || abilityDef.isEquip)) {
+                logAction(`Equipped ${sourceCard?.name} to ${targetCard.name}`);
+
+                setCards(prev => prev.map(c => {
+                    if (c.id === sourceCard.id) {
+                        return { ...c, attachedTo: targetCard.id, zone: 'attached' };
+                    }
+                    return c;
+                }));
+            } else if (abilityDef && gameEngineRef.current) {
                 // Determine effect description
                 const desc = abilityDef.description || 'Activated Ability';
 
@@ -261,7 +273,11 @@ const useTargetingMode = (gameState) => {
 
         logAction(`Declared ${attackers.length} attackers`);
         cancelTargeting();
-    }, [cards, targetingMode.selectedIds, saveHistoryState, setCards, gameEngineRef, addToStack, logAction, cancelTargeting]);
+
+        // Advance to Main Phase 2 after declaring attackers
+        setCurrentPhase('Main 2');
+        setCurrentCombatStep(null);
+    }, [cards, targetingMode.selectedIds, saveHistoryState, setCards, gameEngineRef, addToStack, logAction, cancelTargeting, setCurrentPhase, setCurrentCombatStep]);
 
     return {
         // State

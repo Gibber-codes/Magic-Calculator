@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P/T Modifier Interface Mockup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: #0a0e1a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-md space-y-6">
+        
+        <!-- Version 1: Counter Type Selected -->
+        <div class="bg-slate-900 rounded-xl p-4 border-2 border-slate-700">
+            <h3 class="text-white text-sm font-bold mb-4 text-center">Counter Type Selected</h3>
+            
+            <!-- Dropdown -->
+            <div class="mb-3">
+                <button class="w-full bg-slate-800 hover:bg-slate-750 border border-slate-600 rounded-lg px-3 py-2.5 flex items-center justify-between text-white text-sm font-medium">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                        <span>+1/+1 Counter</span>
+                    </div>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Counter Controls -->
+            <div class="bg-slate-800 rounded-lg p-3 mb-3">
+                <div class="flex items-center justify-center gap-3">
+                    <button class="w-12 h-12 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"></path>
+                        </svg>
+                    </button>
+                    <div class="w-16 h-12 bg-slate-900 rounded-lg flex items-center justify-center">
+                        <span class="text-white text-2xl font-bold">2</span>
+                    </div>
+                    <button class="w-12 h-12 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Apply Slider -->
+            <div class="px-2">
+                <input type="range" min="1" max="3" value="3" class="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-blue-500" />
+                <div class="text-xs text-slate-400 text-center mt-1">Apply to 3 of 3</div>
+            </div>
+        </div>
+
+        <!-- Version 2: P/T Modifier (Permanent) Selected -->
+        <div class="bg-slate-900 rounded-xl p-4 border-2 border-emerald-600">
+            <h3 class="text-white text-sm font-bold mb-4 text-center">P/T Modifier (Permanent) Selected</h3>
+            
+            <!-- Dropdown -->
+            <div class="mb-3">
+                <button class="w-full bg-slate-800 hover:bg-slate-750 border border-slate-600 rounded-lg px-3 py-2.5 flex items-center justify-between text-white text-sm font-medium">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        <span>P/T Modifier (perm)</span>
+                    </div>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- P/T Controls -->
+            <div class="bg-slate-800 rounded-lg p-3 mb-3 space-y-3">
+                <!-- Lock/Unlock Toggle -->
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-slate-400 text-xs font-semibold">Link P/T</span>
+                    <button class="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 transition-all active:scale-95">
+                        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                        </svg>
+                        <span class="text-white text-xs font-bold">Locked</span>
+                    </button>
+                </div>
+
+                <!-- Locked: Single P/T Row -->
+                <div class="flex items-center gap-2">
+                    <div class="w-20 text-slate-400 text-xs font-semibold">P/T</div>
+                    <button class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"></path>
+                        </svg>
+                    </button>
+                    <div class="flex-1 h-10 bg-slate-900 rounded-lg flex items-center justify-center">
+                        <span class="text-emerald-400 text-lg font-bold">+2/+2</span>
+                    </div>
+                    <button class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Apply Slider -->
+            <div class="px-2">
+                <input type="range" min="1" max="3" value="3" class="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-emerald-500" />
+                <div class="text-xs text-slate-400 text-center mt-1">Apply to 3 of 3</div>
+            </div>
+        </div>
+
+        <!-- Version 3: P/T Modifier (Temp) Selected -->
+        <div class="bg-slate-900 rounded-xl p-4 border-2 border-amber-500">
+            <h3 class="text-white text-sm font-bold mb-4 text-center">P/T Modifier (Temp) Selected</h3>
+            
+            <!-- Dropdown -->
+            <div class="mb-3">
+                <button class="w-full bg-slate-800 hover:bg-slate-750 border border-slate-600 rounded-lg px-3 py-2.5 flex items-center justify-between text-white text-sm font-medium">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>P/T Modifier (temp)</span>
+                    </div>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- P/T Controls -->
+            <div class="bg-slate-800 rounded-lg p-3 mb-3 space-y-3">
+                <!-- Lock/Unlock Toggle -->
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-slate-400 text-xs font-semibold">Link P/T</span>
+                    <button class="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-600 hover:bg-slate-500 transition-all active:scale-95">
+                        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
+                        </svg>
+                        <span class="text-white text-xs font-bold">Unlocked</span>
+                    </button>
+                </div>
+
+                <!-- Power Row -->
+                <div class="flex items-center gap-2">
+                    <div class="w-20 text-slate-400 text-xs font-semibold">Power</div>
+                    <button class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"></path>
+                        </svg>
+                    </button>
+                    <div class="flex-1 h-10 bg-slate-900 rounded-lg flex items-center justify-center">
+                        <span class="text-amber-400 text-lg font-bold">+3</span>
+                    </div>
+                    <button class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Toughness Row -->
+                <div class="flex items-center gap-2">
+                    <div class="w-20 text-slate-400 text-xs font-semibold">Toughness</div>
+                    <button class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"></path>
+                        </svg>
+                    </button>
+                    <div class="flex-1 h-10 bg-slate-900 rounded-lg flex items-center justify-center">
+                        <span class="text-amber-400 text-lg font-bold">+1</span>
+                    </div>
+                    <button class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Apply Slider -->
+            <div class="px-2">
+                <input type="range" min="1" max="3" value="3" class="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500" />
+                <div class="text-xs text-slate-400 text-center mt-1">Apply to 3 of 3</div>
+            </div>
+        </div>
+
+        <!-- Dropdown Menu (Example) -->
+        <div class="bg-white rounded-lg shadow-2xl overflow-hidden">
+            <div class="bg-slate-100 px-3 py-2 border-b border-slate-200">
+                <div class="text-slate-600 text-xs font-bold uppercase">Counters</div>
+            </div>
+            <button class="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2">
+                <span>+1/+1 Counter</span>
+            </button>
+            <button class="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2">
+                <span>-1/-1 Counter</span>
+            </button>
+            <button class="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2">
+                <span>Oil Counter</span>
+            </button>
+            <button class="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2">
+                <span>Charge Counter</span>
+            </button>
+            <button class="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2">
+                <span>Loyalty Counter</span>
+            </button>
+            
+            <div class="bg-slate-100 px-3 py-2 border-b border-slate-200 border-t">
+                <div class="text-slate-600 text-xs font-bold uppercase">Power/Toughness</div>
+            </div>
+            <button class="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2">
+                <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                <span>P/T Modifier (perm)</span>
+            </button>
+            <button class="w-full px-3 py-2 text-left hover:bg-slate-50 text-slate-800 text-sm flex items-center gap-2">
+                <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>P/T Modifier (temp)</span>
+            </button>
+        </div>
+
+    </div>
+
+</body>
+</html>

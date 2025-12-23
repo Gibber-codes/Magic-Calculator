@@ -1,33 +1,53 @@
 import React, { useState, useEffect } from 'react';
-import { X, Zap, Plus, Minus, Trash2, RotateCcw, Link2, Unlink, Skull, Ghost, Repeat, ChevronDown, Sparkles } from 'lucide-react';
+import { X, Zap, Plus, Minus, Trash2, RotateCcw, Link2, Unlink, Skull, Ghost, Repeat, ChevronDown, Sparkles, Wand2, Calculator, Sword } from 'lucide-react';
 import { extractActivatedAbilities } from '../utils/keywordParser';
 import { formatBigNumber } from '../utils/formatters';
 import { calculateCardStats, isPlaceholderLand, BASIC_LAND_NAMES, BASIC_LAND_COLORS, isCreature } from '../utils/cardUtils';
 import { createPortal } from 'react-dom';
-import { TopBanner, ArtWindow, BottomBanner } from './RedesignedCardFrame';
+import { TopBanner } from './RedesignedCardFrame';
+import SelectedCardControls from './SelectedCardControls';
 
-// Constants
-const CARD_WIDTH = 140;
+// Get color identity dot color
+const getColorDot = (colors) => {
+    if (!colors || colors.length === 0) return 'bg-slate-500';
+    if (colors.length > 1) return 'bg-yellow-500';
 
-// Card Colors - Hex mapping
+    const map = {
+        'W': 'bg-amber-100',
+        'U': 'bg-blue-500',
+        'B': 'bg-slate-800',
+        'R': 'bg-red-500',
+        'G': 'bg-green-500'
+    };
+    return map[colors[0]] || 'bg-slate-500';
+};
+
+// Card Colors - Hex mapping for Attachment Banners
 const getCardHexColors = (colors) => {
-    let c = { borderColor: '#6b7280', fillColor: '#374151', text: 'black' };
+    // Default Gray (Artifact/Colorless)
+    let c = { borderColor: '#6b7280', fillColor: '#374151', text: 'white' };
+
     if (!colors || colors.length === 0) return c;
+
     if (colors.length > 1) {
+        // Gold
         return { borderColor: '#ca8a04', fillColor: '#eab308', text: 'black' };
     }
+
     const map = {
-        'W': { borderColor: '#d4d4d8', fillColor: '#fef9c3', text: 'black' },
-        'U': { borderColor: '#2563eb', fillColor: '#60a5fa', text: 'black' },
-        'B': { borderColor: '#1f2937', fillColor: '#4b5563', text: 'white' },
-        'R': { borderColor: '#b91c1c', fillColor: '#ef4444', text: 'black' },
-        'G': { borderColor: '#15803d', fillColor: '#22c55e', text: 'black' }
+        'W': { borderColor: '#d4d4d8', fillColor: '#fef9c3', text: 'black' }, // Zinc/Yellow
+        'U': { borderColor: '#2563eb', fillColor: '#60a5fa', text: 'black' }, // Blue
+        'B': { borderColor: '#1f2937', fillColor: '#4b5563', text: 'white' }, // Dark Gray
+        'R': { borderColor: '#b91c1c', fillColor: '#ef4444', text: 'black' }, // Red
+        'G': { borderColor: '#15803d', fillColor: '#22c55e', text: 'black' }  // Green
     };
+
     return map[colors[0]] || c;
 };
 
 /**
- * SelectionMenu - A fullscreen modal overlay for card actions
+ * SelectionMenu - A redesign based on 'selected-card-exact-design.html'
+ * Merges the card preview and controls into a single 300px wide unit.
  */
 const SelectionMenu = ({
     selectedCard,
@@ -40,20 +60,21 @@ const SelectionMenu = ({
     onConvertLand,
     onCounterChange
 }) => {
-    const [modifyCount, setModifyCount] = useState(1);
-    const [selectedCounterType, setSelectedCounterType] = useState('+1/+1');
-    const [showCounterDropdown, setShowCounterDropdown] = useState(false);
 
-    // Reset modifyCount when card changes
+
     useEffect(() => {
-        setModifyCount(stackCount > 1 ? stackCount : 1);
-    }, [selectedCard?.id, stackCount]);
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') onDeselect();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onDeselect]);
 
     if (!selectedCard) return null;
 
     const card = selectedCard;
     const isStack = stackCount > 1;
-    const colors = getCardHexColors(card.colors);
+    const colorDot = getColorDot(card.colors);
 
     // Get attachments
     const attachments = allCards.filter(c => c.attachedTo === card.id);
@@ -68,14 +89,7 @@ const SelectionMenu = ({
     const liveCard = allCards.find(c => c.id === card.id) || card;
     const stats = cardIsCreature ? calculateCardStats(liveCard, allCards) : null;
 
-    // Counter info
-    const countersObj = typeof card.counters === 'number' ? { '+1/+1': card.counters } : (card.counters || {});
-    const currentSelectedCount = countersObj[selectedCounterType] || 0;
 
-    // Get activated abilities
-    const activatedAbilities = (card.abilities && card.abilities.length > 0)
-        ? card.abilities.filter(a => a.cost)
-        : extractActivatedAbilities(card.oracle_text || '');
 
     // Card type display
     let cardType = card.type_line ? card.type_line.split('—')[0]?.trim() || card.type_line : card.type;
@@ -83,356 +97,182 @@ const SelectionMenu = ({
         cardType = `Token ${cardType}`;
     }
 
-    const handleCounterAction = (change) => {
-        if (onCounterChange) {
-            const targets = isStack ? stackCards.slice(0, modifyCount) : [card];
-            const proxyTargets = targets.map(t => ({ ...t, type: selectedCounterType, change }));
-            onCounterChange('counter-update', proxyTargets, modifyCount);
-        }
-    };
 
-    const KNOWN_COUNTERS = ['+1/+1', '-1/-1', 'Oil', 'Charge', 'Loyalty', 'Shield', 'Stun', 'Time', 'Verse'];
 
-    // Render the card preview (scaled up)
-    const renderCardPreview = () => (
-        <div
-            className="relative flex flex-col items-center rounded-xl transition-all duration-300 w-full scale-[1.75] shadow-[0_0_30px_rgba(34,197,94,0.6)] shadow-2xl ring-2 ring-green-500/50"
-            style={{ paddingTop: attachments.length > 0 ? `${attachments.length * 28}px` : 0 }}
-        >
-            {/* Attached Equipment Banners */}
-            {attachments.length > 0 && (
-                <div className="absolute top-0 left-0 w-full flex flex-col items-center z-20">
-                    {attachments.map((att, index) => {
-                        const attColors = getCardHexColors(att.colors);
+    return createPortal(
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-4 animate-in fade-in duration-200" style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+
+            {/* Main Container */}
+            <div className="relative">
+
+
+
+                {/* The Card Unit (300px width) - Clean card with outer green glow */}
+                <div
+                    className="relative w-[300px] flex flex-col rounded-xl overflow-hidden shadow-2xl"
+                    style={{
+                        backdropFilter: 'blur(40px)',
+                        WebkitBackdropFilter: 'blur(40px)',
+                        boxShadow: '0 0 40px rgba(34, 197, 94, 0.6), 0 0 80px rgba(34, 197, 94, 0.3)'
+                    }}
+                >
+                    {/* EQUIPPED TO BANNER (if this card is attached to something) */}
+                    {isAttached && (() => {
+                        const equippedCreature = allCards.find(c => c.id === card.attachedTo);
+                        if (!equippedCreature) return null;
+                        const creatureColors = getCardHexColors(equippedCreature.colors);
                         return (
-                            <div key={att.id} className="relative w-full flex flex-col items-center"
-                                style={{ zIndex: attachments.length - index }}>
-                                <div className="relative z-10">
-                                    <TopBanner width={CARD_WIDTH} height={24} colorIdentity={attColors.fillColor}>
-                                        <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: 'white' }}>
-                                            {att.name}
+                            <div className="flex flex-col border-b border-white/10">
+                                <div
+                                    className="relative group border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
+                                    onClick={(e) => { e.stopPropagation(); onAction('select', equippedCreature); }}
+                                >
+                                    <div className="h-8 bg-black/50 flex items-center justify-center gap-1.5 px-2 relative z-10" style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+                                        {/* Color Identity Dot */}
+                                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 border border-white/20 shadow-sm" style={{ backgroundColor: creatureColors.fillColor }}></div>
+                                        {/* Equipped Creature Name */}
+                                        <div className="flex-1 text-center min-w-0">
+                                            <span className="text-white/90 font-bold text-xs truncate block">Equipped to: {equippedCreature.name}</span>
                                         </div>
-                                    </TopBanner>
+                                    </div>
                                 </div>
                             </div>
                         );
-                    })}
-                </div>
-            )}
+                    })()}
 
-            {/* Top Banner */}
-            <div className="z-30 relative" style={{ marginBottom: -4 }}>
-                <TopBanner width={CARD_WIDTH} height={28} colorIdentity={colors.fillColor}>
-                    <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: '#ffffff' }}>
-                        {card.name}
-                    </div>
-                </TopBanner>
-            </div>
-
-            {/* Art Window */}
-            <div className="z-30 relative">
-                <ArtWindow width={CARD_WIDTH} height={100}>
-                    {card.art_crop && (
-                        <img
-                            src={card.art_crop}
-                            alt={card.name}
-                            className="w-full h-full object-cover"
-                            style={{ objectPosition: card.activeFaceIndex === 1 ? '100% 15%' : '0% 15%' }}
-                        />
-                    )}
-                </ArtWindow>
-
-                {/* Counter Indicator */}
-                {countersObj['+1/+1'] > 0 && (
-                    <div className="absolute top-2 left-2 bg-green-600 rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border border-green-800 z-20">
-                        <span className="text-white text-[10px] font-bold">+{formatBigNumber(countersObj['+1/+1'])}</span>
-                    </div>
-                )}
-
-                {/* Stack Count */}
-                {isStack && (
-                    <div className="absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 bg-blue-600 border-blue-400 text-white">
-                        <span className="text-xs font-bold">x{stackCount}</span>
-                    </div>
-                )}
-            </div>
-
-            {/* Bottom Banner */}
-            <div className="z-30 relative" style={{ marginTop: 4 }}>
-                <BottomBanner width={CARD_WIDTH} height={28}>
-                    <div style={{ width: '80%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        <div className="w-full flex justify-between items-center px-1">
-                            <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>{cardType}</span>
-                        </div>
-                    </div>
-                    {stats && (
-                        <div className="text-[10px] font-bold flex gap-0.5 text-white">
-                            <span>{formatBigNumber(stats.power)}</span>/<span>{formatBigNumber(stats.toughness)}</span>
-                        </div>
-                    )}
-                </BottomBanner>
-            </div>
-        </div>
-    );
-
-    // Render action buttons
-    const renderActions = () => (
-        <div className="grid grid-cols-2 gap-2 w-full">
-            {/* Tap/Untap */}
-            <ActionButton
-                icon={RotateCcw}
-                label={card.tapped ? 'Untap' : 'Tap'}
-                color={card.tapped ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-700 hover:bg-slate-600'}
-                onClick={() => onAction('tap', card, modifyCount)}
-            />
-
-            {/* Transform */}
-            {hasTransform && (
-                <ActionButton
-                    icon={Repeat}
-                    label="Transform"
-                    color="bg-purple-600 hover:bg-purple-500"
-                    onClick={() => onAction('transform', card)}
-                />
-            )}
-
-            {/* Equip */}
-            {isEquipment && !isAttached && (
-                <ActionButton
-                    icon={Link2}
-                    label="Equip"
-                    color="bg-amber-600 hover:bg-amber-500"
-                    onClick={() => onAction('equip', card)}
-                />
-            )}
-
-            {/* Detach */}
-            {isAttached && (
-                <ActionButton
-                    icon={Unlink}
-                    label="Detach"
-                    color="bg-amber-600 hover:bg-amber-500"
-                    onClick={() => onAction('unequip-self', card)}
-                />
-            )}
-
-            {/* Detach All */}
-            {attachments.length > 0 && (
-                <ActionButton
-                    icon={Unlink}
-                    label={`Detach All (${attachments.length})`}
-                    color="bg-amber-700 hover:bg-amber-600"
-                    onClick={() => onAction('unequip', card)}
-                />
-            )}
-
-            {/* Graveyard */}
-            <ActionButton
-                icon={Skull}
-                label="Graveyard"
-                color="bg-slate-700 hover:bg-slate-600"
-                onClick={() => onAction('graveyard', card, modifyCount)}
-            />
-
-            {/* Exile */}
-            <ActionButton
-                icon={Ghost}
-                label="Exile"
-                color="bg-slate-700 hover:bg-slate-600"
-                onClick={() => onAction('exile', card, modifyCount)}
-            />
-
-            {/* Remove */}
-            <ActionButton
-                icon={Trash2}
-                label="Remove"
-                color="bg-red-700 hover:bg-red-600"
-                onClick={() => onAction('delete', card, modifyCount)}
-            />
-        </div>
-    );
-
-    return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center animate-in fade-in duration-200">
-            {/* Backdrop */}
-            <div
-                className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm"
-                onClick={onDeselect}
-            />
-
-            {/* Close Button */}
-            <button
-                className="absolute top-4 right-4 z-[110] bg-white/10 p-2 rounded-full text-white/70 hover:bg-white/20 active:scale-95 backdrop-blur-md"
-                onClick={onDeselect}
-            >
-                <X className="w-6 h-6" />
-            </button>
-
-            {/* Main Content Container */}
-            <div className="relative z-[101] pointer-events-auto flex flex-col items-center justify-start p-4 h-full w-full max-w-lg mx-auto overflow-y-auto overflow-x-hidden no-scrollbar">
-
-                {/* Card Preview - Centered at top */}
-                <div className="mt-12 mb-8 flex flex-col items-center">
-                    {renderCardPreview()}
-                </div>
-
-                {/* Unified Control Panel */}
-                <div className="w-full max-w-xs bg-slate-800/60 backdrop-blur-md rounded-2xl border border-slate-700/50 p-4 space-y-4 shadow-xl">
-
-                    {/* Stack Selector */}
-                    {isStack && (
-                        <div className="w-full pb-4 border-b border-slate-700/50">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm text-slate-400 font-medium">Modify Amount</span>
-                                <span className="text-lg font-bold text-white">{modifyCount} / {stackCount}</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="1"
-                                max={stackCount}
-                                value={modifyCount}
-                                onChange={(e) => setModifyCount(parseInt(e.target.value))}
-                                className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                            />
-                        </div>
-                    )}
-
-                    {/* Land Conversion */}
-                    {isPlaceholderLand(card) && (
-                        <div className="w-full">
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 text-center">Convert to Basic Land</h4>
-                            <div className="flex gap-2 flex-wrap justify-center">
-                                {BASIC_LAND_NAMES.map(landName => {
-                                    const style = BASIC_LAND_COLORS[landName];
-                                    return (
-                                        <button
-                                            key={landName}
-                                            onClick={() => onConvertLand?.(landName, modifyCount)}
-                                            className="px-3 py-2 rounded-lg font-bold text-sm transition-all hover:scale-105 active:scale-95 border-2 shadow-lg"
-                                            style={{
-                                                backgroundColor: style.fillColor,
-                                                borderColor: style.borderColor,
-                                                color: style.textColor
-                                            }}
-                                        >
-                                            {landName}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Counter Controls (Creatures) */}
-                    {cardIsCreature && (
-                        <div className="w-full pb-4 border-b border-slate-700/50 space-y-3">
-                            {/* Stats Display */}
-                            {stats && (
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm text-slate-400 font-medium">Stats</span>
-                                    <div className="text-2xl font-black text-white tracking-wider">
-                                        <span className={stats.counterPower > 0 ? 'text-green-400' : ''}>{formatBigNumber(stats.power)}</span>
-                                        <span className="text-slate-500 mx-1">/</span>
-                                        <span className={stats.counterToughness > 0 ? 'text-green-400' : ''}>{formatBigNumber(stats.toughness)}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Counter Type Selector */}
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 text-white font-semibold">
-                                    <Sparkles size={16} className="text-purple-400" />
-                                    <span className="text-sm">Counter</span>
-                                </div>
-                                <div className="relative">
-                                    <button
-                                        onClick={() => setShowCounterDropdown(!showCounterDropdown)}
-                                        className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm border border-slate-600 transition-colors w-28 justify-between"
+                    {/* ATTACHMENT BANNERS (Inside Card, Top) */}
+                    {attachments.length > 0 && (
+                        <div className="flex flex-col border-b border-white/10">
+                            {attachments.map((att) => {
+                                const attColors = getCardHexColors(att.colors);
+                                return (
+                                    <div
+                                        key={att.id}
+                                        className="relative group border-b border-white/5 last:border-b-0"
+                                        onClick={(e) => { e.stopPropagation(); onAction('select', att); }}
                                     >
-                                        <span className="truncate">{selectedCounterType}</span>
-                                        <ChevronDown size={14} className={`transition-transform ${showCounterDropdown ? 'rotate-180' : ''}`} />
-                                    </button>
-                                    {showCounterDropdown && (
-                                        <>
-                                            <div className="fixed inset-0 z-[60]" onClick={() => setShowCounterDropdown(false)} />
-                                            <div className="absolute right-0 top-full mt-2 w-40 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl z-[70] overflow-hidden max-h-48 overflow-y-auto">
-                                                {KNOWN_COUNTERS.map(type => (
-                                                    <button
-                                                        key={type}
-                                                        onClick={() => {
-                                                            setSelectedCounterType(type);
-                                                            setShowCounterDropdown(false);
-                                                        }}
-                                                        className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-700 transition-colors ${selectedCounterType === type ? 'bg-slate-700 text-white font-bold' : 'text-slate-300'}`}
-                                                    >
-                                                        {type}
-                                                    </button>
-                                                ))}
+                                        <div className="h-8 bg-black/50 flex items-center justify-center gap-1.5 px-2 relative z-10" style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+                                            {/* Color Identity Dot */}
+                                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 border border-white/20 shadow-sm" style={{ backgroundColor: attColors.fillColor }}></div>
+                                            {/* Attachment Name */}
+                                            <div className="flex-1 text-center min-w-0">
+                                                <span className="text-white/90 font-bold text-xs truncate block">{att.name}</span>
                                             </div>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
+                                        </div>
 
-                            {/* Counter Buttons */}
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={() => handleCounterAction(-1)}
-                                    disabled={currentSelectedCount <= 0}
-                                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-red-400 shadow-sm border border-slate-600 transition-all active:scale-95"
-                                >
-                                    <Minus size={24} />
-                                </button>
-                                <div className="flex-1 flex items-center justify-center bg-slate-900/50 rounded-xl h-12 border border-slate-700/50">
-                                    <span className="text-white font-black text-2xl">{currentSelectedCount}</span>
-                                </div>
-                                <button
-                                    onClick={() => handleCounterAction(1)}
-                                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-slate-700 hover:bg-slate-600 text-green-400 shadow-sm border border-slate-600 transition-all active:scale-95"
-                                >
-                                    <Plus size={24} />
-                                </button>
-                            </div>
+                                        {/* Quick Unequip Action */}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onAction('unequip-self', att); }}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/80 rounded text-white transition-all"
+                                            title="Unequip"
+                                        >
+                                            <Minus size={10} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
 
-                    {/* Activated Abilities */}
-                    {activatedAbilities.length > 0 && (
-                        <div className="w-full pb-4 border-b border-slate-700/50">
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 text-center">Abilities</h4>
-                            <div className="flex flex-col gap-2">
-                                {activatedAbilities.map((ability, index) => (
-                                    <button
-                                        key={index}
-                                        onClick={() => onActivateAbility(card, ability)}
-                                        className="flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all active:scale-95 font-bold text-left"
-                                    >
-                                        <Zap size={18} className="text-indigo-200 flex-shrink-0" />
-                                        <span className="truncate text-sm">{ability.cost}</span>
-                                    </button>
-                                ))}
-                            </div>
+                    {/* TOP HEADER: Name + Color Dot */}
+                    <div className="h-8 bg-black/50 flex items-center justify-center gap-1.5 px-2 relative z-10" style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+                        {/* Color Identity Dot */}
+                        <div className={`w-2.5 h-2.5 rounded-full ${colorDot} flex-shrink-0 border border-white/20 shadow-sm`}></div>
+                        {/* Card Name */}
+                        <div className="flex-1 text-center min-w-0">
+                            <span className="text-white font-bold text-sm truncate block">{card.name}</span>
                         </div>
-                    )}
+                    </div>
 
-                    {/* Action Buttons */}
-                    {renderActions()}
+                    {/* ART WINDOW */}
+                    <div className="w-full h-[225px] relative bg-slate-900/30 overflow-hidden group">
+                        {/* Art Image */}
+                        {card.art_crop ? (
+                            <img
+                                src={card.art_crop}
+                                alt={card.name}
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                style={{ objectPosition: card.activeFaceIndex === 1 ? '100% 15%' : '0% 15%' }}
+                            />
+                        ) : (
+                            <div className="w-full h-full bg-slate-700/50"></div>
+                        )}
+
+                        {/* Subtle Pattern Overlay */}
+                        <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.02) 10px, rgba(255,255,255,.02) 20px)' }}></div>
+
+                        {/* Stack Count Badge */}
+                        {isStack && (
+                            <div className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 border-2 border-white/20 shadow-lg z-20">
+                                <span className="text-white font-bold text-sm">x{stackCount}</span>
+                            </div>
+                        )}
+
+                        {/* P/T Modifier Breakdown Overlay (Bottom Right) */}
+                        {stats && (
+                            <div className="absolute bottom-2 right-2 flex flex-col items-end gap-0.5 z-20 pointer-events-none">
+                                <div className="text-[10px] text-white/90 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] px-1.5 py-0.5 bg-black/40 rounded backdrop-blur-sm border border-white/10">
+                                    <span className="text-white/70">Base: </span>
+                                    <span className="font-bold">{card.power || 0}/{card.toughness || 0}</span>
+                                </div>
+                                {stats.counterPower !== 0 && (
+                                    <div className="text-[10px] text-green-400 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] px-1.5 py-0.5 bg-black/40 rounded backdrop-blur-sm border border-white/10">
+                                        <span className="text-white/70">Counters: </span>
+                                        <span className="font-bold">+{stats.counterPower}/+{stats.counterToughness}</span>
+                                    </div>
+                                )}
+                                {stats.dynamicPower !== 0 && (
+                                    <div className="text-[10px] text-blue-400 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] px-1.5 py-0.5 bg-black/40 rounded backdrop-blur-sm border border-white/10">
+                                        <span className="text-white/70">Attach: </span>
+                                        <span className="font-bold">{stats.dynamicPower >= 0 ? '+' : ''}{stats.dynamicPower}/{stats.dynamicToughness >= 0 ? '+' : ''}{stats.dynamicToughness}</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* BOTTOM FOOTER: Type + Total P/T */}
+                    <div className="h-8 bg-black/50 flex items-center justify-between px-3 relative z-10" style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+                        <span className="text-white font-semibold text-xs truncate max-w-[180px] text-shadow-sm">{cardType}</span>
+                        {stats && (
+                            <div className="bg-black/85 border border-white/10 rounded-full px-3 py-0.5 shadow-lg">
+                                <span className={`font-bold text-base ${stats.power > (card.power || 0) ? 'text-green-400' : 'text-white'}`}>
+                                    {formatBigNumber(stats.power)}/{formatBigNumber(stats.toughness)}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* CONTROLS SECTION */}
+                    <div className="border-t border-white/5 pb-2">
+                        <SelectedCardControls
+                            card={card}
+                            stackCount={stackCount}
+                            stackCards={stackCards}
+                            allCards={allCards}
+                            onAction={onAction}
+                            onActivateAbility={onActivateAbility}
+                            onConvertLand={onConvertLand}
+                            onCounterChange={onCounterChange}
+                            onDeselect={onDeselect}
+                        />
+                    </div>
+                    {/* End Controls */}
+
                 </div>
+                {/* End Card Unit */}
+
+                {/* Close Hint */}
+                <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 text-gray-400 text-sm whitespace-nowrap cursor-pointer" onClick={onDeselect}>
+                    Tap outside to close
+                </div>
+
+                {/* Backdrop Click Handler (Invisible layer covering screen except card) */}
+                <div className="fixed inset-0 -z-10" onClick={onDeselect}></div>
             </div>
         </div>,
         document.body
     );
 };
-
-// Helper Component for Action Buttons
-const ActionButton = ({ icon: Icon, label, color, onClick }) => (
-    <button
-        onClick={onClick}
-        className={`flex items-center justify-center gap-2 px-3 py-3 rounded-xl font-semibold text-sm ${color} text-white transition-all active:scale-95 shadow-lg w-full`}
-    >
-        <Icon size={18} />
-        <span>{label}</span>
-    </button>
-);
 
 export default SelectionMenu;
