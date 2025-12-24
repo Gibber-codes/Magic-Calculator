@@ -162,17 +162,40 @@ const useGameState = () => {
 
     const endTurn = useCallback(() => {
         logAction("Turn Ended");
+
+        // Process End phase - this will trigger delayed effects like Orthion's token sacrifices
+        let endTriggers = [];
+        if (gameEngineRef.current) {
+            endTriggers = gameEngineRef.current.processPhaseChange('End', true);
+        }
+
+        // Clear phase state
         setCurrentPhase(null);
         setCurrentCombatStep(null);
 
         // Clear attacking status and temporary buffs from all creatures
-        setCards(prev => prev.map(c => ({
-            ...c,
-            attacking: false,
-            tempPowerBonus: 0,
-            tempToughnessBonus: 0
-        })));
-    }, [logAction]);
+        setCards(prev => {
+            let updatedCards = prev.map(c => ({
+                ...c,
+                attacking: false,
+                tempPowerBonus: 0,
+                tempToughnessBonus: 0
+            }));
+
+            // Process sacrifice triggers if any
+            endTriggers.forEach(trigger => {
+                if (trigger.ability && trigger.ability.effect === 'sacrifice_cards') {
+                    const idsToRemove = trigger.ability.targetIds || [];
+                    updatedCards = updatedCards.filter(c => !idsToRemove.includes(c.id));
+                    logAction(trigger.ability.description || 'Sacrificed tokens at end of turn');
+                }
+            });
+
+            return updatedCards;
+        });
+
+        return endTriggers;
+    }, [logAction, gameEngineRef]);
 
     // --- Ability Stack Management ---
 

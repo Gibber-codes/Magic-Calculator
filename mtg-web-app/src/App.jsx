@@ -119,6 +119,8 @@ const App = () => {
   const [loadingPreset, setLoadingPreset] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showCalculationMenu, setShowCalculationMenu] = useState(false);
+  const [passingPhase, setPassingPhase] = useState(null); // For animated phase transitions
+  const pendingPhasePassRef = useRef(null); // Tracks paused phase animation state
 
 
   const battlefieldRef = useRef(null);
@@ -338,13 +340,13 @@ const App = () => {
     }
 
     if (!currentPhase) {
-      handlePhaseChange('Main 1');
+      handlePhaseChange('Main');
       return;
     }
 
     if (currentPhase === 'Beginning') {
-      handlePhaseChange('Main 1');
-    } else if (currentPhase === 'Main 1') {
+      handlePhaseChange('Main');
+    } else if (currentPhase === 'Main') {
       // Transition to Combat - beginning of combat triggers will go on stack
       // User must resolve them before declaring attackers
       handlePhaseChange('Combat');
@@ -369,7 +371,9 @@ const App = () => {
     }
   };
 
-  // Handle Start Turn - goes to Beginning phase which triggers untap and beginning_step abilities
+  // Handle Start Turn - processes Beginning phase (untap + triggers) then lands on Main 1
+  // Shows animated visual of passing through Beginning steps
+  // Pauses if triggers go on the stack, resumes when stack is empty
   const handleStartTurn = () => {
     // Clear attacking status from previous turn
     setCards(prev => prev.map(c => ({
@@ -377,11 +381,60 @@ const App = () => {
       attacking: false
     })));
 
-    // Go to Beginning phase - this will:
-    // 1. Call untapAll() to untap all permanents
-    // 2. Call processPhaseChange('beginning') to trigger beginning_step abilities
-    handlePhaseChange('Beginning');
+    // Process Beginning phase (untap all, check for beginning_step triggers)
+    const hadTriggers = handlePhaseChange('Beginning');
+
+    // Animated phase passing through Beginning steps
+    const beginningSteps = ['Untap', 'Upkeep', 'Draw'];
+
+    // If triggers were added, pause animation and let them resolve
+    // After resolution, animation will continue and land on Main
+    if (hadTriggers) {
+      setPassingPhase('Beginning');
+      pendingPhasePassRef.current = { steps: beginningSteps, stepIndex: 0 };
+      return;
+    }
+
+    // No triggers, animate through steps then immediately land on Main 1
+    startPhasePassAnimation(beginningSteps, 0);
   };
+
+  // Reusable function to animate through phase steps, then land on Main
+  const startPhasePassAnimation = (steps, startIndex) => {
+    let stepIndex = startIndex;
+
+    // Show animation starting
+    setPassingPhase(steps[stepIndex] || 'Beginning');
+
+    const animateSteps = () => {
+      if (stepIndex < steps.length) {
+        setPassingPhase(steps[stepIndex]);
+        stepIndex++;
+        setTimeout(animateSteps, 200); // 200ms per step (slightly faster)
+      } else {
+        // Animation complete, land on Main 1
+        setPassingPhase(null);
+        pendingPhasePassRef.current = null;
+        handlePhaseChange('Main');
+      }
+    };
+
+    // Start animation immediately
+    setTimeout(animateSteps, 100);
+  };
+
+  // Effect: Resume phase passing when stack becomes empty
+  useEffect(() => {
+    if (pendingPhasePassRef.current && abilityStack.length === 0) {
+      const { steps, stepIndex } = pendingPhasePassRef.current;
+      pendingPhasePassRef.current = null; // Clear before starting
+
+      // Small delay to let UI update
+      setTimeout(() => {
+        startPhasePassAnimation(steps, stepIndex);
+      }, 300);
+    }
+  }, [abilityStack.length]);
 
   // Wrap advanceCombatStep to handle declare attackers mode
   const advanceCombatStep = () => {
@@ -1117,18 +1170,21 @@ const App = () => {
     if (targetingMode.action === 'activate-ability' || targetingMode.action === 'resolve-trigger') {
       const targetType = targetingMode.data?.targetType || 'creature';
       const targetSpec = targetingMode.data?.targetSpec || '';
+      // Also check the ability's target property directly (for activated abilities)
+      const abilityTarget = targetingMode.data?.target || '';
 
       // Handle nonland permanent targeting (e.g., Extravagant Replication)
-      if (targetType === 'nonland_permanent' || targetSpec.includes('nonland')) {
+      if (targetType === 'nonland_permanent' || targetSpec.includes('nonland') || abilityTarget.includes('nonland')) {
         const isLandCard = c.type_line?.toLowerCase().includes('land');
         return !isLandCard; // Allow any permanent except lands
       }
 
-      if (targetType.toLowerCase() === 'creature') {
+      // Handle creature targeting (including "another target creature you control" for Orthion)
+      if (targetType.toLowerCase() === 'creature' || abilityTarget.includes('creature')) {
         const isCreatureCard = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
         if (targetingMode.action === 'resolve-trigger') {
-          const abilityTarget = targetingMode.data?.stackAbility?.triggerObj?.ability?.target || '';
-          if (abilityTarget.includes('attacking')) return isCreatureCard && c.attacking;
+          const stackAbilityTarget = targetingMode.data?.stackAbility?.triggerObj?.ability?.target || '';
+          if (stackAbilityTarget.includes('attacking')) return isCreatureCard && c.attacking;
         }
         return isCreatureCard;
       }
@@ -1346,9 +1402,10 @@ const App = () => {
 
       {/* Phase Tracker - Floating above Controls */}
       <PhaseTracker
-        isVisible={!!currentPhase}
+        isVisible={!!currentPhase || !!passingPhase}
         currentPhase={currentPhase}
         currentCombatStep={currentCombatStep}
+        passingPhase={passingPhase}
         onPhaseChange={handlePhaseChange}
         onAdvancePhase={advancePhase}
         onAdvanceCombatStep={advanceCombatStep}

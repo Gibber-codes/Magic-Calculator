@@ -59,6 +59,7 @@ export class GameEngine {
             main: 'main_phase',
             'Main 2': 'main_phase',
             end: 'end_step',
+            'End': 'end_step', // Support capital E from phase names
         };
         const currentTriggerType = triggerMap[phase];
         if (!currentTriggerType) return [];

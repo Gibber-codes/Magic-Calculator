@@ -117,10 +117,10 @@ export const EFFECT_PATTERNS = [
     },
     // Add counters to self (Wildwood Mentor / Mossborn Hydra variations)
     {
-        pattern: /put (?:a|one|two|three|X) \+1\/\+1 counters? on (?:this creature|it)/i,
+        pattern: /put (a|one|two|three|X) \+1\/\+1 counters? on (?:this creature|it)/i,
         effect: 'add_counters',
         parseAmount: (match) => {
-            const val = match[1].toLowerCase();
+            const val = (match[1] || 'a').toLowerCase();
             const map = { 'a': 1, 'one': 1, 'two': 2, 'three': 3 };
             if (val === 'x') return 'this.power'; // Heuristic
             return map[val] || parseInt(val) || 1;
@@ -129,10 +129,10 @@ export const EFFECT_PATTERNS = [
     },
     // Add counters to target
     {
-        pattern: /put (?:a|one|two|three) \+1\/\+1 counters? on target creature/i,
+        pattern: /put (a|one|two|three) \+1\/\+1 counters? on target creature/i,
         effect: 'add_counters',
         parseAmount: (match) => {
-            const val = match[1].toLowerCase();
+            const val = (match[1] || 'a').toLowerCase();
             const map = { 'a': 1, 'one': 1, 'two': 2, 'three': 3 };
             return map[val] || parseInt(val) || 1;
         },
