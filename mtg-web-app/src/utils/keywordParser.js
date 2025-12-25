@@ -188,10 +188,13 @@ export const EFFECT_PATTERNS = [
         },
         parseTarget: (match) => {
             const t = match[1].toLowerCase();
-            if (t.includes('this creature') || t.includes('it')) return 'self';
+            // Check for "another" patterns FIRST - they're more specific and take priority
+            if (t.includes('another target attacking creature')) return 'another_target_attacking_creature';
             if (t.includes('another target creature')) return 'another_target_creature_you_control';
             if (t.includes('each other attacking creature')) return 'all_other_attacking_creatures';
             if (t.includes('each creature you control')) return 'all_creatures_you_control';
+            // Default to self only if no other patterns matched
+            if (t.includes('this creature') || t.includes('it')) return 'self';
             return 'self';
         }
     },

@@ -1133,13 +1133,14 @@ const App = () => {
 
       // Start targeting mode with the ability stored in data
       startTargetingMode({
-        sourceId: sourceCard.id,
+        sourceId: null, // Don't use sourceCard.id - we'll use the ability data instead
         action: 'resolve-trigger',
         mode: 'single',
         data: {
           stackAbility: ability,
           targetType: targetType,
-          targetSpec: targetSpec // Pass full spec for advanced filtering
+          targetSpec: targetSpec, // Pass full spec for advanced filtering
+          sourceCard: sourceCard // Pass sourceCard in data for reference
         }
       });
     }
@@ -1184,7 +1185,21 @@ const App = () => {
         const isCreatureCard = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')) || c.isToken;
         if (targetingMode.action === 'resolve-trigger') {
           const stackAbilityTarget = targetingMode.data?.stackAbility?.triggerObj?.ability?.target || '';
-          if (stackAbilityTarget.includes('attacking')) return isCreatureCard && c.attacking;
+          if (stackAbilityTarget.includes('attacking')) {
+            // Check for "another" keyword - if present, exclude the source card
+            const excludeSource = stackAbilityTarget.includes('another');
+            const sourceId = targetingMode.data?.stackAbility?.sourceId;
+            if (excludeSource && sourceId && c.id === sourceId) {
+              return false; // Can't target the source itself
+            }
+            return isCreatureCard && c.attacking;
+          }
+        }
+        // Also check for "another" in activated abilities
+        const excludeSource = abilityTarget.includes('another');
+        const sourceId = targetingMode.sourceId;
+        if (excludeSource && sourceId && c.id === sourceId) {
+          return false; // Can't target the source itself
         }
         return isCreatureCard;
       }
@@ -1267,7 +1282,7 @@ const App = () => {
       </div>
 
       {/* Triggered Ability Stack (Overlay) */}
-      {!selectedCard && (
+      {!selectedCard && !(targetingMode.active && targetingMode.action === 'resolve-trigger') && (
         <TriggeredAbilityStack
           items={abilityStack}
           onResolve={handleResolveWithTargeting}
@@ -1465,6 +1480,7 @@ const App = () => {
           eligibleTargets={cards.filter(c => c.zone === 'battlefield' && isCardEligible(c))}
           selectedIds={targetingMode.selectedIds || []}
           sourceCard={targetingMode.sourceId ? cards.find(c => c.id === targetingMode.sourceId) : null}
+          stackSource={targetingMode.action === 'resolve-trigger' ? abilityStack : null}
           allCards={cards}
           onSelectCard={(cardId) => {
             const card = cards.find(c => c.id === cardId);

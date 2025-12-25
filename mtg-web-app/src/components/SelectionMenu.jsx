@@ -227,6 +227,12 @@ const SelectionMenu = ({
                                         <span className="font-bold">{stats.dynamicPower >= 0 ? '+' : ''}{stats.dynamicPower}/{stats.dynamicToughness >= 0 ? '+' : ''}{stats.dynamicToughness}</span>
                                     </div>
                                 )}
+                                {(stats.tempPowerBonus !== 0 || stats.tempToughnessBonus !== 0) && (
+                                    <div className="text-[10px] text-amber-400 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] px-1.5 py-0.5 bg-black/40 rounded backdrop-blur-sm border border-white/10">
+                                        <span className="text-white/70">Temp: </span>
+                                        <span className="font-bold">{stats.tempPowerBonus >= 0 ? '+' : ''}{stats.tempPowerBonus}/{stats.tempToughnessBonus >= 0 ? '+' : ''}{stats.tempToughnessBonus}</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

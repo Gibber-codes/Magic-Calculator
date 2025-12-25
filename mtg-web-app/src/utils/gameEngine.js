@@ -477,6 +477,7 @@ export class GameEngine {
 
             case 'all_other_attacking_creatures':
             case 'another_attacking_creature':
+            case 'another_target_attacking_creature':
                 // Return attacking creatures that are NOT the source
                 return pool.filter(c =>
                     c.attacking &&
@@ -700,7 +701,19 @@ export class GameEngine {
         }
 
         if (ability.effect === 'buff_creature') {
-            const buffType = ability.buffType || 'both'; // 'power', 'toughness', or 'both'
+            const buffType = ability.buffType || 'both'; // 'power', 'toughness', 'both', or 'split'
+
+            // Calculate toughness value if different from power
+            let toughnessValue = value;
+            if (ability.toughnessAmount && ability.toughnessAmount !== ability.amount) {
+                // Recalculate for toughness if it's different
+                toughnessValue = this.calculateBaseValue(
+                    targets.length > 0 ? targets[0] : (newCards.find(c => c.id === ability.sourceId) || {}),
+                    { ...ability, amount: ability.toughnessAmount },
+                    newCards
+                );
+            }
+
             // Apply temporary buff to targets
             targets.forEach(target => {
                 const cardIndex = newCards.findIndex(c => c.id === target.id);
@@ -709,8 +722,12 @@ export class GameEngine {
                     let pBonus = currentCard.tempPowerBonus || 0;
                     let tBonus = currentCard.tempToughnessBonus || 0;
 
-                    if (buffType === 'power' || buffType === 'both') pBonus += value;
-                    if (buffType === 'toughness' || buffType === 'both') tBonus += value;
+                    if (buffType === 'power' || buffType === 'both' || buffType === 'split') {
+                        pBonus += value;
+                    }
+                    if (buffType === 'toughness' || buffType === 'both' || buffType === 'split') {
+                        tBonus += toughnessValue;
+                    }
 
                     newCards[cardIndex] = {
                         ...currentCard,

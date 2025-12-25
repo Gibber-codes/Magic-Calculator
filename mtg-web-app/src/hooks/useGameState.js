@@ -220,6 +220,8 @@ const useGameState = () => {
             triggerType: detectedType || 'when',
             trigger: triggerObj?.trigger, // Store the actual trigger type (e.g., 'deferred_token_creation')
             triggerObj: triggerObj,
+            sourceArt: sourceCard.art_crop || sourceCard.image_normal,
+            sourceType: sourceCard.type_line,
             timestamp: Date.now()
         };
 
