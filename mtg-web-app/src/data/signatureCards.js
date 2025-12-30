@@ -68,15 +68,17 @@ export const SIGNATURE_DATA = {
         abilities: [
             {
                 trigger: 'on_enter_battlefield',
-                effect: 'create_attached_token',
+                effect: 'create_deferred_token',
                 tokenName: 'Virtuous',
+                // target: explicitly removed, as the initial buffer trigger is targetless
                 amount: 1,
                 description: 'create a Virtuous Role token attached to another target creature you control'
             },
             {
                 trigger: 'on_attack',
-                effect: 'create_attached_token',
+                effect: 'create_deferred_token',
                 tokenName: 'Virtuous',
+                // target: explicitly removed
                 amount: 1,
                 description: 'create a Virtuous Role token attached to another target creature you control'
             }
@@ -89,7 +91,9 @@ export const SIGNATURE_DATA = {
         oracle_text: 'Enchanted creature gets +1/+1 for each enchantment you control.',
         isRole: true,
         power: 0,
-        toughness: 0
+        toughness: 0,
+        art_crop: 'https://cards.scryfall.io/border_crop/front/2/7/27927100-2587-4e05-9957-eb183d46c1f0.jpg?1695406612',
+        image_rotation: 180
     },
     'Virtuous Role': {
         name: 'Virtuous',
@@ -98,7 +102,9 @@ export const SIGNATURE_DATA = {
         oracle_text: 'Enchanted creature gets +1/+1 for each enchantment you control.',
         isRole: true,
         power: 0,
-        toughness: 0
+        toughness: 0,
+        art_crop: 'https://cards.scryfall.io/border_crop/front/2/7/27927100-2587-4e05-9957-eb183d46c1f0.jpg?1695406612',
+        image_rotation: 180
     },
     // Basic Lands - minimal display, no abilities
     'Forest': {

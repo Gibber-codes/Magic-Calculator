@@ -121,8 +121,13 @@ const SelectionMenu = ({
                         const equippedCreature = allCards.find(c => c.id === card.attachedTo);
                         if (!equippedCreature) return null;
                         const creatureColors = getCardHexColors(equippedCreature.colors);
+
+                        // Find other attachments on the same creature (Siblings)
+                        const siblingAttachments = allCards.filter(c => c.attachedTo === equippedCreature.id && c.id !== card.id);
+
                         return (
                             <div className="flex flex-col border-b border-white/10">
+                                {/* Parent Creature Banner */}
                                 <div
                                     className="relative group border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
                                     onClick={(e) => { e.stopPropagation(); onAction('select', equippedCreature); }}
@@ -136,6 +141,27 @@ const SelectionMenu = ({
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Sibling Attachments */}
+                                {siblingAttachments.map(sibling => {
+                                    const sibColors = getCardHexColors(sibling.colors);
+                                    return (
+                                        <div
+                                            key={sibling.id}
+                                            className="relative group border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
+                                            onClick={(e) => { e.stopPropagation(); onAction('select', sibling); }}
+                                        >
+                                            <div className="h-8 bg-black/50 flex items-center justify-center gap-1.5 px-2 relative z-10" style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+                                                {/* Color Identity Dot */}
+                                                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 border border-white/20 shadow-sm" style={{ backgroundColor: sibColors.fillColor }}></div>
+                                                {/* Sibling Name */}
+                                                <div className="flex-1 text-center min-w-0">
+                                                    <span className="text-white/90 font-bold text-xs truncate block">{sibling.name}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         );
                     })()}

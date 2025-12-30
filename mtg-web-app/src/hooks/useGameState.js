@@ -349,9 +349,91 @@ const useGameState = () => {
                 logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName} - ${ability.description}`);
 
                 // Update stack state: remove the resolved ability AND add new triggers
+                // But first, auto-resolve token triggers that don't need targeting
+                const triggersToAdd = [];
+                let finalCards = updatedCards;
+
+                triggers.forEach(t => {
+                    // Check if this is an auto-resolvable token trigger
+                    const effect = t.ability?.effect;
+                    const isTokenCreation = [
+                        'create_token',
+                        'create_token_copy',
+                        'create_deferred_token_copy',
+                        'create_named_token',
+                        'create_related_token',
+                        'create_mobilize_warriors',
+                        'orthion_copy_single',
+                        'orthion_copy_five'
+                    ].includes(effect);
+
+                    const isTokenETB = t.ability?.trigger === 'on_token_enter_battlefield';
+                    const isDeferredToken = t.trigger === 'deferred_token_creation';
+
+                    const abilityDef = t.ability;
+                    const requiresTarget = abilityDef && (
+                        (abilityDef.requiresTarget) ||
+                        (abilityDef.target &&
+                            typeof abilityDef.target === 'string' &&
+                            (abilityDef.target.includes('target') || abilityDef.target.includes('another')) &&
+                            !abilityDef.targetIds)
+                    );
+
+                    const isAutoResolvable = ((isTokenCreation || isDeferredToken || isTokenETB) && !requiresTarget);
+
+                    if (isAutoResolvable && t.execute) {
+                        try {
+                            const autoResult = t.execute(finalCards);
+                            finalCards = autoResult.newCards || finalCards;
+                            const desc = t.description || t.ability?.description || `${t.source.name}: Token effect`;
+                            logAction(`Auto-resolved: ${desc}`);
+
+                            // Recursively check for more auto-resolvable triggers
+                            if (autoResult.triggers && autoResult.triggers.length > 0) {
+                                autoResult.triggers.forEach(nestedT => {
+                                    const nestedIsTokenETB = nestedT.ability?.trigger === 'on_token_enter_battlefield';
+                                    const nestedAbility = nestedT.ability;
+                                    const nestedRequiresTarget = nestedAbility && (
+                                        (nestedAbility.requiresTarget) ||
+                                        (nestedAbility.target &&
+                                            typeof nestedAbility.target === 'string' &&
+                                            (nestedAbility.target.includes('target') || nestedAbility.target.includes('another')) &&
+                                            !nestedAbility.targetIds)
+                                    );
+
+                                    if (nestedIsTokenETB && !nestedRequiresTarget && nestedT.execute) {
+                                        try {
+                                            const nestedResult = nestedT.execute(finalCards);
+                                            finalCards = nestedResult.newCards || finalCards;
+                                            const nestedDesc = nestedT.ability?.description || `${nestedT.source.name}: Token entered`;
+                                            logAction(`Auto-resolved: ${nestedDesc}`);
+                                        } catch (e) {
+                                            console.warn("Failed nested auto-resolve:", e);
+                                            triggersToAdd.push(nestedT);
+                                        }
+                                    } else {
+                                        triggersToAdd.push(nestedT);
+                                    }
+                                });
+                            }
+                            return; // Skip adding this trigger to stack
+                        } catch (e) {
+                            console.warn("Failed to auto-resolve trigger:", e);
+                            triggersToAdd.push(t);
+                        }
+                    } else {
+                        triggersToAdd.push(t);
+                    }
+                });
+
+                // Update cards with the final state after auto-resolutions
+                if (finalCards !== updatedCards) {
+                    setCards(finalCards);
+                }
+
                 setAbilityStack(prev => {
                     const filtered = prev.filter(a => a.id !== ability.id);
-                    const newAbilities = triggers.map((t, index) => {
+                    const newAbilities = triggersToAdd.map((t, index) => {
                         const isDeferred = t.trigger === 'deferred_token_creation';
                         const desc = isDeferred ? t.description : (t.ability?.description || `${t.source.name} triggered`);
                         const type = isDeferred ? t.trigger : 'trigger';
@@ -384,7 +466,7 @@ const useGameState = () => {
                     return [...filtered, ...newAbilities];
                 });
 
-                saveHistoryState(updatedCards);
+                saveHistoryState(finalCards);
             } catch (err) {
                 console.error("Failed to execute ability:", err);
                 logAction(`Error resolving ${ability.sourceName}: ${err.message}`);

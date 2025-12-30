@@ -399,7 +399,7 @@ const BattlefieldCard = ({
         return (
             <div className={`relative flex flex-col items-center rounded-xl transition-all duration-300 w-full ${scaleClass} ${shadowClass} ${activeGlow}`}
                 style={{
-                    paddingTop: attachments.length > 0 ? `${attachments.length * 28}px` : 0
+                    paddingTop: attachments.length > 0 ? '28px' : 0
                 }}
                 onClick={(e) => {
                     // Stop propagation to prevent auto-close when clicking card in overlay
@@ -408,75 +408,43 @@ const BattlefieldCard = ({
             >
                 {/* Attached Equipment Banners */}
                 {attachments.length > 0 && (
-                    <div className="absolute top-0 left-0 w-full flex flex-col items-center z-20 pointer-events-auto transition-all duration-300 ease-out"
-                        onMouseMove={(e) => {
-                            // Logic retained from original
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const offsetFromTop = e.clientY - rect.top;
-                            const BANNER_HEIGHT = 28;
-                            let hitIndex = -1;
-                            for (let i = 0; i < attachments.length; i++) {
-                                if (offsetFromTop >= i * BANNER_HEIGHT && offsetFromTop <= (i + 1) * BANNER_HEIGHT) {
-                                    hitIndex = i; break;
-                                }
-                            }
-                            if (hitIndex !== -1) {
-                                setHoveredAttachmentId(attachments[hitIndex].id);
-                                setIsEquipmentHovered(true);
-                            }
-                        }}
-                        onMouseLeave={() => {
-                            setIsEquipmentHovered(false);
-                            setHoveredAttachmentId(null);
-                        }}
-                    >
-                        {attachments.map((att, index) => {
-                            const attColors = getCardHexColors(att.colors);
-                            const hoveredIndex = attachments.findIndex(a => a.id === hoveredAttachmentId);
-                            const shouldLift = hoveredIndex !== -1 && index >= hoveredIndex;
-                            const baseTransform = index * 1;
-                            const activeLift = shouldLift ? (baseTransform - 2) : baseTransform;
+                    <div className="absolute top-0 left-0 w-full flex flex-col items-center z-20 pointer-events-auto transition-all duration-300 ease-out">
 
-                            return (
-                                <div key={att.id}
-                                    className="relative transition-all duration-300 ease-out flex flex-col items-center pointer-events-auto w-full"
-                                    style={{
-                                        zIndex: attachments.length - index,
-                                        transform: `translateY(${activeLift}px)`,
-                                    }}
-                                    onMouseLeave={() => setHoveredAttachmentId(null)}
-                                >
-                                    {/* Attachment Content */}
-                                    <div
-                                        className="flex flex-col items-center cursor-pointer transition-all duration-300"
-                                        onClick={(e) => {
-                                            if (isEligibleAttacker) return;
-                                            e.stopPropagation();
-                                            onAction && onAction('select', att);
-                                        }}
-                                    >
-                                        <div className="relative z-10">
-                                            <TopBanner width={CARD_WIDTH} height={24} colorIdentity={attColors.fillColor}>
-                                                <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center" style={{ color: 'white' }}>
-                                                    {att.name}
-                                                </div>
-                                            </TopBanner>
+                        {/* Multiple Attachments: Single Summary Banner */}
+                        {attachments.length > 1 ? (
+                            <div className="relative w-full z-10">
+                                <TopBanner width={CARD_WIDTH} height={28} colorIdentity="#374151">
+                                    <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center p-1" style={{ color: 'white' }}>
+                                        {attachments.length} Attachments
+                                    </div>
+                                </TopBanner>
+                            </div>
+                        ) : (
+                            /* Single Attachment: Show valid card banner */
+                            attachments.map((att) => {
+                                const attColors = getCardHexColors(att.colors);
+                                return (
+                                    <div key={att.id} className="relative w-full z-10 transition-all duration-300">
+                                        <div
+                                            className="flex flex-col items-center cursor-pointer"
+                                            onClick={(e) => {
+                                                if (isEligibleAttacker) return;
+                                                e.stopPropagation();
+                                                onAction && onAction('select', att);
+                                            }}
+                                        >
+                                            <div className="relative z-10">
+                                                <TopBanner width={CARD_WIDTH} height={28} colorIdentity={attColors.fillColor}>
+                                                    <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center" style={{ color: 'white' }}>
+                                                        {att.name}
+                                                    </div>
+                                                </TopBanner>
+                                            </div>
                                         </div>
                                     </div>
-                                    {/* Unequip Button for Attachment (Overlay Only or Hover) */}
-                                    {showControls && (
-                                        <div className="absolute -left-10 top-0 z-50">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onAction && onAction('unequip-self', att); }}
-                                                className="bg-slate-600 w-8 h-8 rounded-full shadow-lg border border-white/20 flex items-center justify-center hover:scale-110 active:scale-95"
-                                            >
-                                                <Minus size={14} className="text-white" />
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                                );
+                            })
+                        )}
                     </div>
                 )}
 

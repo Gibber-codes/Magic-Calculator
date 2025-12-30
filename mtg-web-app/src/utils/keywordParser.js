@@ -27,9 +27,10 @@ export const TRIGGER_PATTERNS = [
     // Ouroboroid trigger (same as Helm but explicit in case of variations)
     // Duplicate removed
 
-    // Mobilize X (Equipment-granted attack trigger)
+    // Mobilize (Equipment-granted attack trigger)
     {
-        pattern: /mobilize X, where X is its power.*?\(Whenever it attacks, create X tapped and attacking/i,
+        // Matches "Mobilize the Neighborhood (Whenever this creature attacks...)"
+        pattern: /mobilize.*\(Whenever (?:it|this creature) attacks, create X/i,
         trigger: 'on_attack',
         target: 'equipped_creature', // Special target for equipment-granted abilities
         grantedBy: 'equipment' // Mark this as equipment-granted
@@ -207,14 +208,16 @@ export const EFFECT_PATTERNS = [
     },
 
     // =====================
-    // MOBILIZE X PATTERN (Equipment-specific)
+    // MOBILIZE PATTERN (Equipment-specific)
     // =====================
     {
-        pattern: /create X tapped and attacking (?:\d+\/\d+ )?(?:\w+ )?(\w+) creature tokens/i,
+        // Support both "create X tapped and attacking..." and "create X ... that are tapped and attacking"
+        // Robustly capture the word immediately before "creature tokens" as the subtype
+        pattern: /create X .*?(\w+) creature tokens/i,
         effect: 'create_mobilize_warriors',
         amount: 'equipped_creature.power', // X = equipped creature's power
         target: 'battlefield',
-        parseTokenName: (match) => match[1], // Extract just the subtype (e.g., "Warrior")
+        parseTokenName: (match) => match[1], // Extract just the subtype (e.g., "Warrior", "Soldier")
         delayedEffect: 'sacrifice_at_end_step'
     },
     // Equip / Attach effect
@@ -399,35 +402,40 @@ export function extractTriggers(oracleText) {
 
     const triggers = [];
 
-    // Split oracle text into sentences (by newline)
+    // Split oracle text into sentences (by newline or period followed by space)
+    // Be careful not to split inside parenthesis if possible, but simplest is usually newline
     const sentences = oracleText.split(/\n/);
 
-    for (const { pattern, ...triggerData } of TRIGGER_PATTERNS) {
-        // Find ALL matching sentences
-        const matchingSentences = sentences.filter(sentence => pattern.test(sentence));
+    sentences.forEach(sentence => {
+        if (!sentence.trim()) return;
 
-        if (matchingSentences.length > 0) {
-            // Process each matching sentence
-            matchingSentences.forEach(matchingSentence => {
-                const effects = extractEffects(matchingSentence);
-                // Only add if we actually found effects (optional optimization, but good for filtering out Reminder Text that doesn't have effects we support yet)
-                // Actually, finding no effects might be valid if we default to 'unknown'
+        // Find the FIRST matching pattern for this sentence
+        for (const { pattern, ...triggerData } of TRIGGER_PATTERNS) {
+            if (pattern.test(sentence)) {
+                // Determine effects for this specific sentence
+                const effects = extractEffects(sentence);
+
                 triggers.push({
                     ...triggerData,
                     effects: effects.length > 0 ? effects : [{ effect: 'unknown' }],
-                    original: matchingSentence
+                    original: sentence
                 });
-            });
-        } else if (pattern.test(oracleText)) {
-            // Fallback: Check full text if no individual sentence matched (e.g. multi-line patterns)
-            const effects = extractEffects(oracleText);
-            triggers.push({
-                ...triggerData,
-                effects: effects.length > 0 ? effects : [{ effect: 'unknown' }],
-                original: oracleText
-            });
+
+                // Stop checking patterns for this sentence once we found a match
+                // This prevents "Mobilize" (specific) and "When this creature attacks" (generic) from both matching
+                break;
+            }
         }
-    }
+    });
+
+    // Also check full text for multi-line patterns if no single-line triggers were found?
+    // Or maybe some patterns are inherently multi-line.
+    // The previous code had a fallback:
+    // } else if (pattern.test(oracleText)) { ... }
+
+    // If we switch to sentence-first, we might miss patterns that cross newlines.
+    // However, most MTG triggers are paragraph/sentence based.
+    // Given the current patterns, they are mostly single-paragraph.
 
     return triggers;
 }

@@ -194,7 +194,10 @@ const useTargetingMode = (gameState) => {
 
         // Process attack triggers
         if (gameEngineRef.current) {
+            console.log(`[Confirm] Processing attack triggers for:`, attackerIds);
             const triggers = gameEngineRef.current.processAttackDeclaration(attackerIds);
+            console.log(`[Confirm] Triggers found:`, triggers.length);
+
             triggers.forEach(t => {
                 const description = t.ability.description ||
                     `Whenever ${t.source.name} attacks: ${t.ability.effect}`;

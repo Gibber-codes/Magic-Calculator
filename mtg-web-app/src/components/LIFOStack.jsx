@@ -129,7 +129,10 @@ const StackItem = ({
                             alt={item.sourceName}
                             className="w-full h-full object-cover"
                             src={item.sourceArt || 'https://cards.scryfall.io/art_crop/front/7/1/71dadbb3-7b8a-4656-973f-65a3284afe07.jpg?1682206565'}
-                            style={{ objectPosition: '0% 15%' }}
+                            style={{
+                                objectPosition: '0% 15%',
+                                transform: `rotate(${item.sourceRotation || 0}deg)`
+                            }}
                         />
                     </div>
                 </div>
