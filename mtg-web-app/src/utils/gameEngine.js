@@ -37,7 +37,8 @@ export class GameEngine {
 
         // Combine and Return
         const allTriggers = [...standardTriggers, ...delayed];
-        return allTriggers.map(trigger => this.resolveEffect(trigger));
+        // flatMap handles both single triggers and arrays of triggers from token creation
+        return allTriggers.flatMap(trigger => this.resolveEffect(trigger));
     }
 
     /**
@@ -150,7 +151,8 @@ export class GameEngine {
      */
     processAttackDeclaration(attackerIds) {
         const triggers = this.findAttackTriggers(attackerIds);
-        return triggers.map(trigger => this.resolveEffect(trigger));
+        // flatMap handles both single triggers and arrays of triggers from token creation
+        return triggers.flatMap(trigger => this.resolveEffect(trigger));
     }
 
     /**
@@ -261,10 +263,27 @@ export class GameEngine {
         const triggers = [];
         if (!enteringCard) return [];
 
+        console.log('[ETB] Processing:', enteringCard.name, 'Has abilities:', enteringCard.abilities?.length || 0);
+
+        // FALLBACK: If this is a signature card but doesn't have abilities loaded, load them now
+        if (!enteringCard.abilities || enteringCard.abilities.length === 0) {
+            const signature = SIGNATURE_DATA[enteringCard.name];
+            console.log('[ETB] Checking SIGNATURE_DATA for:', enteringCard.name, 'Found:', !!signature);
+            if (signature && signature.abilities) {
+                console.log('[ETB] Loading abilities from SIGNATURE_DATA:', signature.abilities);
+                // Mutate the card to add abilities (this is acceptable since we're processing it)
+                enteringCard.abilities = signature.abilities;
+                enteringCard.replacementEffects = signature.replacementEffects || [];
+                enteringCard.keywords = signature.keywords || [];
+            }
+        }
+
         // 1. Check for card's own ETB triggers
         if (enteringCard.abilities) {
             enteringCard.abilities.forEach(ability => {
+                console.log('[ETB] Checking ability:', ability.trigger, ability.description);
                 if (ability.trigger === 'on_enter_battlefield') {
+                    console.log('[ETB] Found ETB trigger!');
                     triggers.push({
                         source: enteringCard,
                         ability: ability
@@ -273,7 +292,10 @@ export class GameEngine {
             });
         }
 
-        const ownResults = triggers.map(trigger => this.resolveEffect(trigger));
+        console.log('[ETB] Total triggers found:', triggers.length);
+
+        // flatMap handles both single triggers and arrays of triggers from token creation
+        const ownResults = triggers.flatMap(trigger => this.resolveEffect(trigger));
         let otherResults = [];
 
         // 2. Check for "When token enters" triggers (Wildwood Mentor) from OTHER cards
@@ -292,16 +314,57 @@ export class GameEngine {
 
     /**
      * Resolve a triggered ability effect into a "trigger object"
-     * IMPORTANT: We do NOT precompute X here.
-     * X / baseValue is recomputed inside trigger.execute(cards) at RESOLUTION time,
-     * so earlier triggers can change the board (e.g. buff other Ouroboroids).
+     * IMPORTANT: For token creation, we execute immediately and return ETB triggers.
+     * For other effects, X / baseValue is recomputed inside trigger.execute(cards) at RESOLUTION time.
      */
     resolveEffect(trigger) {
         const { source, ability } = trigger;
         const engine = this;
 
-        // We return an object that holds ability info and
-        // an execute(cards) function that recomputes everything.
+        // Check if this is a token creation effect (excluding Role tokens which need targeting)
+        const isTokenCreation = ['create_token', 'create_named_token', 'create_related_token',
+            'create_token_copy', 'create_copy_token', 'create_mobilize_warriors'].includes(ability.effect);
+
+        // Check if this is a Role token that needs deferred creation
+        const isRoleToken = ability.effect === 'create_named_token' &&
+            ability.tokenName &&
+            (typeof ability.tokenName === 'string' && ability.tokenName.includes('Role'));
+
+        // TOKEN CREATION: Execute immediately and return ETB triggers as an array
+        // (Except Role tokens which need targeting)
+        if (isTokenCreation && !isRoleToken) {
+            // Execute token creation immediately
+            const currentCards = engine.cards || [];
+            const liveSource = currentCards.find(c => c.id === source.id) || source;
+
+            // Calculate value with replacement effects
+            const baseValue = engine.calculateBaseValue(liveSource, ability, currentCards);
+            const modifiers = engine.findReplacementEffects(ability.effect, currentCards);
+            const finalValue = engine.applyModifiers(baseValue, modifiers, ability.effect);
+
+            // Find targets
+            const targets = ability.targetIds
+                ? currentCards.filter(c => ability.targetIds.includes(c.id))
+                : engine.findTargets(ability.target, currentCards, liveSource);
+
+            // Execute token creation immediately
+            const executionResult = engine.executeEffect(
+                currentCards,
+                targets,
+                { ...ability, sourceId: liveSource.id },
+                finalValue,
+                [] // knownCards
+            );
+
+            // Update engine state immediately
+            engine.updateBattlefield(executionResult.newCards);
+
+            // Return the ETB triggers as an array (not wrapped in a trigger object)
+            // These triggers will be added to the stack
+            return executionResult.triggers || [];
+        }
+
+        // STANDARD TRIGGER: Create a trigger object with execute function
         const result = {
             source,
             ability,
@@ -319,7 +382,7 @@ export class GameEngine {
              * Execute this trigger on a given cards array.
              * Returns { newCards, triggers }
              */
-            execute(cards, knownCards = []) {
+            execute(cards, knownCards = [], manualTargets = null) {
                 const abilityToUse = this.ability || ability;
                 const currentCards = cards || engine.cards || [];
 
@@ -337,11 +400,11 @@ export class GameEngine {
                     (abilityToUse.target.includes('another') || abilityToUse.target.includes('target')) &&
                     !abilityToUse.targetIds;
 
-                const targets = requiresManualTargeting
+                const targets = manualTargets || (requiresManualTargeting
                     ? [] // Don't auto-find targets; UI will prompt for selection
                     : abilityToUse.targetIds
                         ? currentCards.filter(c => abilityToUse.targetIds.includes(c.id))
-                        : engine.findTargets(abilityToUse.target, currentCards, liveSource);
+                        : engine.findTargets(abilityToUse.target, currentCards, liveSource));
 
                 // Check for replacement effects from CURRENT board
                 const modifiers = engine.findReplacementEffects(
@@ -387,6 +450,75 @@ export class GameEngine {
                 return executionResult;
             },
         };
+
+        // --- Token Template Resolution for UI ---
+        // Pre-calculate token template so the Stack can show the correct image
+        if (['create_token', 'create_named_token', 'create_attached_token', 'create_related_token', 'create_token_copy', 'create_copy_token'].includes(ability.effect)) {
+            const tokenName = (typeof ability.tokenName === 'function' ? ability.tokenName() : ability.tokenName) || 'Token';
+
+            // Helper for name matching
+            const isMatch = (scryfallName, parsedName) => {
+                if (!scryfallName || !parsedName) return false;
+                const s = scryfallName.toLowerCase();
+                const pValue = parsedName.toLowerCase();
+                const pWord = pValue.replace(' role', '').replace(' token', '').trim();
+
+                if (s === pValue || s.includes(pValue) || pValue.includes(s)) return true;
+                if (s.includes(pWord)) return true;
+                if (s.includes('//')) {
+                    const faces = s.split('//').map(f => f.trim());
+                    if (faces.some(face => face === pWord || face.includes(pWord))) return true;
+                }
+                return false;
+            };
+
+            // 1. Priority: Search local/signature data
+            let template = localCardData.find(c => isMatch(c.name, tokenName));
+
+            // 2. Look on source card
+            if (!template && source.relatedTokens) {
+                template = source.relatedTokens.find(t => isMatch(t.name, tokenName));
+            }
+
+            // 3. Fallback to Signature Data (Virtuous Role, etc)
+            if (!template) {
+                const signatureToken = SIGNATURE_DATA[tokenName] || SIGNATURE_DATA[tokenName.replace(' Role', '')];
+                if (signatureToken) {
+                    template = {
+                        ...signatureToken,
+                        art_crop: signatureToken.art_crop || '',
+                        image_uris: { art_crop: signatureToken.art_crop, normal: signatureToken.image_normal }
+                    };
+                }
+            }
+
+            // 4. Fallback for "create_related_token" if no specific name match needed
+            if (!template && ability.effect === 'create_related_token' && source.relatedTokens?.[0]) {
+                template = source.relatedTokens[0];
+            }
+
+            // 5. Handle Copy Effects (Helm of the Host, Extravagant Replication, Twinflame)
+            if (ability.effect === 'create_token_copy' || ability.effect === 'create_copy_token') {
+                if (result.targets && result.targets.length > 0) {
+                    // Copying a target (or equipped creature already found via findTargets)
+                    template = result.targets[0];
+                } else if (ability.target === 'self' || ability.target === 'this') {
+                    // Copying self
+                    template = source; // Use the original source, not liveSource, for template
+                } else if (ability.target === 'equipped_creature' && source.attachedTo) {
+                    // Copying equipped creature (Helm of the Host) - look up from engine state
+                    // We use engine.cards because execution hasn't happened yet so targets aren't populated
+                    const attachedId = source.attachedTo;
+                    if (engine.cards) {
+                        template = engine.cards.find(c => c.id === attachedId);
+                    }
+                }
+            }
+
+            if (template) {
+                result.tokenTemplate = template;
+            }
+        }
 
         return result;
     }
@@ -466,10 +598,17 @@ export class GameEngine {
             case 'all_permanents_you_control':
                 return pool;
 
+            case 'another_creature_you_control':
             case 'another_target_creature_you_control':
+                return pool.filter(c =>
+                    c.id !== source?.id &&
+                    (c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')))
+                );
+
             case 'target_creature_you_control':
                 // For now, treat as "all creatures you control" (UI handles picking)
                 return pool.filter(c => c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')));
+
 
             case 'creature':
                 // Used for "another target creature"
@@ -644,6 +783,7 @@ export class GameEngine {
      * Now returns { newCards, triggers }
      */
     executeEffect(cards, targets, ability, value, knownCards = []) {
+        const engine = this;
         const newCards = [...cards];
         const newTriggers = [];
 
@@ -852,8 +992,10 @@ export class GameEngine {
                 if (tokenCopy.abilities) {
                     tokenCopy.abilities.forEach(ability => {
                         if (ability.trigger === 'on_enter_battlefield') {
-                            const triggerObj = this.resolveEffect({ source: tokenCopy, ability });
-                            newTriggers.push(triggerObj);
+                            const triggerResult = this.resolveEffect({ source: tokenCopy, ability });
+                            // Flatten result (could be array or single trigger)
+                            const triggersToAdd = Array.isArray(triggerResult) ? triggerResult : [triggerResult];
+                            newTriggers.push(...triggersToAdd);
                         }
                     });
                 }
@@ -1088,19 +1230,53 @@ export class GameEngine {
                     };
                 }
 
-                if (token.type_line?.includes('Role') && token.attachedTo) {
-                    // Sequential Trigger Check
-                    const triggers = this.findTokenEntryTriggers([...this.cards, ...newCards], [token]);
-                    newTriggers.push(...triggers);
-                    newCards.push(token);
+                if (token.type_line?.includes('Role')) {
+                    // Create a deferred trigger for Role token creation (shows on stack)
+                    // Requires targeting when resolved so user can pick the creature to attach to
+                    const deferredRoleCreation = {
+                        trigger: 'deferred_token_creation',
+                        source: ability.source || { id: ability.sourceId, name: tokenName },
+                        description: `Create ${tokenName} Role token`,
+                        tokenTemplate: { ...token, attachedTo: null },
+                        requiresTarget: true,
+                        ability: {
+                            target: 'another_creature_you_control',
+                            requiresTarget: true,
+                            effect: 'create_attached_token',
+                            tokenName: tokenName
+                        },
+                        execute: ((currentCards, _recentCards, manualTargets) => {
+                            // Use target selected via targeting overlay
+                            const chosenTarget = manualTargets && manualTargets[0];
+                            if (!chosenTarget) {
+                                return { newCards: currentCards, triggers: [] };
+                            }
 
-                    // AUTOMATIC: Handle Role Rule (Clean up old roles immediately)
-                    // newCards is a parameter but we want to update the accumulated result for THIS effect
-                    const cleanupResult = this.performRoleCleanup(newCards, token.attachedTo);
-                    // Clean up old roles immediately and update the newCards array in place
-                    const finalCards = cleanupResult.newCards;
-                    newCards.length = 0;
-                    newCards.push(...finalCards);
+                            const newRoleToken = {
+                                ...token,
+                                id: Date.now() + Math.random(),
+                                attachedTo: chosenTarget.id,
+                                zone: 'attached'
+                            };
+
+                            let updatedCards = [...currentCards, newRoleToken];
+
+                            // Handle Role Rule (Clean up old roles immediately)
+                            const cleanupResult = engine.performRoleCleanup(updatedCards, newRoleToken.attachedTo);
+                            updatedCards = cleanupResult.newCards;
+
+                            // Check for triggers from OTHER cards reacting to this token entering
+                            const otherTriggers = this.findTokenEntryTriggers(currentCards, [newRoleToken]);
+
+                            // Check for the TOKEN'S OWN ETB abilities
+                            const ownTriggers = this.processEntersBattlefield(newRoleToken);
+
+                            const entryTriggers = [...otherTriggers, ...ownTriggers];
+
+                            return { newCards: updatedCards, triggers: entryTriggers };
+                        }).bind(engine)
+                    };
+                    newTriggers.push(deferredRoleCreation);
                 } else {
                     newCards.push(token);
                 }
@@ -1154,7 +1330,7 @@ export class GameEngine {
             };
 
             // Register delayed sacrifice trigger for end step
-            this.registerDelayedTrigger({
+            engine.registerDelayedTrigger({
                 phase: 'end_step',
                 effect: 'sacrifice_cards',
                 targets: mobilizeTokenGroup.tokenIds, // Will be populated via reference
@@ -1207,10 +1383,88 @@ export class GameEngine {
                 mobilizeTokenGroup.tokenIds.push(warriorToken.id);
 
                 // Check for token entry triggers (e.g., Wildwood Mentor)
-                const triggers = this.findTokenEntryTriggers(newCards, [warriorToken]);
+                const triggers = engine.findTokenEntryTriggers(newCards, [warriorToken]);
                 newTriggers.push(...triggers);
 
                 newCards.push(warriorToken);
+            }
+
+            return { newCards, triggers: newTriggers };
+        }
+
+
+        if (ability.effect === 'create_deferred_token_copy') {
+            // 1. Determine Token Template
+            let template = null;
+            if (ability.target === 'equipped_creature' && ability.sourceId) {
+                const currentSource = newCards.find(c => c.id === ability.sourceId) || engine.cards.find(c => c.id === ability.sourceId);
+                if (currentSource && currentSource.attachedTo) {
+                    template = newCards.find(c => c.id === currentSource.attachedTo) || engine.cards.find(c => c.id === currentSource.attachedTo);
+                }
+            } else if (result.targets && result.targets.length > 0) {
+                template = result.targets[0];
+            }
+
+            if (!template) {
+                return { newCards, triggers: [] };
+            }
+
+            // 2. Determine Count (modifiers already applied to 'value')
+            const count = value || parseInt(ability.amount) || 1;
+
+            // 3. Prepare Template Props
+            // Specific logic for Helm of the Host (remove Legendary)
+            // We can check if Ability source is Helm, or just generally apply it if 'isLegendary' check passes?
+            // Helm says: "except the token isn't legendary"
+            // Ideally we pass a flag in ability, but we can infer or hardcode for now for this specific effect type
+            let cleanTypeLine = template.type_line || 'Creature';
+            if (cleanTypeLine.includes('Legendary')) {
+                cleanTypeLine = cleanTypeLine.replace('Legendary ', '').replace('Legendary', '');
+            }
+            if (!cleanTypeLine.toLowerCase().includes('token')) {
+                cleanTypeLine = `Token ${cleanTypeLine}`;
+            }
+
+            const baseTemplate = {
+                ...template,
+                type_line: cleanTypeLine,
+                isToken: true,
+                tapped: false,
+                counters: 0,
+                attachedTo: null,
+                zone: 'battlefield',
+                haste: true // Helm grants haste. Orthion grants haste. Generally copies grant haste in this context?
+                // If generalized, we should check ability.
+                // For now, Helm grants haste.
+            };
+
+            // 4. Create Deferred Triggers
+            for (let i = 0; i < count; i++) {
+                const deferredCreation = {
+                    trigger: 'deferred_token_creation',
+                    source: ability.source || { id: ability.sourceId },
+                    description: `Create ${template.name} token`,
+                    tokenTemplate: baseTemplate,
+                    execute: ((currentCards) => {
+                        const newToken = {
+                            ...baseTemplate,
+                            id: Date.now() + Math.random() + i
+                        };
+
+                        const updatedCards = [...currentCards, newToken];
+
+                        // Check for triggers from OTHER cards reacting to this token entering
+                        const otherTriggers = this.findTokenEntryTriggers(currentCards, [newToken]);
+
+                        // Check for the TOKEN'S OWN ETB abilities (copied from original creature)
+                        const ownTriggers = this.processEntersBattlefield(newToken);
+
+                        const entryTriggers = [...otherTriggers, ...ownTriggers];
+
+                        return { newCards: updatedCards, triggers: entryTriggers };
+                    }).bind(engine)
+                };
+                newTriggers.push(deferredCreation);
             }
 
             return { newCards, triggers: newTriggers };
@@ -1232,7 +1486,7 @@ export class GameEngine {
             };
 
             // Register delayed sacrifice trigger now (IDs will be added as tokens are created)
-            this.registerDelayedTrigger({
+            engine.registerDelayedTrigger({
                 phase: 'end_step',
                 effect: 'sacrifice_cards',
                 targets: orthionTokenGroup.tokenIds, // Will be populated via reference
@@ -1283,11 +1537,16 @@ export class GameEngine {
                         // Create the token
                         const updatedCards = [...currentCards, newToken];
 
-                        // Find entry triggers for THIS token
-                        const entryTriggers = this.findTokenEntryTriggers(currentCards, [newToken]);
+                        // Find entry triggers for THIS token from OTHER cards
+                        const otherTriggers = this.findTokenEntryTriggers(currentCards, [newToken]);
+
+                        // Find the TOKEN'S OWN ETB abilities (copied from original creature)
+                        const ownTriggers = this.processEntersBattlefield(newToken);
+
+                        const entryTriggers = [...otherTriggers, ...ownTriggers];
 
                         return { newCards: updatedCards, triggers: entryTriggers };
-                    }).bind(this) // Bind to preserve 'this' context
+                    }).bind(engine) // Bind to preserve 'this' context
                 };
 
                 newTriggers.push(deferredCreation);
@@ -1301,6 +1560,48 @@ export class GameEngine {
             // ability.targetIds contains the IDs
             const idsToRemove = ability.targetIds || [];
             return { newCards: newCards.filter(c => !idsToRemove.includes(c.id)), triggers: [] };
+        }
+
+        // --- Generic Removal Effects ---
+        if (ability.effect === 'destroy_permanent' || ability.effect === 'exile_permanent') {
+            const target = targets[0]; // Assuming single target for now
+            if (!target) return { newCards, triggers: [] };
+
+            const targetZone = ability.effect === 'destroy_permanent' ? 'graveyard' : 'exile';
+
+            return {
+                newCards: newCards.map(c => {
+                    if (c.id === target.id) {
+                        return { ...c, zone: targetZone, attachedTo: null, tapped: false };
+                    }
+                    if (c.attachedTo === target.id) {
+                        // Unattach anything attached to the removed permanent
+                        return { ...c, attachedTo: null };
+                    }
+                    return c;
+                }),
+                triggers: [] // Should potentially check for "Dies" triggers here in future
+            };
+        }
+
+        if (ability.effect === 'equip' || ability.effect === 'attach') {
+            const target = targets[0];
+            if (!target) return { newCards, triggers: [] };
+
+            return {
+                newCards: newCards.map(c => {
+                    // Attach the source card to the target
+                    if (c.id === ability.sourceId) {
+                        return { ...c, attachedTo: target.id };
+                    }
+                    // If the equipment was attached to something else, that implementation is implicit above 
+                    // (since we map over all cards and only change the source, it effectively moves it).
+                    // However, we should ensure we aren't creating duplicates if logic was different.
+                    // But map ensures we only modify the single source card instance.
+                    return c;
+                }),
+                triggers: []
+            };
         }
 
         return { newCards, triggers: [] };

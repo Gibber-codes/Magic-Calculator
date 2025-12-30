@@ -81,6 +81,7 @@ const useTargetingMode = (gameState) => {
                 }
                 return c;
             }));
+            cancelTargeting();
         } else if (targetingMode.action === 'enchant') {
             const auraDef = targetingMode.data;
             logAction(`Enchanted ${targetCard.name} with ${auraDef.name}`);
@@ -101,88 +102,18 @@ const useTargetingMode = (gameState) => {
                     addToStack(t.source, description, t.ability.trigger || 'on_enter_battlefield', t);
                 });
             }
+            cancelTargeting();
         } else if (targetingMode.action === 'activate-ability') {
             const abilityDef = targetingMode.data;
 
             // Special handling for equip/attach effects
-            if (abilityDef && (abilityDef.effect === 'attach' || abilityDef.isEquip)) {
-                logAction(`Equipped ${sourceCard?.name} to ${targetCard.name}`);
-
-                setCards(prev => prev.map(c => {
-                    if (c.id === sourceCard.id) {
-                        return { ...c, attachedTo: targetCard.id, zone: 'attached' };
-                    }
-                    return c;
-                }));
-            } else if (abilityDef && gameEngineRef.current) {
-                // Determine effect description
-                const desc = abilityDef.description || 'Activated Ability';
-
-                // Construct ability object with PRE-SELECTED TARGETS
-                const abilityWithTarget = {
-                    ...abilityDef,
-                    targetIds: [targetCard.id] // Explicitly set the target ID we just picked
-                };
-
-                try {
-                    const triggerObj = gameEngineRef.current.resolveEffect({
-                        source: sourceCard,
-                        ability: abilityWithTarget
-                    });
-
-                    // Add the main ability to stack
-                    addToStack(sourceCard, `Activated: ${desc}`, 'activated', triggerObj);
-
-                    // IMPORTANT: For Orthion, triggerObj.execute will return deferred token creations
-                    // We need to immediately execute it to get those deferred triggers and add them to stack
-                    // BUT we can't execute yet because the main ability isn't resolved. 
-                    // Instead, we need to check if the execute returns triggers and handle them.
-                    // Actually, looking at the code flow: when the ability resolves from stack,
-                    // useGameState will call triggerObj.execute which returns {newCards, triggers}
-                    // and those triggers should be added to stack there.
-                    // So this should already work! No change needed here.
-                } catch (e) {
-                    console.error("Failed to resolve manual ability:", e);
-                }
-            }
+            // logic moved to App.jsx onConfirm
+            setTargetingMode(prev => ({ ...prev, selectedIds: [targetCard.id] }));
         } else if (targetingMode.action === 'resolve-trigger') {
-            // Resolve a triggered ability with the selected target
-            const stackAbility = targetingMode.data?.stackAbility;
-            if (stackAbility && stackAbility.triggerObj && gameEngineRef.current) {
-                // Create a copy of the triggerObj with targetIds set
-                // This prevents mutating the original ability object
-                const triggerObjWithTarget = {
-                    ...stackAbility.triggerObj,
-                    ability: {
-                        ...stackAbility.triggerObj.ability,
-                        targetIds: [targetCard.id]
-                    }
-                };
-
-                // Now resolve the ability with the target set
-                const result = triggerObjWithTarget.execute(cards, []);
-
-                // Handle the result
-                const newCards = result.newCards || result;
-                const triggers = result.triggers || [];
-
-                setCards(newCards);
-                logAction(triggerObjWithTarget.log?.description || `Resolved: ${stackAbility.sourceName} - ${stackAbility.description}`);
-
-                // Add any triggered abilities to the stack
-                triggers.forEach(t => {
-                    const desc = t.ability?.description || `${t.source.name} triggered`;
-                    addToStack(t.source, desc, 'trigger', t);
-                });
-
-                saveHistoryState(newCards);
-
-                // Remove the ability from the stack
-                setAbilityStack(prev => prev.filter(a => a.id !== stackAbility.id));
-            }
+            // Just select the target. Resolution happens in App.jsx onConfirm.
+            setTargetingMode(prev => ({ ...prev, selectedIds: [targetCard.id] }));
         }
 
-        cancelTargeting();
     }, [targetingMode, cards, logAction, setCards, cancelTargeting, gameEngineRef, addToStack]);
 
     const handleMultiSelect = useCallback((card, visibleStacks) => {

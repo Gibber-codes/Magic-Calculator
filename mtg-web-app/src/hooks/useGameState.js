@@ -199,7 +199,24 @@ const useGameState = () => {
 
     // --- Ability Stack Management ---
 
-    const addToStack = useCallback((sourceCard, description, triggerType, triggerObj) => {
+    // --- Ability Stack Management ---
+
+    const addToStack = useCallback((...args) => {
+        const [sourceCard, description, triggerType, triggerObj] = args;
+
+        // Support for new LIFO Stack detailed object format (single argument)
+        if (args.length === 1 && sourceCard && typeof sourceCard === 'object' && !sourceCard.id && sourceCard.sourceName) {
+            const stackItem = sourceCard;
+            setAbilityStack(prev => [...prev, {
+                ...stackItem,
+                timestamp: Date.now(),
+                id: stackItem.id || (Date.now() + Math.random())
+            }]);
+            logAction(`Triggered: ${stackItem.sourceName} - ${stackItem.description}`);
+            return;
+        }
+
+        // Standard flow - add to stack for manual resolution
         let detectedType = triggerType;
 
         // Auto-detect type based on description if not provided
@@ -220,7 +237,12 @@ const useGameState = () => {
             triggerType: detectedType || 'when',
             trigger: triggerObj?.trigger, // Store the actual trigger type (e.g., 'deferred_token_creation')
             triggerObj: triggerObj,
-            sourceArt: sourceCard.art_crop || sourceCard.image_normal,
+            requiresTarget: triggerObj?.requiresTarget || false,
+            ability: triggerObj?.ability,
+            target: triggerObj?.ability?.target,
+            // Only use tokenTemplate art for deferred_token_creation, not for the parent trigger
+            sourceArt: (triggerObj?.trigger === 'deferred_token_creation' && triggerObj.tokenTemplate && (triggerObj.tokenTemplate.art_crop || triggerObj.tokenTemplate.image_uris?.art_crop || triggerObj.tokenTemplate.image_uris?.normal))
+                || sourceCard.sourceArt || sourceCard.art_crop || sourceCard.image_normal,
             sourceType: sourceCard.type_line,
             timestamp: Date.now()
         };
@@ -229,7 +251,7 @@ const useGameState = () => {
         logAction(`Triggered: ${sourceCard.name} - ${description}`);
     }, [logAction]);
 
-    const resolveStackAbility = useCallback((ability, recentCards = [], startTargetingCallback) => {
+    const resolveStackAbility = useCallback((ability, recentCards = [], startTargetingCallback, manualTargets = null) => {
         // Guard: Prevent resolving the same ability multiple times
         if (resolvingAbilities.current.has(ability.id)) {
             console.log('⚠️ Already resolving:', ability.id, '- skipping duplicate call');
@@ -241,75 +263,134 @@ const useGameState = () => {
         console.log('🔍 Starting resolution for:', ability.id, ability.sourceName);
 
         // Check if this ability needs targeting BEFORE resolution
-        if (ability.triggerObj && ability.triggerObj.ability) {
-            const abilityDef = ability.triggerObj.ability;
-            const needsTargeting = abilityDef.target &&
-                typeof abilityDef.target === 'string' &&
-                (abilityDef.target.includes('another') || abilityDef.target.includes('target')) &&
-                !abilityDef.targetIds;
+        // Skip check if manualTargets are provided (implies targeting done or not needed)
+        if (!manualTargets) {
+            // 1. New Explicit Logic
+            if (ability.requiresTarget) {
+                // Check if valid targets exist
+                const source = recentCards.find(c => c.id === ability.sourceId) || { id: ability.sourceId };
+                const validTargets = gameEngineRef.current ? gameEngineRef.current.findTargets(ability.target, recentCards, source) : [];
 
-            if (needsTargeting && startTargetingCallback) {
-                // Instead of resolving, initiate targeting mode
-                // Return a special flag to tell the caller to start targeting
-                resolvingAbilities.current.delete(ability.id); // Remove from resolving set
-                return { needsTargeting: true, ability: ability };
+                if (validTargets.length === 0) {
+                    logAction(`Ability fizzled: No valid targets for ${ability.sourceName}`);
+                    resolvingAbilities.current.delete(ability.id);
+                    setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
+                    return { needsTargeting: false };
+                }
+
+                if (startTargetingCallback) {
+                    resolvingAbilities.current.delete(ability.id); // Remove from resolving set
+                    return { needsTargeting: true, ability: ability };
+                }
+            }
+
+            // 2. Legacy Logic (Implicit from triggerObj)
+            if (ability.triggerObj && ability.triggerObj.ability) {
+                const abilityDef = ability.triggerObj.ability;
+                const needsTargeting = abilityDef.target &&
+                    typeof abilityDef.target === 'string' &&
+                    (abilityDef.target.includes('another') || abilityDef.target.includes('target')) &&
+                    !abilityDef.targetIds;
+
+                if (needsTargeting) {
+                    // Check if valid targets exist
+                    const source = recentCards.find(c => c.id === ability.sourceId) || { id: ability.sourceId };
+                    const validTargets = gameEngineRef.current ? gameEngineRef.current.findTargets(abilityDef.target, recentCards, source) : [];
+
+                    if (validTargets.length === 0) {
+                        logAction(`Ability fizzled: No valid targets for ${ability.sourceName}`);
+                        resolvingAbilities.current.delete(ability.id);
+                        setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
+                        return { needsTargeting: false };
+                    }
+
+                    if (startTargetingCallback) {
+                        // Instead of resolving, initiate targeting mode
+                        // Return a special flag to tell the caller to start targeting
+                        resolvingAbilities.current.delete(ability.id); // Remove from resolving set
+                        return { needsTargeting: true, ability: ability };
+                    }
+                }
             }
         }
 
-        // Check if this ability needs targeting BEFORE resolution
+        // Handle Resolution
+
+        // 1. Callback based resolution (New)
+        if (ability.onResolve) {
+            ability.onResolve(manualTargets); // For no-target, creates effects directly
+            // Cleanup: Remove from resolving set
+            resolvingAbilities.current.delete(ability.id);
+            setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
+            logAction(`Resolved: ${ability.sourceName}`);
+            return { needsTargeting: false };
+        }
+
+        // 2. Legacy GameEngine resolution
         if (ability.triggerObj && ability.triggerObj.execute) {
-            // Regular trigger resolution
-            const result = ability.triggerObj.execute(cards, recentCards);
+            console.log('Resolving with targets:', manualTargets);
+            try {
+                // Regular trigger resolution
+                const result = ability.triggerObj.execute(cards, recentCards, manualTargets);
 
-            // Handle new return format { newCards, triggers }
-            const resultNewCards = result.newCards || result;
-            const triggers = result.triggers || [];
+                // Handle new return format { newCards, triggers }
+                const resultNewCards = result.newCards || result;
+                const triggers = result.triggers || [];
 
-            // MERGE LOGIC: Handle updates to existing cards (by ID) vs new cards
-            // GameEngine might return existing cards with updated properties (e.g. zone: 'graveyard')
-            const updatedCards = (() => {
-                const newIds = new Set(resultNewCards.map(c => c.id));
-                const kept = cards.filter(c => !newIds.has(c.id));
-                return [...kept, ...resultNewCards];
-            })();
+                // MERGE LOGIC: Handle updates to existing cards (by ID) vs new cards
+                // GameEngine might return existing cards with updated properties (e.g. zone: 'graveyard')
+                const updatedCards = (() => {
+                    const newIds = new Set(resultNewCards.map(c => c.id));
+                    const kept = cards.filter(c => !newIds.has(c.id));
+                    return [...kept, ...resultNewCards];
+                })();
 
-            setCards(updatedCards);
-            logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName} - ${ability.description}`);
+                setCards(updatedCards);
+                logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName} - ${ability.description}`);
 
-            // Update stack state: remove the resolved ability AND add new triggers
-            setAbilityStack(prev => {
-                const filtered = prev.filter(a => a.id !== ability.id);
-                const newAbilities = triggers.map((t, index) => {
-                    const isDeferred = t.trigger === 'deferred_token_creation';
-                    const desc = isDeferred ? t.description : (t.ability?.description || `${t.source.name} triggered`);
-                    const type = isDeferred ? t.trigger : 'trigger';
+                // Update stack state: remove the resolved ability AND add new triggers
+                setAbilityStack(prev => {
+                    const filtered = prev.filter(a => a.id !== ability.id);
+                    const newAbilities = triggers.map((t, index) => {
+                        const isDeferred = t.trigger === 'deferred_token_creation';
+                        const desc = isDeferred ? t.description : (t.ability?.description || `${t.source.name} triggered`);
+                        const type = isDeferred ? t.trigger : 'trigger';
 
-                    // Use token template info if available for better UI
-                    let displayName = t.source.name;
-                    let displayColors = t.source.colors || [];
+                        // Use token template info if available for better UI
+                        let displayName = t.source.name;
+                        let displayColors = t.source.colors || [];
+                        let displayArt = t.source.art_crop || t.source.image_uris?.art_crop || t.source.image_uris?.normal;
 
-                    if (isDeferred && t.tokenTemplate) {
-                        displayName = `Creating: ${t.tokenTemplate.name}`;
-                        displayColors = t.tokenTemplate.colors || [];
-                    }
+                        if (isDeferred && t.tokenTemplate) {
+                            displayName = `Creating: ${t.tokenTemplate.name}`;
+                            displayColors = t.tokenTemplate.colors || [];
+                            displayArt = t.tokenTemplate.art_crop || t.tokenTemplate.image_uris?.art_crop || t.tokenTemplate.image_uris?.normal || displayArt;
+                        }
 
-                    return {
-                        id: `${Date.now()}-${Math.random()}-${performance.now()}-${index}`,
-                        sourceName: displayName,
-                        sourceColors: displayColors,
-                        sourceId: t.source?.id,
-                        description: desc,
-                        triggerType: type,
-                        trigger: t.trigger,
-                        triggerObj: t,
-                        timestamp: Date.now()
-                    };
+                        return {
+                            id: `${Date.now()}-${Math.random()}-${performance.now()}-${index}`,
+                            sourceName: displayName,
+                            sourceColors: displayColors,
+                            sourceArt: displayArt,
+                            sourceId: t.source?.id,
+                            description: desc,
+                            triggerType: type,
+                            trigger: t.trigger,
+                            triggerObj: t,
+                            timestamp: Date.now()
+                        };
+                    });
+
+                    return [...filtered, ...newAbilities];
                 });
 
-                return [...filtered, ...newAbilities];
-            });
-
-            saveHistoryState(updatedCards);
+                saveHistoryState(updatedCards);
+            } catch (err) {
+                console.error("Failed to execute ability:", err);
+                logAction(`Error resolving ${ability.sourceName}: ${err.message}`);
+                // Safely remove the crashing ability to prevent stuck state
+                setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
+            }
         } else {
             logAction(`Resolved: ${ability.sourceName} - ${ability.description}`);
             setAbilityStack(prev => prev.filter(a => a.id !== ability.id));

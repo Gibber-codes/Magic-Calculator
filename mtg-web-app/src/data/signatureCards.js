@@ -19,14 +19,57 @@ export const SIGNATURE_DATA = {
             }
         ]
     },
+    'Mondrak, Glory Dominus': {
+        name: 'Mondrak, Glory Dominus',
+        type: 'Creature',
+        type_line: 'Legendary Creature — Phyrexian Horror',
+        abilities: [
+            {
+                trigger: 'activated',
+                cost: '{1}{W/P}{W/P}, Sacrifice two other artifacts and/or creatures',
+                effect: 'add_counters',
+                counterType: 'indestructible',
+                amount: 1,
+                description: 'Put an indestructible counter on Mondrak'
+            }
+        ],
+        replacementEffects: [
+            {
+                type: 'double_tokens',
+                description: 'If one or more tokens would be created under your control, twice that many of those tokens are created instead.'
+            }
+        ]
+    },
+    'Helm of the Host': {
+        name: 'Helm of the Host',
+        type: 'Artifact',
+        type_line: 'Legendary Artifact — Equipment',
+        abilities: [
+            {
+                trigger: 'beginning_of_combat',
+                effect: 'create_deferred_token_copy',
+                target: 'equipped_creature',
+                amount: 1,
+                description: 'create a token that is a copy of equipped creature'
+            },
+            {
+                trigger: 'activated',
+                cost: '{5}',
+                effect: 'equip',
+                target: 'creature',
+                amount: null,
+                requiresTarget: true,
+                description: 'Equip {5}'
+            }
+        ]
+    },
     'Ellivere of the Wild Court': {
         name: 'Ellivere of the Wild Court',
         abilities: [
             {
                 trigger: 'on_enter_battlefield',
                 effect: 'create_attached_token',
-                tokenName: 'Virtuous', // Matches face name of "Monster // Virtuous"
-                target: 'another_creature_you_control',
+                tokenName: 'Virtuous',
                 amount: 1,
                 description: 'create a Virtuous Role token attached to another target creature you control'
             },
@@ -34,7 +77,6 @@ export const SIGNATURE_DATA = {
                 trigger: 'on_attack',
                 effect: 'create_attached_token',
                 tokenName: 'Virtuous',
-                target: 'another_creature_you_control',
                 amount: 1,
                 description: 'create a Virtuous Role token attached to another target creature you control'
             }

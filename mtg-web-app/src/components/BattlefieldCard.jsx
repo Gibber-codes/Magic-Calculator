@@ -590,13 +590,19 @@ const BattlefieldCard = ({
         );
     };
 
+    // Prevent animation on mount
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        requestAnimationFrame(() => setIsMounted(true));
+    }, []);
+
     return (
         <>
             {/* 1. Normal List Render (Placeholder) */}
             <div
                 className={`${isRelative ? 'relative' : 'absolute'} cursor-pointer flex flex-col items-center
                     ${isHovered ? 'z-50' : ''}
-                    ${!isDragging ? 'transition-all duration-200 ease-out' : ''}
+                    ${!isDragging && isMounted ? 'transition-[transform,box-shadow,opacity] duration-200 ease-out' : ''}
                     ${card.tapped && !isSelected ? 'opacity-80' : ''}
                     rounded-xl`}
                 style={{
@@ -629,23 +635,25 @@ const BattlefieldCard = ({
                         <RotateCcw size={32} className="text-white drop-shadow-md opacity-80" />
                     </div>
                 )}
-            </div>
+            </div >
 
             {/* Selection overlay moved to SelectionMenu component */}
 
             {/* Long Press Overlay (Original Image View) */}
-            {showOverlay && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-none">
-                    <div className="relative w-[90vw] h-[90vh] flex items-center justify-center p-4">
-                        <img
-                            src={card.image_normal}
-                            alt={card.name}
-                            className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] transform scale-100 transition-transform duration-300"
-                        />
-                    </div>
-                </div>,
-                document.body
-            )}
+            {
+                showOverlay && createPortal(
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-none">
+                        <div className="relative w-[90vw] h-[90vh] flex items-center justify-center p-4">
+                            <img
+                                src={card.image_normal}
+                                alt={card.name}
+                                className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] transform scale-100 transition-transform duration-300"
+                            />
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
         </>
     );
 };

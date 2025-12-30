@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { X, Plus, Search, Trash2 } from 'lucide-react';
+import { X, Plus, Search, Trash2, ChevronDown } from 'lucide-react';
+import { getScryfallCard, formatScryfallCard, fetchRelatedTokens } from '../utils/scryfallService';
 
 const AddCardPanel = ({
     isOpen,
@@ -23,6 +24,27 @@ const AddCardPanel = ({
     const [activeLongPressId, setActiveLongPressId] = useState(null);
     const [multiAddCount, setMultiAddCount] = useState(1);
     const longPressTimerRef = useRef(null);
+
+    // State for bottom sheet expansion
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isInputFocused, setIsInputFocused] = useState(false);
+    const [previewingSearchCard, setPreviewingSearchCard] = useState(null);
+    const searchLongPressTimerRef = useRef(null);
+
+    // Expand when search activates or results appear
+    React.useEffect(() => {
+        if (isSearching || searchResults.length > 0 || previewCard) {
+            setIsExpanded(true);
+        }
+    }, [isSearching, searchResults, previewCard]);
+
+    // Reset input focus state when panel closes
+    React.useEffect(() => {
+        if (!isOpen) {
+            setIsInputFocused(false);
+        }
+    }, [isOpen]);
+
 
     // Handlers
     const handleTouchStart = (e, id) => {
@@ -67,271 +89,346 @@ const AddCardPanel = ({
         }
     };
 
+    // Search result long-press handlers
+    const handleSearchTouchStart = (e, cardName) => {
+        if (searchLongPressTimerRef.current) clearTimeout(searchLongPressTimerRef.current);
+
+        searchLongPressTimerRef.current = setTimeout(async () => {
+            try {
+                const fetchedCardData = await getScryfallCard(cardName);
+                const formatted = formatScryfallCard(fetchedCardData);
+
+                // Fetch related tokens
+                if (fetchedCardData.all_parts) {
+                    const tokens = await fetchRelatedTokens(fetchedCardData);
+                    formatted.relatedTokens = tokens;
+                }
+
+                setPreviewingSearchCard(formatted);
+                if (navigator.vibrate) navigator.vibrate(50);
+            } catch (e) {
+                console.error('Failed to fetch card for preview:', e);
+            }
+        }, 500);
+    };
+
+    const handleSearchTouchEnd = () => {
+        if (searchLongPressTimerRef.current) {
+            clearTimeout(searchLongPressTimerRef.current);
+            searchLongPressTimerRef.current = null;
+        }
+    };
+
+    const handleSearchTouchMove = () => {
+        if (searchLongPressTimerRef.current) {
+            clearTimeout(searchLongPressTimerRef.current);
+            searchLongPressTimerRef.current = null;
+        }
+    };
+
     if (!isOpen) return null;
 
     return (
-        <div className="absolute right-0 top-0 bottom-0 w-full md:w-96 max-w-full bg-slate-800 border-l border-slate-700 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
-            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
-                <h2 className="text-xl font-bold text-white">Add Card</h2>
-                <button onClick={onClose} className="text-gray-400 hover:text-white">
-                    <X size={24} />
-                </button>
-            </div>
+        <>
 
-            <div className="p-4 flex-1 overflow-y-auto">
-                {/* Search Input */}
-                <div className="relative mb-6">
-                    <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search Scryfall..."
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                        autoFocus
-                    />
-                    <Search className="absolute left-3 top-3.5 text-gray-500" size={20} />
-                </div>
 
-                {/* Add Card Preview / Results */}
-                {isSearching ? (
-                    <div className="flex justify-center p-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                    </div>
-                ) : searchResults.length > 0 ? (
-                    <div className="space-y-2">
-                        {searchResults.map((name) => (
-                            <button
-                                key={name}
-                                onClick={() => onSelectSearchResult(name)}
-                                className="w-full text-left p-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-gray-200 transition-colors"
-                            >
-                                {name}
-                            </button>
-                        ))}
-                    </div>
-                ) : previewCard ? (
-                    <div className="flex flex-col h-full space-y-4 animate-in fade-in zoom-in duration-200">
-                        <div className="relative flex-1 bg-black rounded-xl overflow-hidden shadow-2xl ring-2 ring-blue-500/50">
-                            {(previewCard.image_normal || previewCard.image_uris?.normal) ? (
-                                <img alt="Ouroboroid" className="w-full h-full object-cover" src={previewCard.image_normal || previewCard.image_uris?.normal} />
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-gray-500">No Image</div>
-                            )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button
-                                onClick={() => onAddCard(previewCard)}
-                                className="col-span-2 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold shadow-lg transition-all"
-                            >
-                                Add to Battlefield
-                            </button>
-                            <button
-                                onClick={() => onAddToRecents(previewCard)}
-                                className="py-2 bg-slate-700 hover:bg-slate-600 text-gray-300 rounded-lg font-medium transition-all"
-                            >
-                                Track Only
-                            </button>
-                            <button
-                                onClick={() => { setPreviewCard(null); setSearchQuery(''); }}
-                                className="py-2 bg-slate-700 hover:bg-slate-600 text-gray-300 rounded-lg font-medium transition-all"
-                            >
-                                Back
-                            </button>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {/* Quick Add Land */}
+            {/* Bottom Sheet Panel */}
+            <div
+                onClick={(e) => e.stopPropagation()}
+                className={`
+                    add-card-panel
+                    fixed left-0 right-0 
+                    ${isInputFocused ? 'top-0' : 'bottom-0'}
+                    bg-slate-900/60 backdrop-blur-xl 
+                    border-t border-white/10 
+                    shadow-2xl z-50 
+                    flex flex-col 
+                    transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
+                    ${isInputFocused ? 'rounded-b-3xl' : 'rounded-t-3xl'} overflow-hidden
+                    ${isInputFocused ? 'h-screen' : 'h-[35vh]'}
+                `}
+            >
+                {/* Content Wrapper - Fixed Height */}
+                <div className={`flex flex-col w-full ${searchResults.length > 0 ? 'max-h-[60vh]' : 'max-h-[35vh]'}`}>
+                    {/* Search Bar */}
+                    <div
+                        className="relative flex items-center bg-black/40 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-md shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <Search className="ml-4 text-white/50" size={20} />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onFocus={() => setIsInputFocused(true)}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="Search cards..."
+                            className="w-full bg-transparent border-none text-white placeholder-white/30 px-4 py-3 focus:ring-0 focus:outline-none text-lg font-medium"
+                        />
                         <button
-                            onClick={() => onAddCard({
-                                name: 'Land',
-                                type: 'Land',
-                                type_line: 'Land',
-                                isPlaceholderLand: true,
-                                colors: []
-                            })}
-                            className="w-full py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold transition-all flex items-center justify-center gap-2 border border-slate-600"
+                            onClick={() => {
+                                if (isInputFocused) {
+                                    // Minimize and clear search
+                                    setIsInputFocused(false);
+                                    setSearchQuery('');
+                                    setPreviewCard(null);
+                                } else {
+                                    // Close the panel
+                                    onClose();
+                                }
+                            }}
+                            className="p-2 mr-2 text-white/60 hover:text-white transition-colors"
+                            title={isInputFocused ? "Minimize" : "Close"}
                         >
-                            <Plus size={18} className="text-gray-400" />
-                            <span>Add Placeholder Land</span>
+                            {isInputFocused ? <ChevronDown size={20} /> : <X size={20} />}
                         </button>
+                    </div>
 
-                        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Recent / Common</h3>
-                        <div className="grid grid-cols-2 gap-2">
-                            {recentCards.map((c, i) => {
-                                const isMenuOpen = activeLongPressId === i;
-                                const uniqueKey = `${c.name}-${i}`;
+                    {/* Content Area */}
+                    <div className={`flex-1 ${(!isSearching && searchResults.length > 0) ? 'overflow-y-auto overflow-x-hidden' : 'overflow-x-auto overflow-y-hidden touch-pan-x'} px-6 pt-4 pb-4`}>
+                        <div className={`${(!isSearching && searchResults.length > 0) ? 'grid grid-cols-2 gap-3 pb-20' : 'flex flex-row h-full items-center gap-4 min-w-min'}`}>
 
-                                return (
-                                    <div
-                                        key={uniqueKey}
-                                        className="group relative aspect-[2.5/3.5] rounded-xl overflow-hidden shadow-lg ring-1 ring-white/10 transition-all bg-slate-800 touch-none select-none"
-                                        style={{
-                                            transform: isMenuOpen ? 'scale(0.95)' : 'scale(1)',
-                                            zIndex: isMenuOpen ? 20 : 1
-                                        }}
-                                        onTouchStart={(e) => handleTouchStart(e, i)}
-                                        onTouchEnd={handleTouchEnd}
-                                        onTouchMove={handleTouchMove}
-                                        onMouseDown={(e) => handleMouseDown(e, i)}
-                                        onMouseUp={handleMouseUp}
-                                        onMouseLeave={handleMouseUp}
-                                        onClick={(e) => {
-                                            // Handle click only if menu NOT open and NOT a long press
-                                            if (!isMenuOpen) {
-                                                onAddCard(c);
-                                            }
-                                        }}
-                                        onContextMenu={(e) => e.preventDefault()} // Prevent native context menu
-                                    >
-                                        {/* Background Image */}
-                                        <div className="absolute inset-0 pointer-events-none">
-                                            {(c.image_normal || c.image_uris?.normal || c.art_crop || c.image_uris?.art_crop) ? (
-                                                <img
-                                                    src={c.image_normal || c.image_uris?.normal || c.art_crop || c.image_uris?.art_crop}
-                                                    alt={c.name}
-                                                    className="w-full h-full object-cover transition-all duration-300"
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 bg-slate-900 p-2 text-center text-[10px] font-bold">
-                                                    {c.name}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Context Menu Overlay */}
-                                        {isMenuOpen && (
-                                            <div
-                                                className="absolute inset-0 bg-slate-900/95 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-2 gap-3 animate-in fade-in duration-200"
-                                                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
-                                            >
-                                                {/* Add Multiple Controls */}
-                                                <div className="flex items-center gap-2 w-full justify-center">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setMultiAddCount(prev => Math.max(1, prev - 1));
-                                                        }}
-                                                        className="w-8 h-8 flex items-center justify-center bg-slate-700 rounded-full hover:bg-slate-600 text-white font-bold"
-                                                    >
-                                                        -
-                                                    </button>
-                                                    <span className="text-white font-mono text-lg w-6 text-center">{multiAddCount}</span>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setMultiAddCount(prev => prev + 1);
-                                                        }}
-                                                        className="w-8 h-8 flex items-center justify-center bg-slate-700 rounded-full hover:bg-slate-600 text-white font-bold"
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
-
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        // Pass count to onAddCard for batch addition
-                                                        onAddCard(c, multiAddCount);
-                                                        setActiveLongPressId(null);
-                                                        setMultiAddCount(1);
-                                                    }}
-                                                    className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-xs border border-blue-400 shadow-lg active:scale-95 transition-all"
-                                                >
-                                                    Add {multiAddCount}
-                                                </button>
-
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onDeleteRecent(i);
-                                                        setActiveLongPressId(null);
-                                                    }}
-                                                    className="w-full py-2 bg-red-900/50 hover:bg-red-800 text-red-200 rounded-lg font-bold text-xs border border-red-900/50 active:scale-95 transition-all flex items-center justify-center gap-2"
-                                                >
-                                                    <Trash2 size={14} /> Remove
-                                                </button>
-
-                                                {/* Close Button */}
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveLongPressId(null);
-                                                        setMultiAddCount(1);
-                                                    }}
-                                                    className="absolute top-1 right-1 p-1 text-gray-400 hover:text-white"
-                                                >
-                                                    <X size={16} />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                            {recentCards.length === 0 && (
-                                <div className="col-span-2 text-center text-gray-600 text-sm py-8 border-2 border-dashed border-slate-700 rounded-lg">
-                                    No recent cards
+                            {/* Loading State */}
+                            {isSearching && (
+                                <div className="flex items-center justify-center w-full min-w-[300px] h-64 text-blue-400">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-currentColor"></div>
                                 </div>
                             )}
-                        </div>
 
-                        {/* Presets Section */}
-                        <div className="pt-4 border-t border-slate-700">
-                            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">Presets</h3>
-                            <div className="grid grid-cols-2 gap-2">
-                                {Object.entries(presets).map(([presetName, preset]) => (
+                            {/* Search Results - Compact Grid */}
+                            {!isSearching && searchResults.length > 0 && (
+                                <>
+                                    {searchResults.map((name) => (
+                                        <button
+                                            key={name}
+                                            onMouseDown={(e) => {
+                                                e.preventDefault();
+                                                onSelectSearchResult(name);
+                                                document.activeElement.blur();
+                                            }}
+                                            onTouchStart={(e) => handleSearchTouchStart(e, name)}
+                                            onTouchEnd={handleSearchTouchEnd}
+                                            onTouchMove={handleSearchTouchMove}
+                                            onContextMenu={(e) => e.preventDefault()}
+                                            className="
+                                            group relative w-full
+                                            bg-slate-800/50 border border-white/5
+                                            hover:bg-slate-700/50 hover:border-blue-500/30
+                                            rounded-xl overflow-hidden
+                                            transition-all duration-200
+                                            p-4 text-left flex items-center
+                                        "
+                                        >
+                                            <span className="font-medium text-white/90 text-sm group-hover:text-blue-300 transition-colors line-clamp-2">
+                                                {name}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </>
+                            )}
+
+                            {/* Card Preview / Actions */}
+                            {!isSearching && previewCard && (
+                                <div className="shrink-0 h-full flex gap-4 animate-in fade-in zoom-in duration-300">
+                                    <div className="relative h-full w-auto aspect-[2.5/3.5] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 group">
+                                        <img
+                                            src={previewCard.image_normal || previewCard.image_uris?.normal}
+                                            alt={previewCard.name}
+                                            className="w-full h-full object-cover"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </div>
+                                    <div className="flex flex-col justify-center gap-2 w-[200px]">
+                                        <button
+                                            onClick={() => onAddCard(previewCard)}
+                                            className="w-full py-4 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl shadow-lg shadow-blue-900/30 transition-all active:scale-95"
+                                        >
+                                            Add to Battlefield
+                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => onAddToRecents(previewCard)}
+                                                className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white/80 font-medium rounded-xl border border-white/5 transition-all"
+                                            >
+                                                Track
+                                            </button>
+                                            <button
+                                                onClick={() => { setPreviewCard(null); setSearchQuery(''); }}
+                                                className="px-4 py-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-xl border border-white/5 transition-all"
+                                            >
+                                                Back
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Recent Cards & Presets (Default View) */}
+                            {!isSearching && !previewCard && searchResults.length === 0 && (
+                                <>
+                                    {/* Add Land Quick Button */}
                                     <button
-                                        key={presetName}
-                                        onClick={() => onLoadPreset(presetName)}
-                                        disabled={loadingPreset !== null}
-                                        className="group relative aspect-[2.5/3.5] rounded-xl overflow-hidden shadow-lg ring-1 ring-white/10 hover:ring-blue-500/50 hover:shadow-blue-500/20 transition-all hover:scale-[1.02] cursor-pointer bg-slate-800 text-left disabled:opacity-50"
+                                        onClick={() => onAddCard({
+                                            name: 'Land', type: 'Land', type_line: 'Land', isPlaceholderLand: true, colors: []
+                                        })}
+                                        className="
+                                        shrink-0 h-full w-auto aspect-[2.5/3.5] 
+                                        rounded-2xl border-2 border-dashed border-white/20 
+                                        hover:border-white/40 hover:bg-white/5 
+                                        flex flex-col items-center justify-center gap-3
+                                        transition-all group
+                                    "
                                     >
-                                        {/* Background Image / Art */}
-                                        <div className="absolute inset-0 pointer-events-none">
-                                            {preset.image ? (
+                                        <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
+                                            <Plus size={24} className="text-white/60 group-hover:text-white" />
+                                        </div>
+                                        <span className="text-white/60 font-medium group-hover:text-white">Placeholder Land</span>
+                                    </button>
+
+                                    {/* Recent Cards */}
+                                    {recentCards.map((c, i) => (
+                                        <div
+                                            key={`${c.name}-${i}`}
+                                            className="relative shrink-0 h-full w-auto aspect-[2.5/3.5] group"
+                                            onTouchStart={(e) => handleTouchStart(e, i)}
+                                            onTouchEnd={handleTouchEnd}
+                                            onContextMenu={(e) => e.preventDefault()}
+                                        >
+                                            <div
+                                                className={`
+                                                w-full h-full rounded-2xl overflow-hidden shadow-lg 
+                                                transition-all duration-300
+                                                ${activeLongPressId === i ? 'scale-95 ring-2 ring-blue-500' : 'hover:scale-105 hover:shadow-2xl'}
+                                            `}
+                                                onClick={() => {
+                                                    if (activeLongPressId !== i) onAddCard(c);
+                                                }}
+                                            >
                                                 <img
-                                                    src={preset.image}
-                                                    alt={presetName}
-                                                    className="w-full h-full object-cover group-hover:opacity-100 transition-all duration-300 opacity-80"
+                                                    src={c.image_normal || c.image_uris?.normal || c.art_crop}
+                                                    alt={c.name}
+                                                    className="w-full h-full object-cover"
                                                 />
-                                            ) : (
-                                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 bg-slate-900 p-2 text-center">
-                                                    <span className="text-[10px] font-bold opacity-20 uppercase">Preset</span>
+                                                {/* Name Overlay */}
+                                                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/90 to-transparent pt-8">
+                                                    <span className="text-white text-sm font-bold truncate block">{c.name}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Context Menu (Long Press) */}
+                                            {activeLongPressId === i && (
+                                                <div className="absolute inset-0 z-20 bg-black/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center gap-2 p-2 animate-in fade-in zoom-in-95 duration-200">
+                                                    <div className="flex items-center gap-3 mb-1">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setMultiAddCount(Math.max(1, multiAddCount - 1)); }}
+                                                            className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xl font-bold"
+                                                        >-</button>
+                                                        <span className="text-2xl font-bold text-white font-mono">{multiAddCount}</span>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setMultiAddCount(multiAddCount + 1); }}
+                                                            className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xl font-bold"
+                                                        >+</button>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onAddCard(c, multiAddCount); setActiveLongPressId(null); setMultiAddCount(1); }}
+                                                        className="w-full py-2 bg-blue-600 rounded-lg text-white font-bold text-sm"
+                                                    >
+                                                        Add {multiAddCount}
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onDeleteRecent(i); setActiveLongPressId(null); }}
+                                                        className="w-full py-2 bg-red-500/20 text-red-300 rounded-lg font-bold text-sm flex items-center justify-center gap-2"
+                                                    >
+                                                        <Trash2 size={14} /> Remove
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
+                                    ))}
 
-                                        {/* Gradient Overlay */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent opacity-90 transition-opacity pointer-events-none" />
+                                    {/* Presets Divider */}
+                                    <div className="w-[1px] h-32 bg-white/10 mx-2 shrink-0 my-auto" />
 
-                                        {/* Content */}
-                                        <div className="absolute inset-x-0 bottom-0 p-3 pointer-events-none flex flex-col gap-1">
-                                            <div className="text-white font-bold text-[10px] md:text-sm leading-tight drop-shadow-md line-clamp-2">
-                                                {presetName}
-                                            </div>
-                                            <div className="flex items-center gap-1.5">
-                                                <div className="px-1.5 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded-md">
-                                                    <span className="text-[8px] font-black text-blue-400 uppercase tracking-tighter">
-                                                        {preset.cards?.length || 0} Cards
-                                                    </span>
+                                    {/* Presets */}
+                                    {Object.entries(presets).map(([presetName, preset]) => (
+                                        <button
+                                            key={presetName}
+                                            onClick={() => onLoadPreset(presetName)}
+                                            disabled={loadingPreset !== null}
+                                            className="
+                                            relative shrink-0 h-full w-auto aspect-[2.5/3.5] 
+                                            rounded-2xl overflow-hidden 
+                                            hover:ring-2 hover:ring-purple-500/50 
+                                            transition-all group
+                                        "
+                                        >
+                                            <img
+                                                src={preset.image || 'https://cards.scryfall.io/art_crop/front/7/d/7dea1d30-bf8f-4ba6-993d-4c326e85a73e.jpg?1562919927'}
+                                                alt={presetName}
+                                                className="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-110 transition-all duration-500"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-purple-900/90 via-transparent to-transparent" />
+                                            <div className="absolute bottom-4 left-4 right-4 text-left">
+                                                <div className="text-purple-300 text-xs font-bold uppercase tracking-widest mb-1">Preset</div>
+                                                <div className="text-white font-bold text-lg leading-none mb-2">{presetName}</div>
+                                                <div className="inline-flex items-center px-2 py-1 bg-white/10 rounded-md backdrop-blur-md">
+                                                    <span className="text-xs font-mono text-white/90">{preset.cards?.length} Cards</span>
                                                 </div>
-                                                {loadingPreset === presetName && (
-                                                    <div className="animate-spin h-2 w-2 border-b-2 border-white rounded-full"></div>
-                                                )}
                                             </div>
-                                        </div>
+                                            {loadingPreset === presetName && (
+                                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm">
+                                                    <div className="animate-spin h-8 w-8 border-2 border-purple-500 rounded-full border-t-transparent"></div>
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </>
+                            )}
 
-                                        <div className="absolute top-2 right-2 p-1.5 bg-blue-600/40 text-blue-200 rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur-md">
-                                            <Plus size={12} />
-                                        </div>
-                                    </button>
+                            {/* Spacer for right padding */}
+                            <div className="w-2 shrink-0" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Search Result Preview Overlay */}
+            {previewingSearchCard && (
+                <div
+                    className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-in fade-in duration-200"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewingSearchCard(null);
+                    }}
+                >
+                    <div className="relative w-full max-w-sm aspect-[2.5/3.5] rounded-2xl overflow-hidden shadow-2xl mb-6 ring-1 ring-white/10 shrink-0">
+                        <img
+                            src={previewingSearchCard.image_normal || previewingSearchCard.image_uris?.normal}
+                            alt={previewingSearchCard.name}
+                            className="w-full h-full object-cover"
+                        />
+                    </div>
+
+                    {/* Related Tokens */}
+                    {previewingSearchCard.relatedTokens && previewingSearchCard.relatedTokens.length > 0 && (
+                        <div className="w-full max-w-sm shrink-0">
+                            <h3 className="text-white/50 text-xs font-bold uppercase tracking-widest mb-3 pl-1">Tokens created</h3>
+                            <div className="flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory">
+                                {previewingSearchCard.relatedTokens.map((token, i) => (
+                                    <div key={i} className="shrink-0 w-32 aspect-[2.5/3.5] rounded-xl overflow-hidden shadow-lg border border-white/10 snap-center">
+                                        <img
+                                            src={token.image_normal || token.image_uris?.normal}
+                                            alt={token.name}
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </div>
                                 ))}
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
-        </div>
+                    )}
+                </div>
+            )}
+        </>
     );
 };
 

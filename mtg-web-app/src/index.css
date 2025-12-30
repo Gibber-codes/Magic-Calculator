@@ -3,14 +3,55 @@
 @tailwind utilities;
 
 @layer utilities {
-    .scrollbar-hide::-webkit-scrollbar {
-        display: none;
+
+    /* Smooth transitions for position changes */
+    .stack-item {
+        transition: left 400ms ease-out, z-index 0ms;
     }
 
-    .scrollbar-hide {
-        -ms-overflow-style: none;
-        /* IE and Edge */
-        scrollbar-width: none;
-        /* Firefox */
+    /* Entry animation - cards drop in from above */
+    @keyframes stackEnter {
+        from {
+            top: -150px;
+            opacity: 0;
+            transform: scale(1.1);
+            /* Start slightly larger implies closer/higher */
+        }
+
+        to {
+            /* top is handled by the element's natural flow or inline style once animation ends? 
+               Wait, 'forwards' means it keeps the 'to' state.
+               But the inline style sets 'top'.
+               Usually animation overrides inline unless !important.
+               Better approach: animate from offset to 0 if relative, 
+               OR animate from fixed start to var(--target-top).
+            */
+            top: var(--target-top, 0px);
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    .animate-stackEnter {
+        animation: stackEnter 400ms ease-out forwards;
+    }
+
+    /* Exit animation - cards fly upwards and fade out */
+    @keyframes stackExit {
+        from {
+            top: var(--target-top, 0px);
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        to {
+            top: -150px;
+            opacity: 0;
+            transform: scale(1.1);
+        }
+    }
+
+    .animate-stackExit {
+        animation: stackExit 400ms ease-in forwards;
     }
 }

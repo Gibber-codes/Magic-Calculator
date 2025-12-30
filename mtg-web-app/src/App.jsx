@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X, Plus, Minus, Copy, Trash2, RotateCcw,
   History, Zap, Skull, Mountain, Hexagon, Sparkles, Ghost, User, Ban, Sword, ArrowLeft, ArrowRight, Play, CheckCircle, Search, ShieldOff,
-  Menu, ChevronLeft, ChevronRight
+  Menu, ChevronLeft, ChevronRight, Link
 } from 'lucide-react';
 
 // Load card data from consolidated JSON file
@@ -15,7 +15,7 @@ import { getCardAbilities, extractActivatedAbilities, extractEffects, parseOracl
 import { getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard, isPlaceholderLand, isMinimalDisplayLand, BASIC_LAND_COLORS } from './utils/cardUtils';
 import { searchScryfall, getScryfallCard, formatScryfallCard, fetchRelatedTokens } from './utils/scryfallService';
 import { SIGNATURE_DATA } from './data/signatureCards';
-import TriggeredAbilityStack from './components/TriggeredAbilityStack';
+import LIFOStack from './components/LIFOStack';
 import AddCardPanel from './components/AddCardPanel';
 import HistoryPanel from './components/HistoryPanel';
 
@@ -23,16 +23,64 @@ import HistoryPanel from './components/HistoryPanel';
 
 import PhaseTracker from './components/PhaseTracker';
 import BattlefieldCard from './components/BattlefieldCard';
-import CreatureList from './components/CreatureList';
-import PermanentList from './components/PermanentList';
+import BattlefieldList from './components/BattlefieldList';
 import CalculationMenu from './components/CalculationMenu';
 import SelectionMenu from './components/SelectionMenu';
 import BottomControlPanel from './components/BottomControlPanel';
-import ConfirmOverlay from './components/ConfirmOverlay';
 import LandsPanel from './components/LandsPanel';
 
 import useGameState from './hooks/useGameState';
 import useTargetingMode from './hooks/useTargetingMode';
+// TargetSelectionView removed
+
+// Get mode-specific labels and styling (Moved from ConfirmOverlay)
+const getModeConfig = (mode) => {
+  const configs = {
+    'declare-attackers': {
+      title: 'Declare Attackers',
+      icon: Sword,
+      confirmLabel: 'Confirm Attacks',
+      color: 'red',
+      showSelectAll: true
+    },
+    'equip': {
+      title: 'Choose Target',
+      icon: Link,
+      confirmLabel: 'Equip',
+      color: 'blue',
+      showSelectAll: false
+    },
+    'activate-ability': {
+      title: 'Choose Target',
+      icon: Zap,
+      confirmLabel: 'Confirm Target',
+      color: 'purple',
+      showSelectAll: false
+    },
+    'enchant': {
+      title: 'Choose Target',
+      icon: Zap,
+      confirmLabel: 'Enchant',
+      color: 'purple',
+      showSelectAll: false
+    },
+    'remove-to-zone': {
+      title: 'Select Zone',
+      icon: Trash2,
+      confirmLabel: 'Confirm',
+      color: 'slate',
+      showSelectAll: false
+    },
+    'resolve-trigger': {
+      title: 'Resolve Trigger',
+      icon: Zap,
+      confirmLabel: 'Resolve',
+      color: 'purple',
+      showSelectAll: false
+    }
+  };
+  return configs[mode] || configs['declare-attackers'];
+};
 
 // Constants
 const CARD_WIDTH = 140;
@@ -321,12 +369,119 @@ const App = () => {
         }
         return posB.x - posA.x;
       });
+      // Filter and auto-resolve triggers
+      const triggersToAdd = [];
+
       sortedTriggers.forEach(t => {
+        // Check for Auto-Resolvable Token Creation Triggers
+        // e.g. Helm of the Host (create_deferred_token_copy), Orthion, etc.
+        const effect = t.ability.effect;
+        const isTokenCreation = [
+          'create_token',
+          'create_token_copy',
+          'create_deferred_token_copy',
+          'create_named_token',
+          'create_related_token',
+          'create_mobilize_warriors',
+          'orthion_copy_single',
+          'orthion_copy_five'
+        ].includes(effect);
+
+        const abilityDef = t.ability;
+        // Check if manual targeting is required
+        const requiresManualTargeting =
+          (abilityDef.requiresTarget) ||
+          (abilityDef.target &&
+            typeof abilityDef.target === 'string' &&
+            (abilityDef.target.includes('target') || abilityDef.target.includes('another')) &&
+            !abilityDef.targetIds);
+
+        if (isTokenCreation && !requiresManualTargeting) {
+          try {
+            // execute() on the trigger object performs the effect (create token)
+            // returning { newCards, triggers }
+            const result = t.execute(cards);
+
+            // Update UI state with new cards
+            setCards(result.newCards);
+
+            // Log it
+            const desc = t.ability.description || `${t.source.name}: Created token`;
+            logAction(`Auto-resolved: ${desc}`);
+
+            // If the token creation triggered OTHER things (e.g. "When a token enters..."),
+            // those follow-up triggers SHOULD go to the stack (unless they are also auto-resolved by handleAddCard logic, 
+            // but here we are receiving them from engine execution).
+            if (result.triggers && result.triggers.length > 0) {
+              result.triggers.forEach(idxT => {
+                // We can let these go to stack, or recurse? 
+                // Let's add them to the queue to be added to stack
+                // BUT: we need to check if THEY are auto-resolvable "Token entered" triggers?
+                // The handleAddCard logic handles "Token entered" triggers. 
+                // But here we are bypassing handleAddCard.
+                // So we should reuse the logic or just let them hit stack for safety first.
+
+                // REUSE LOGIC: Check if it's "Token Entered" and auto-resolvable
+                if (idxT.ability.trigger === 'on_token_enter_battlefield') {
+                  const etbAbility = idxT.ability;
+                  const etbRequiresTarget = etbAbility.target &&
+                    typeof etbAbility.target === 'string' &&
+                    (etbAbility.target.includes('target') || etbAbility.target.includes('another')) &&
+                    !etbAbility.targetIds;
+
+                  if (!etbRequiresTarget) {
+                    // Auto-resolve this follow-up trigger too!
+                    try {
+                      // Note: result.newCards is the state AFTER token creation.
+                      // We should use that for the follow-up execution.
+                      // But wait, we just called setCards(result.newCards).
+                      // However, react state update hasn't happened yet in this closure.
+                      // We must chain the execution using the intermediate 'newCards'.
+                      const etbResult = idxT.execute(result.newCards);
+
+                      // Update state AGAIN (or accumulate?)
+                      // setCards is async, so we should accumulate changes if possible.
+                      // Actually, since we are in a loop, calling setCards multiple times is bad?
+                      // No, React batches. But we need the Accumulated state for next trigger?
+                      // 'sortedTriggers' are parallel events (same phase start).
+                      // We should theoretically process purely sequentially on the latest state.
+
+                      // COMPLICATION: We are in a forEach. 'cards' is stale after first execution if we don't update it locally.
+                      // But 't.execute(cards)' uses the 'cards' passed to it.
+                      // If we have multiple Helm of Hosts, they trigger simultaneously.
+                      // Engine provides 'processPhaseChange' which returns them.
+                      // They are independent usually.
+
+                      // Simple path: just fire it. The state update race is a risk if multiple tokens trigger each other.
+                      // But for now, let's just log and skip stack.
+                      // We CANNOT easily execute the follow-up immediately without threading the state.
+                      // So let's add follow-ups to stack for now to be safe.
+                      triggersToAdd.push(idxT);
+                    } catch (e) {
+                      triggersToAdd.push(idxT);
+                    }
+                    return;
+                  }
+                }
+
+                triggersToAdd.push(idxT);
+              });
+            }
+            return; // Skip adding THIS token creation trigger to stack
+          } catch (e) {
+            console.warn("Failed to auto-resolve token trigger:", e);
+          }
+        }
+
+        triggersToAdd.push(t);
+      });
+
+      triggersToAdd.forEach(t => {
         const description = t.ability?.description ||
           `At the beginning of combat: ${t.ability?.effect || 'triggered ability'}`;
         addToStack(t.source, description, 'at', t);
       });
-      return true; // Triggers were added
+      return true; // Triggers were processed (either auto or stack)
     }
     return false; // No triggers added
   };
@@ -435,6 +590,30 @@ const App = () => {
       }, 300);
     }
   }, [abilityStack.length]);
+
+  // Effect: Auto-open targeting for top stack item if it requires targets
+  // This prevents the "Resolve Twice" feel (Click Stack -> Click Overlay)
+  useEffect(() => {
+    if (abilityStack.length > 0 && !targetingMode.active) {
+      const topItem = abilityStack[abilityStack.length - 1];
+      const abilityDef = topItem.triggerObj?.ability;
+
+      if (abilityDef) {
+        // Logic to detect if targeting is needed (mirrors resolveStackAbility)
+        const explicitRequired = abilityDef.requiresTarget;
+        const textHeuristic = abilityDef.target &&
+          typeof abilityDef.target === 'string' &&
+          (abilityDef.target.includes('target') || abilityDef.target.includes('another')) &&
+          !abilityDef.targetIds;
+
+        if (explicitRequired || textHeuristic) {
+          // Auto-open the overlay
+          handleResolveWithTargeting(topItem);
+        }
+      }
+    }
+  }, [abilityStack, targetingMode.active]); // Depend on abilityStack (ref change) to catch new items
+
 
   // Wrap advanceCombatStep to handle declare attackers mode
   const advanceCombatStep = () => {
@@ -820,12 +999,7 @@ const App = () => {
   };
 
   const handleAddCard = (def, count = 1) => {
-    // 1. Close UI immediately to trigger layout reset
-    setActivePanel(null); // Close the panel
-    setPreviewCard(null);
-    setSearchQuery('');
-    setSearchResults([]);
-    setShowSearchOverlay(false); // Reset overlay state
+
     // 2. Defer card addition slightly to allow ResizeObserver to catch the new layout size
     setTimeout(() => {
       let currentCards = [...cards];
@@ -857,6 +1031,40 @@ const App = () => {
           gameEngineRef.current.updateBattlefield(currentCards); // Ensure engine has latest state
           const etbTriggers = gameEngineRef.current.processEntersBattlefield(newCard);
           etbTriggers.forEach(t => {
+            // Auto-resolve "Token entered" triggers to prevent stack spam
+            // Unless they require specific targeting
+            if (t.ability.trigger === 'on_token_enter_battlefield') {
+              const abilityDef = t.ability;
+              const requiresManualTargeting = abilityDef.target &&
+                typeof abilityDef.target === 'string' &&
+                (abilityDef.target.includes('target') || abilityDef.target.includes('another')) &&
+                !abilityDef.targetIds;
+
+              if (!requiresManualTargeting) {
+                try {
+                  // Execute immediately
+                  // Note: t is already the trigger object with .execute() from resolveEffect
+                  const result = t.execute(currentCards);
+                  currentCards = result.newCards;
+
+                  // Log the auto-resolution
+                  const desc = t.ability.description || `${t.source.name}: Token entered`;
+                  logAction(`Auto-resolved: ${desc}`);
+
+                  // If the resolution caused MORE triggers (e.g. counters added -> caused something else), 
+                  // we should ideally handle them. For now, add them to stack effectively.
+                  if (result.triggers && result.triggers.length > 0) {
+                    result.triggers.forEach(idxT => {
+                      addToStack(idxT.source, idxT.ability.description || 'Triggered', 'trigger', idxT);
+                    });
+                  }
+                  return; // Skip adding THIS trigger to stack
+                } catch (e) {
+                  console.warn("Failed to auto-resolve token trigger, falling back to stack:", e);
+                }
+              }
+            }
+
             let description = t.ability.description;
             if (!description) {
               if (t.ability.trigger === 'on_token_enter_battlefield') {
@@ -974,33 +1182,60 @@ const App = () => {
 
   const handleActivateAbility = (card, abilityDef) => {
     // 0. SPECIAL HANDLING: Manual Ability Definitions (from JSON) with requiresTarget flag
+    // Add to stack instead of direct targeting
     if (abilityDef.requiresTarget) {
-      startTargetingMode({
-        sourceId: card.id,
-        action: 'activate-ability',
-        mode: 'single',
-        data: abilityDef
+      // FIX For Helm of the Host (and other manual equipment):
+      // If effect is 'equip', treat it as a targeting action, NOT a stack trigger immediately.
+      if (abilityDef.effect === 'equip' || abilityDef.effect === 'attach' || abilityDef.isEquip) {
+        startTargetingMode({
+          sourceId: card.id,
+          action: 'activate-ability',
+          mode: 'single',
+          data: {
+            ...abilityDef,
+            targetType: 'creature' // Equipment usually targets creatures
+          }
+        });
+        return;
+      }
+
+      const triggerObj = gameEngineRef.current?.resolveEffect({
+        source: card,
+        ability: {
+          trigger: 'activated',
+          effect: abilityDef.effect,
+          target: abilityDef.target,
+          description: abilityDef.description || abilityDef.effect
+        }
       });
+
+      if (triggerObj) {
+        addToStack(card, `Activated: ${abilityDef.description || abilityDef.effect}`, 'activated', triggerObj);
+      }
       return;
     }
 
     // 1. CHECK IF THIS ABILITY NEEDS A TARGET (from parsed or manual definition)
-    // This MUST come before direct execution to ensure targeting mode is triggered
     const needsTarget = abilityDef.target && abilityDef.target.includes('target');
 
     if (needsTarget) {
       let type = 'permanent';
       if (abilityDef.target.includes('creature')) type = 'creature';
 
-      startTargetingMode({
-        sourceId: card.id,
-        action: 'activate-ability',
-        mode: 'single',
-        data: {
-          ...abilityDef,
-          targetType: type
+      // Resolve through gameEngine to get proper execute function
+      const triggerObj = gameEngineRef.current?.resolveEffect({
+        source: card,
+        ability: {
+          trigger: 'activated',
+          effect: abilityDef.effect,
+          target: abilityDef.target,
+          description: abilityDef.description || abilityDef.effect
         }
       });
+
+      if (triggerObj) {
+        addToStack(card, `Activated: ${abilityDef.description || abilityDef.effect}`, 'activated', triggerObj);
+      }
       return;
     }
 
@@ -1097,22 +1332,19 @@ const App = () => {
   }, [searchQuery]);
 
   const handleSelectSearchResult = async (name) => {
-    setIsSearching(true);
-    setSearchResults([]); // Clear list so preview renders
     try {
       const fetchedCardData = await getScryfallCard(name);
       const formatted = formatScryfallCard(fetchedCardData);
-      setPreviewCard(formatted);
+      handleAddToRecents(formatted);
     } catch (e) {
       console.error(e);
-    } finally {
-      setIsSearching(false);
     }
   };
 
   const handleResolveWithTargeting = (ability) => {
     // Attempt to resolve, check if targeting is needed
-    const result = resolveStackAbility(ability, recentCards, startTargetingMode);
+    // Use 'cards' (current board state) instead of 'recentCards' for target validation
+    const result = resolveStackAbility(ability, cards, startTargetingMode);
 
     if (result && result.needsTargeting) {
       // Get the source card
@@ -1146,15 +1378,7 @@ const App = () => {
     }
   };
 
-  const handleBgClick = (e) => {
-    if (e.target === battlefieldRef.current || e.target.classList.contains('battlefield-bg')) {
-      if (activePanel !== 'add') {
-        setActivePanel(null);
-      }
-      // Stop Selecting card when clicking anywhere else
-      setSelectedCard(null);
-    }
-  };
+
 
   // --- Render ---
 
@@ -1195,9 +1419,9 @@ const App = () => {
             return isCreatureCard && c.attacking;
           }
         }
-        // Also check for "another" in activated abilities
-        const excludeSource = abilityTarget.includes('another');
-        const sourceId = targetingMode.sourceId;
+        // Also check for "another" in activated abilities and stack triggers
+        const excludeSource = abilityTarget.includes('another') || targetSpec.includes('another');
+        const sourceId = targetingMode.sourceId || targetingMode.data?.sourceCard?.id;
         if (excludeSource && sourceId && c.id === sourceId) {
           return false; // Can't target the source itself
         }
@@ -1217,18 +1441,166 @@ const App = () => {
     return false;
   };
 
-  const creatures = visibleStacks.filter(g => isCreature(g.leader));
-  // Keep lands for count but DO NOT render them in main view anymore
-  const lands = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
-  const permanents = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
-  const nonCreatures = [...permanents]; // Removed lands from display
-
   // Calculate Land Count for Badge
   const landCount = cards.filter(c => c.zone === 'battlefield' && isLand(c)).length;
 
+  // Unified Battlefield List (excluding lands which are in side panel)
+  const battlefieldCards = visibleStacks.filter(g => !isMinimalDisplayLand(g.leader));
+
+  const handleConfirmTargetingAction = () => {
+    if (!targetingMode.active) return;
+
+    if (targetingMode.action === 'declare-attackers') {
+      handleConfirmAttackers();
+    } else if (targetingMode.action === 'resolve-trigger') {
+      const topAbility = abilityStack[abilityStack.length - 1];
+      if (topAbility) {
+        const targets = targetingMode.selectedIds.map(id => cards.find(c => c.id === id));
+        // 1. Resolve current
+        resolveStackAbility(topAbility, cards, startTargetingMode, targets);
+
+        // 2. Check NEXT item on stack
+        const nextAbility = abilityStack.length > 1 ? abilityStack[abilityStack.length - 2] : null;
+
+        let transitioned = false;
+        if (nextAbility) {
+          // Check if next ability needs targeting
+          const abilityDef = nextAbility.triggerObj?.ability;
+          const explicitRequired = abilityDef?.requiresTarget;
+
+          if (explicitRequired) {
+            // ... Transition logic (simplified from ConfirmOverlay) ...
+            // Since we updated resolveStackAbility, we might just rely on stack update?
+            // The original logic manually checked next item to seamlessly transition.
+            // I'll keep the logic to ensure smooth UX.
+            transitioned = true;
+
+            const targetSpec = abilityDef.target || '';
+            let targetType = 'permanent';
+            if (targetSpec.includes('creature')) {
+              targetType = 'creature';
+            } else if (targetSpec.includes('nonland_permanent') || targetSpec.includes('nonland')) {
+              targetType = 'nonland_permanent';
+            }
+
+            setTargetingMode({
+              active: true,
+              sourceId: null,
+              action: 'resolve-trigger',
+              mode: 'single',
+              selectedIds: [],
+              data: {
+                stackAbility: nextAbility,
+                targetType: targetType,
+                targetSpec: targetSpec,
+                sourceCard: cards.find(c => c.id === nextAbility.sourceId)
+              }
+            });
+          }
+        }
+
+        if (!transitioned) {
+          cancelTargeting();
+        }
+      }
+    } else if (targetingMode.action === 'activate-ability') {
+      const targetId = targetingMode.selectedIds[0];
+      const targetCard = cards.find(c => c.id === targetId);
+      const sourceCard = cards.find(c => c.id === targetingMode.sourceId);
+      const abilityDef = targetingMode.data;
+
+      if (targetCard && sourceCard && abilityDef && gameEngineRef.current) {
+        if (abilityDef.effect === 'attach' || abilityDef.effect === 'equip' || abilityDef.isEquip) {
+          logAction(`Equipped ${sourceCard.name} to ${targetCard.name}`);
+          setCards(prev => prev.map(c => {
+            if (c.id === sourceCard.id) {
+              return { ...c, attachedTo: targetCard.id, zone: 'attached' };
+            }
+            return c;
+          }));
+        } else {
+          // Regular ability activation
+          const desc = abilityDef.description || 'Activated Ability';
+          const abilityWithTarget = { ...abilityDef, targetIds: [targetCard.id] };
+
+          try {
+            const triggerObj = gameEngineRef.current.resolveEffect({
+              source: sourceCard,
+              ability: abilityWithTarget
+            });
+            const result = triggerObj.execute(cards, recentCards);
+            const newCards = result.newCards || result;
+            const triggers = result.triggers || [];
+
+            setCards(newCards);
+            logAction(`Activated: ${desc}`);
+
+            triggers.forEach(t => {
+              const tDesc = t.description || t.ability?.description || 'Triggered Ability';
+              addToStack(t.source, tDesc, 'trigger', t);
+            });
+
+          } catch (e) {
+            console.error("Failed to resolve ability:", e);
+            logAction(`Error activating ability: ${e.message}`);
+          }
+        }
+        cancelTargeting();
+      }
+    } else if (targetingMode.action === 'enchant') {
+      const targetId = targetingMode.selectedIds[0];
+      const targetCard = cards.find(c => c.id === targetId);
+      const sourceCard = cards.find(c => c.id === targetingMode.sourceId);
+
+      if (targetCard && sourceCard) {
+        logAction(`Enchanted ${targetCard.name} with ${sourceCard.name}`);
+        setCards(prev => prev.map(c => {
+          if (c.id === sourceCard.id) {
+            return { ...c, attachedTo: targetCard.id, zone: 'attached' };
+          }
+          return c;
+        }));
+        cancelTargeting();
+      }
+    } else if (targetingMode.action === 'remove-to-zone') {
+      const targetId = targetingMode.selectedIds[0];
+      const targetCard = cards.find(c => c.id === targetId);
+      const zone = targetingMode.data?.zone || 'graveyard';
+
+      if (targetCard) {
+        const result = gameEngineRef.current.processAction('delete', targetCard, cards);
+        // Note: delete action might fully remove, or move to graveyard. 
+        // If we really want "move to zone", we might need specific logic. 
+        // But existing logic seemed to use 'delete' or similar.
+        // I'll stick to what was implied or generic zone move.
+        // Actually, the generic remove logic in SelectionMenu used 'delete'.
+        // Let's assume standard behavior.
+        setCards(result.newCards);
+        logAction(`Moved ${targetCard.name} to ${zone}`);
+        cancelTargeting();
+      }
+    }
+  };
+
+  const handleBgClick = (e) => {
+    // Only close panels if the click was directly on the background container
+    // If target !== currentTarget, it means the click was on a child element
+    if (e.target !== e.currentTarget) {
+      return;
+    }
+
+    // Close panels when clicking the background
+    if (activePanel) {
+      setActivePanel(null);
+    } else if (!targetingMode.active && selectedCard) {
+      // If no panel is open, clicking background deselects card
+      setSelectedCard(null);
+    }
+  };
+
   return (
     <div
-      className="flex flex-col h-screen w-full text-white overflow-hidden relative selection-none touch-none"
+      className="flex flex-col h-screen w-full text-white overflow-hidden relative selection-none touch-none battlefield-bg"
       style={{
         backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)',
         backgroundSize: '40px 40px',
@@ -1281,26 +1653,26 @@ const App = () => {
         </div>
       </div>
 
-      {/* Triggered Ability Stack (Overlay) */}
-      {!selectedCard && !(targetingMode.active && targetingMode.action === 'resolve-trigger') && (
-        <TriggeredAbilityStack
-          items={abilityStack}
-          onResolve={handleResolveWithTargeting}
-          onRemove={removeFromStack}
-          onResolveAll={resolveAllStack}
-          onClear={clearStack}
-          onReorder={setAbilityStack}
-          isCollapsed={isStackCollapsed}
-          onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
-        />
-      )}
+      {/* Triggered Ability Stack (Overlay) - Always visible */}
+      <LIFOStack
+        items={abilityStack}
+        onResolve={handleResolveWithTargeting}
+        onRemove={removeFromStack}
+        onResolveAll={resolveAllStack}
+        onClear={clearStack}
+        onReorder={setAbilityStack}
+        isCollapsed={isStackCollapsed}
+        onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
+      />
 
       {/* Main Content Area - Split View */}
-      <div className="flex-1 flex flex-col pt-16 pb-0 overflow-hidden">
-        {/* Top Half: Creatures */}
-        <div className="flex-1 relative min-h-0">
-          <CreatureList
-            creatures={creatures}
+      <div
+        className="flex-1 flex flex-col pt-16 pb-0 overflow-hidden"
+        onClick={handleBgClick}
+      >
+        <div className="flex-1 relative min-h-0" ref={battlefieldRef}>
+          <BattlefieldList
+            cards={battlefieldCards}
             onCardAction={handleCardAction}
             onStackSelectionChange={updateStackSelection}
             allCards={cards}
@@ -1317,7 +1689,7 @@ const App = () => {
                 updatedCards = result.newCards;
               });
               const actionLabel = action === 'counter+' ? 'Added +1/+1 counter to' : 'Removed +1/+1 counter from';
-              logAction(`${actionLabel} ${count} ${selectedCard?.name || 'creature'}(s)`);
+              logAction(`${actionLabel} ${count} ${selectedCard?.name || 'card'}(s)`);
               saveHistoryState(updatedCards);
               if (selectedCard) {
                 const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
@@ -1329,72 +1701,25 @@ const App = () => {
               const stackCards = group ? group.cards : [card];
               const attachments = cards.filter(c => c.attachedTo === card.id);
               const eligible = isCardEligible(card);
-              return {
-                isSelected: selectedCard?.id === card.id,
-                stackCards: stackCards,
-                attachments: attachments,
-                isTargeting: targetingMode.active && targetingMode.mode === 'single',
-                isEligibleAttacker: targetingMode.active && eligible,
-                isDeclaredAttacker: targetingMode.active && targetingMode.selectedIds?.includes(card.id),
-                isSource: targetingMode.active && targetingMode.sourceId === card.id,
-                isValidTarget: false,
-                selectedCount: targetingMode.active ? targetingMode.selectedIds.filter(id => stackCards.some(c => c.id === id)).length : 0,
-                onMouseDown: (e) => {
-                  if (targetingMode.active) {
-                    e.stopPropagation();
-                    if (eligible) {
-                      if (targetingMode.mode === 'multiple') handleMultiSelect(card);
-                      else handleTargetSelection(card);
-                    }
-                  } else {
-                    if (selectedCard?.id === card.id) setSelectedCard(null);
-                    else setSelectedCard(card);
-                  }
-                }
-              };
-            }}
-          />
-        </div>
+              // Calculate selection count for targeting mode
+              const targetSelectedCount = targetingMode.active
+                ? targetingMode.selectedIds.filter(id => stackCards.some(c => c.id === id)).length
+                : 0;
 
-        {/* Bottom Half: Permanents Only (No Lands) */}
-        <div className="flex-1 relative min-h-0">
-          <PermanentList
-            permanents={nonCreatures} // Now excludes lands
-            onCardAction={handleCardAction}
-            onStackSelectionChange={updateStackSelection}
-            allCards={cards}
-            onActivateAbility={(card, ability) => {
-              logAction(`Activated: ${ability.cost}`);
-              handleActivateAbility(card, ability);
-            }}
-            onConvertLand={handleLandConversion}
-            onCounterChange={(action, cardsToModify, count) => {
-              if (!gameEngineRef.current) return;
-              let updatedCards = [...cards];
-              cardsToModify.forEach(cardToModify => {
-                const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
-                updatedCards = result.newCards;
-              });
-              saveHistoryState(updatedCards);
-              if (selectedCard) {
-                const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
-                if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
-              }
-            }}
-            getCardProps={(card) => {
-              const group = visibleStacks.find(g => g.cards.some(c => c.id === card.id));
-              const stackCards = group ? group.cards : [card];
-              const attachments = cards.filter(c => c.attachedTo === card.id);
-              const eligible = isCardEligible(card);
               return {
                 isSelected: selectedCard?.id === card.id,
                 stackCards: stackCards,
                 attachments: attachments,
-                isTargeting: targetingMode.active && targetingMode.mode === 'single',
-                isEligibleAttacker: targetingMode.active && eligible,
-                isDeclaredAttacker: false,
+
+                // Targeting Props
+                isTargeting: targetingMode.active, // General targeting flag
+                isEligibleAttacker: targetingMode.active && targetingMode.action === 'declare-attackers' && eligible,
+                isDeclaredAttacker: targetingMode.active && targetingMode.selectedIds?.includes(card.id),
+                isValidTarget: targetingMode.active && targetingMode.action !== 'declare-attackers' && eligible,
                 isSource: targetingMode.active && targetingMode.sourceId === card.id,
-                selectedCount: 0,
+
+                selectedCount: targetSelectedCount,
+
                 onMouseDown: (e) => {
                   if (targetingMode.active) {
                     e.stopPropagation();
@@ -1446,7 +1771,8 @@ const App = () => {
       )}
 
       {/* New Bottom Control Panel, Selection Menu, or Attacker Confirmation */}
-      {selectedCard ? (
+      {/* Hide controls if Add Panel is open, to let it replace the bottom area */}
+      {activePanel === 'add' ? null : selectedCard ? (
         <SelectionMenu
           selectedCard={selectedCard}
           stackCount={visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards.length || 1}
@@ -1473,29 +1799,6 @@ const App = () => {
             }
           }}
         />
-      ) : targetingMode.active ? (
-        <ConfirmOverlay
-          isVisible={true}
-          mode={targetingMode.action}
-          eligibleTargets={cards.filter(c => c.zone === 'battlefield' && isCardEligible(c))}
-          selectedIds={targetingMode.selectedIds || []}
-          sourceCard={targetingMode.sourceId ? cards.find(c => c.id === targetingMode.sourceId) : null}
-          stackSource={targetingMode.action === 'resolve-trigger' ? abilityStack : null}
-          allCards={cards}
-          onSelectCard={(cardId) => {
-            const card = cards.find(c => c.id === cardId);
-            if (card) {
-              if (targetingMode.mode === 'multiple') {
-                handleMultiSelect(card);
-              } else {
-                handleTargetSelection(card);
-              }
-            }
-          }}
-          onSelectAll={handleToggleSelectAll}
-          onConfirm={targetingMode.action === 'declare-attackers' ? handleConfirmAttackers : () => { }}
-          onCancel={cancelTargeting}
-        />
       ) : (
         <BottomControlPanel
           onStartTurn={handleStartTurn}
@@ -1512,6 +1815,18 @@ const App = () => {
           // Targeting Mode Props
           isTargetingMode={targetingMode.active}
           onCancelTargeting={cancelTargeting}
+          onConfirmTargeting={handleConfirmTargetingAction}
+          confirmLabel={getModeConfig(targetingMode.action).confirmLabel}
+          showSelectAll={getModeConfig(targetingMode.action).showSelectAll}
+          isConfirmDisabled={targetingMode.selectedIds.length === 0}
+          onResolveStackItem={() => {
+            const topItem = abilityStack[abilityStack.length - 1];
+            if (topItem) handleResolveWithTargeting(topItem);
+          }}
+          onRejectStackItem={() => {
+            const topItem = abilityStack[abilityStack.length - 1];
+            if (topItem) removeFromStack(topItem);
+          }}
         />
       )}
 
@@ -1561,9 +1876,10 @@ const App = () => {
         historyLength={history.length}
         onUndo={undo}
       />
+
+
     </div>
   );
-
 };
 
 export default App;

@@ -143,6 +143,15 @@ const SelectionMenu = ({
                     {/* ATTACHMENT BANNERS (Inside Card, Top) */}
                     {attachments.length > 0 && (
                         <div className="flex flex-col border-b border-white/10">
+                            {/* Total Attachment Count (shown when 2+ attachments) */}
+                            {attachments.length > 1 && (
+                                <div className="h-6 bg-blue-600/80 flex items-center justify-center border-b border-white/10" style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+                                    <span className="text-white font-bold text-xs">
+                                        {attachments.length} Attachment{attachments.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+                            )}
+
                             {attachments.map((att) => {
                                 const attColors = getCardHexColors(att.colors);
                                 return (

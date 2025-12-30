@@ -91,12 +91,12 @@ export const EFFECT_PATTERNS = [
     {
         pattern: /create a token that.*copy of.*target creature you control/i,
         effect: 'orthion_copy_single',
-        target: 'target_creature_you_control'
+        target: 'another_target_creature_you_control'
     },
     {
         pattern: /create five tokens that.*copies of.*target creature you control/i,
         effect: 'orthion_copy_five',
-        target: 'target_creature_you_control'
+        target: 'another_target_creature_you_control'
     },
 
     // =====================
@@ -222,6 +222,20 @@ export const EFFECT_PATTERNS = [
         pattern: /Attach\s+(?:to\s+)?target\s+creature/i, // Match "Attach to target creature" or "Attach target creature"
         effect: 'attach',
         target: 'target_creature_you_control'
+    },
+
+    // =====================
+    // GENERIC REMOVAL PATTERNS
+    // =====================
+    {
+        pattern: /destroy target (.*?)(?:\.|$)/i,
+        effect: 'destroy_permanent',
+        parseTarget: (match) => 'target_' + match[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+    },
+    {
+        pattern: /exile target (.*?)(?:\.|$)/i,
+        effect: 'exile_permanent',
+        parseTarget: (match) => 'target_' + match[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'),
     },
 
     // =====================
