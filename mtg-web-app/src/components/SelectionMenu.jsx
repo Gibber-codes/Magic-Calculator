@@ -100,7 +100,7 @@ const SelectionMenu = ({
 
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-4 animate-in fade-in duration-200" style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <div className="fixed inset-0 z-[100] flex items-start justify-center animate-in fade-in duration-200" style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', backgroundColor: 'rgba(0,0,0,0.5)', paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
 
             {/* Main Container */}
             <div className="relative">

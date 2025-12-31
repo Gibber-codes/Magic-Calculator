@@ -45,7 +45,7 @@ const PhaseTracker = ({
     const currentPassingStepIdx = isPassingAnimation ? BEGINNING_STEPS.indexOf(passingPhase) : -1;
 
     return (
-        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-40 animate-in slide-in-from-bottom duration-200 w-auto max-w-[95vw]">
+        <div className="fixed left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-40 animate-in slide-in-from-bottom duration-200 w-auto max-w-[95vw]" style={{ bottom: 'calc(8rem + env(safe-area-inset-bottom))' }}>
             {/* Beginning Step Dots - Shows during animated phase passing */}
             {isPassingAnimation && (
                 <div className="flex items-center gap-2 mb-1 animate-in fade-in duration-150">
@@ -120,12 +120,12 @@ const PhaseTracker = ({
                         >
                             <div
                                 className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${isAnimatingPhase
-                                        ? 'bg-amber-400 ring-4 ring-amber-500/30 scale-125 animate-pulse'
-                                        : isActive
-                                            ? 'bg-blue-400 ring-4 ring-blue-500/20 scale-125'
-                                            : isPassed
-                                                ? 'bg-blue-600/50'
-                                                : 'bg-slate-600'
+                                    ? 'bg-amber-400 ring-4 ring-amber-500/30 scale-125 animate-pulse'
+                                    : isActive
+                                        ? 'bg-blue-400 ring-4 ring-blue-500/20 scale-125'
+                                        : isPassed
+                                            ? 'bg-blue-600/50'
+                                            : 'bg-slate-600'
                                     }`}
                             />
                         </div>

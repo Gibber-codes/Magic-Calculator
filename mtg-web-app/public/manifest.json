@@ -3,7 +3,7 @@
     "short_name": "MTG Calc",
     "description": "Magic: The Gathering battlefield simulator and card calculator",
     "start_url": "/",
-    "display": "standalone",
+    "display": "fullscreen",
     "orientation": "portrait",
     "background_color": "#1a1a2e",
     "theme_color": "#1a1a2e",

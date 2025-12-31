@@ -17,7 +17,7 @@ import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './comp
 import { formatBigNumber } from './utils/formatters';
 import { getModeConfig } from './utils/modeConfig';
 import { getCardAbilities, extractActivatedAbilities, extractEffects, parseOracleText } from './utils/keywordParser';
-import { getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard, isPlaceholderLand, isMinimalDisplayLand, BASIC_LAND_COLORS } from './utils/cardUtils';
+import { getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard, isPlaceholderLand, isMinimalDisplayLand, BASIC_LAND_COLORS, calculateCardStats } from './utils/cardUtils';
 import { searchScryfall, getScryfallCard, formatScryfallCard, fetchRelatedTokens } from './utils/scryfallService';
 import { SIGNATURE_DATA } from './data/signatureCards';
 import LIFOStack from './components/LIFOStack';
@@ -30,7 +30,7 @@ import BattlefieldList from './components/BattlefieldList';
 import CalculationMenu from './components/CalculationMenu';
 import SelectionMenu from './components/SelectionMenu';
 import BottomControlPanel from './components/BottomControlPanel';
-import LandsPanel from './components/LandsPanel';
+import MoreOptionsPanel from './components/MoreOptionsPanel';
 
 import useGameState from './hooks/useGameState';
 import useTargetingMode from './hooks/useTargetingMode';
@@ -404,6 +404,47 @@ const App = () => {
     }
 
     return true;
+  }).sort((a, b) => {
+    // 1. Creatures First
+    const aIsCreature = isCreature(a.leader);
+    const bIsCreature = isCreature(b.leader);
+
+    if (aIsCreature && !bIsCreature) return -1;
+    if (!aIsCreature && bIsCreature) return 1;
+
+    if (aIsCreature) {
+      // Both are Creatures
+
+      // 2. Equipped Creatures First (Creatures with attachments)
+      const aAttachments = cards.filter(c => c.attachedTo === a.leader.id);
+      const bAttachments = cards.filter(c => c.attachedTo === b.leader.id);
+      const aEquipped = aAttachments.length > 0;
+      const bEquipped = bAttachments.length > 0;
+
+      if (aEquipped && !bEquipped) return -1;
+      if (!aEquipped && bEquipped) return 1;
+
+      // 3. Greatest Power First
+      const aStats = calculateCardStats(a.leader, cards, aAttachments);
+      const bStats = calculateCardStats(b.leader, cards, bAttachments);
+      if (aStats.power !== bStats.power) return bStats.power - aStats.power;
+
+      // 4. Highest Stacks First
+      if (a.count !== b.count) return b.count - a.count;
+
+      return 0;
+    } else {
+      // Non-Creatures
+
+      // 5. Equipment First
+      const aIsEquipment = a.leader.type_line && a.leader.type_line.includes('Equipment');
+      const bIsEquipment = b.leader.type_line && b.leader.type_line.includes('Equipment');
+
+      if (aIsEquipment && !bIsEquipment) return -1;
+      if (!aIsEquipment && bIsEquipment) return 1;
+
+      return 0;
+    }
   });
 
   const handleBgClick = (e) => {
@@ -432,7 +473,7 @@ const App = () => {
       }}
     >
       {/* Top Bar: Navigation & Menu */}
-      <div className="absolute top-0 left-0 w-full px-4 py-3 z-50 flex justify-between items-center pointer-events-none">
+      <div className="absolute top-0 left-0 w-full px-4 py-3 z-50 flex justify-between items-center pointer-events-none" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
 
         {/* Left: Menu Button */}
         <button
@@ -589,7 +630,7 @@ const App = () => {
 
       {/* Declare Attackers Title - Floating above Control Panel */}
       {targetingMode.active && targetingMode.action === 'declare-attackers' && (
-        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200">
+        <div className="fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200" style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}>
           <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-6 py-3 rounded-lg border border-red-500/50 shadow-2xl">
             <Sword className="w-7 h-7 text-red-500" />
             <h2 className="text-white font-bold text-2xl">Declare Attackers</h2>
@@ -636,7 +677,7 @@ const App = () => {
           onStartTurn={handleStartTurn}
           onAddCard={() => setActivePanel('add')}
           onSelectAll={handleToggleSelectAll}
-          onOpenLands={() => setActivePanel(activePanel === 'lands' ? null : 'lands')}
+          onOpenMore={() => setActivePanel(activePanel === 'more' ? null : 'more')}
           landCount={landCount}
           // New Props for Navigation
           currentPhase={currentPhase}
@@ -662,9 +703,9 @@ const App = () => {
         />
       )}
 
-      {/* Lands Management Panel */}
-      {activePanel === 'lands' && (
-        <LandsPanel
+      {/* More Options / Lands Panel */}
+      {activePanel === 'more' && (
+        <MoreOptionsPanel
           cards={cards}
           onClose={() => setActivePanel(null)}
           onAddLand={(landName) => {
@@ -677,6 +718,7 @@ const App = () => {
             setCards(result.newCards);
             saveHistoryState(result.newCards);
           }}
+          onSelectAll={handleToggleSelectAll}
         />
       )}
 

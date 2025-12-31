@@ -240,7 +240,12 @@ const AddCardPanel = ({
                                     </div>
                                     <div className="flex flex-col justify-center gap-2 w-[200px]">
                                         <button
-                                            onClick={() => onAddCard(previewCard)}
+                                            onClick={() => {
+                                                onAddCard(previewCard);
+                                                setPreviewCard(null);
+                                                setSearchQuery('');
+                                                setIsInputFocused(false);
+                                            }}
                                             className="w-full py-4 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl shadow-lg shadow-blue-900/30 transition-all active:scale-95"
                                         >
                                             Add to Battlefield
@@ -266,24 +271,7 @@ const AddCardPanel = ({
                             {/* Recent Cards & Presets (Default View) */}
                             {!isSearching && !previewCard && searchResults.length === 0 && (
                                 <>
-                                    {/* Add Land Quick Button */}
-                                    <button
-                                        onClick={() => onAddCard({
-                                            name: 'Land', type: 'Land', type_line: 'Land', isPlaceholderLand: true, colors: []
-                                        })}
-                                        className="
-                                        shrink-0 h-full w-auto aspect-[2.5/3.5] 
-                                        rounded-2xl border-2 border-dashed border-white/20 
-                                        hover:border-white/40 hover:bg-white/5 
-                                        flex flex-col items-center justify-center gap-3
-                                        transition-all group
-                                    "
-                                    >
-                                        <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
-                                            <Plus size={24} className="text-white/60 group-hover:text-white" />
-                                        </div>
-                                        <span className="text-white/60 font-medium group-hover:text-white">Placeholder Land</span>
-                                    </button>
+
 
                                     {/* Recent Cards */}
                                     {recentCards.map((c, i) => (
@@ -301,7 +289,10 @@ const AddCardPanel = ({
                                                 ${activeLongPressId === i ? 'scale-95 ring-2 ring-blue-500' : 'hover:scale-105 hover:shadow-2xl'}
                                             `}
                                                 onClick={() => {
-                                                    if (activeLongPressId !== i) onAddCard(c);
+                                                    if (activeLongPressId !== i) {
+                                                        onAddCard(c);
+                                                        setIsInputFocused(false);
+                                                    }
                                                 }}
                                             >
                                                 <img
@@ -330,7 +321,13 @@ const AddCardPanel = ({
                                                         >+</button>
                                                     </div>
                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); onAddCard(c, multiAddCount); setActiveLongPressId(null); setMultiAddCount(1); }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onAddCard(c, multiAddCount);
+                                                            setActiveLongPressId(null);
+                                                            setMultiAddCount(1);
+                                                            setIsInputFocused(false);
+                                                        }}
                                                         className="w-full py-2 bg-blue-600 rounded-lg text-white font-bold text-sm"
                                                     >
                                                         Add {multiAddCount}

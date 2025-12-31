@@ -1,11 +1,11 @@
 import React from 'react';
-import { Play, Plus, CheckCircle, Globe, ArrowRight, RotateCcw, X } from 'lucide-react';
+import { Play, Plus, CheckCircle, Globe, ArrowRight, RotateCcw, X, MoreHorizontal } from 'lucide-react';
 
 const BottomControlPanel = ({
     onStartTurn,
     onAddCard,
     onSelectAll,
-    onOpenLands,
+    onOpenMore,
     landCount = 0,
     currentPhase,
     currentCombatStep,
@@ -22,7 +22,7 @@ const BottomControlPanel = ({
     onRejectStackItem
 }) => {
     return (
-        <div className="px-3 py-3 w-full animate-in slide-in-from-bottom duration-300">
+        <div className="px-3 py-3 w-full animate-in slide-in-from-bottom duration-300" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
             <div className="flex gap-2 justify-center items-center max-w-2xl mx-auto">
 
                 {/* SLOT 1: GAME FLOW (Normal) or CONFIRM (Targeting) or RESOLVE (Stack) */}
@@ -171,33 +171,18 @@ const BottomControlPanel = ({
                         </div>
                     </button>
                 ) : (
-                    <button
-                        onClick={onSelectAll}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-purple-500/50 bg-slate-800/90 hover:border-purple-400 active:scale-95 transition-all"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <CheckCircle className="w-7 h-7 text-purple-400" />
-                            <span className="text-purple-400 text-xs font-bold uppercase tracking-wide">Select All</span>
-                        </div>
-                    </button>
+                    <div className="flex-1 max-w-[140px]"></div>
                 )}
 
-                {/* SLOT 4: LANDS - Hidden in Targeting Mode */}
+                {/* SLOT 4: MORE - Hidden in Targeting Mode */}
                 {!isTargetingMode && (!currentPhase || currentPhase.includes('Main')) && (
                     <button
-                        onClick={onOpenLands}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-emerald-500/50 bg-slate-800/90 hover:border-emerald-400 active:scale-95 transition-all relative"
+                        onClick={onOpenMore}
+                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-slate-500/50 bg-slate-800/90 hover:border-slate-400 active:scale-95 transition-all text-slate-400 hover:text-white"
                     >
                         <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <Globe className="w-7 h-7 text-emerald-400" />
-                            <span className="text-emerald-400 text-xs font-bold uppercase tracking-wide">Lands</span>
+                            <MoreHorizontal className="w-8 h-8" />
                         </div>
-                        {/* Count Badge */}
-                        {landCount > 0 && (
-                            <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center shadow-lg">
-                                <span className="text-white text-xs font-bold">{landCount}</span>
-                            </div>
-                        )}
                     </button>
                 )}
 
