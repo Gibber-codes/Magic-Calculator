@@ -246,12 +246,11 @@ const useGameState = () => {
             sourceType: sourceCard.type_line,
             timestamp: Date.now()
         };
-
         setAbilityStack(prev => [...prev, newAbility]);
         logAction(`Triggered: ${sourceCard.name} - ${description}`);
     }, [logAction]);
 
-    const resolveStackAbility = useCallback((ability, recentCards = [], startTargetingCallback, manualTargets = null) => {
+    const resolveStackAbility = useCallback((ability, recentCards = [], startTargetingCallback, manualTargets = null, spawnPos = null) => {
         // Guard: Prevent resolving the same ability multiple times
         if (resolvingAbilities.current.has(ability.id)) {
             console.log('⚠️ Already resolving:', ability.id, '- skipping duplicate call');
@@ -339,11 +338,27 @@ const useGameState = () => {
 
                 // MERGE LOGIC: Handle updates to existing cards (by ID) vs new cards
                 // GameEngine might return existing cards with updated properties (e.g. zone: 'graveyard')
-                const updatedCards = (() => {
+                let updatedCards = (() => {
                     const newIds = new Set(resultNewCards.map(c => c.id));
                     const kept = cards.filter(c => !newIds.has(c.id));
                     return [...kept, ...resultNewCards];
                 })();
+
+                // Tag new cards with spawn position for animation
+                if (spawnPos) {
+                    const oldIds = new Set(cards.map(c => c.id));
+                    let newIndex = 0;
+                    updatedCards = updatedCards.map(c => {
+                        if (!oldIds.has(c.id)) {
+                            return {
+                                ...c,
+                                spawnSourcePos: spawnPos,
+                                spawnDelay: (newIndex++) * 200 // 200ms stagger
+                            };
+                        }
+                        return c;
+                    });
+                }
 
                 setCards(updatedCards);
                 logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName} - ${ability.description}`);

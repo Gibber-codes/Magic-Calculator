@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef, useState, useLayoutEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Play, X, Layers, Zap, RefreshCw, Clock } from 'lucide-react';
 
 const CARD_SPACING = 15; // px between cards horizontally (base spacing for newest card)
@@ -88,41 +89,88 @@ const StackItem = ({
 
     const TriggerIcon = getTriggerIcon(item.triggerType);
 
+    // Dynamic Animation Variants
+    const initialVariants = React.useMemo(() => {
+        if (!isNew) return { opacity: 0, scale: 0.9, y: -50 };
+
+        // Try to find source on battlefield
+        if (item.sourceId) {
+            const sourceEl = document.getElementById(`card-${item.sourceId}`);
+            if (sourceEl) {
+                const sourceRect = sourceEl.getBoundingClientRect();
+
+                // Approximate Target Position (Fixed Stack at bottom center)
+                // Stack Item Width = 320px
+                // Image Width = 140px. Image is on the Left.
+                // Image Center is 70px from Left Edge.
+                // Stack Item Center is 160px from Left Edge.
+                // Image Offset from Center = 70 - 160 = -90px.
+
+                const targetStackCenterX = window.innerWidth / 2;
+                const targetStackCenterY = window.innerHeight - 180; // Approx bottom-32 center
+
+                // We want the IMAGE (not the stack center) to start at the SOURCE.
+                // TargetImageX = TargetStackCenterX - 90.
+
+                const targetImageCenterX = targetStackCenterX - 90;
+
+                const sourceCenterX = sourceRect.left + sourceRect.width / 2;
+                const sourceCenterY = sourceRect.top + sourceRect.height / 2;
+
+                const deltaX = sourceCenterX - targetImageCenterX; // Calculate delta relative to Image Center
+                const deltaY = sourceCenterY - targetStackCenterY;
+
+                return {
+                    x: deltaX,
+                    y: deltaY,
+                    scale: 0.4, // Start smaller (card size-ish)
+                    opacity: 1 // Visible immediately so we see the image fly
+                };
+            }
+        }
+
+        // Fallback: Drop from top
+        return { y: -150, scale: 0.8, opacity: 0 };
+    }, [isNew, item.sourceId]);
+
     return (
-        <div
+        <motion.div
+            layout // Enable FLIP for reordering
+            initial={initialVariants}
+            animate={{ x: 0, y: 0, scale: Math.pow(0.95, index), opacity: isHidden ? 0 : Math.pow(0.75, index) }}
+            exit={{ opacity: 0, scale: 0.5, y: 50 }}
+            transition={{
+                type: "spring",
+                stiffness: 120, // Slow flight
+                damping: 18,
+                mass: 1,
+                opacity: { duration: 0.2 }
+            }}
             className={`
                 absolute
                 stack-item
                 ${isTop ? 'pointer-events-auto' : 'pointer-events-none select-none'}
-                ${isNew ? 'animate-stackEnter' : ''}
-                ${isExiting ? 'animate-stackExit' : ''}
             `}
+            id={`stack-item-${item.id}`}
             style={{
                 left: `calc(50% + ${itemX}px)`,
-                top: isNew ? '-150px' : `${itemY}px`, // Start from above if new
-                '--target-position': `calc(50% + ${itemX}px)`,
-                '--target-top': `${itemY}px`,
-                // "Infinity" Effect: Exponential decay for all properties
+                top: `${itemY}px`,
                 zIndex: zIndex,
                 width: '320px',
                 height: '100px',
-                transform: `scale(${Math.pow(0.95, index)})`, // Scale drops off: 1 -> 0.95 -> 0.90 -> 0.85
-                transition: isMounted ? 'left 0.4s ease-out, top 0.4s ease-out, transform 0.4s ease-out' : 'none',
-                opacity: isHidden ? 0 : Math.pow(0.75, index), // Opacity fades: 1 -> 0.75 -> 0.56 -> 0.42
-                // Unified Glow: Using drop-shadow with a cyan tint creates a visible "magical" glow
+                // filter handled via style for performance
                 filter: `brightness(${Math.pow(0.7, index)}) contrast(${Math.pow(0.85, index)})${index === 0 ? ' drop-shadow(0 4px 14px rgba(34, 211, 238, 0.5))' : ''}`
             }}
         >
-            <div className="flex items-center gap-0">
-                {/* Card Image Structure */}
-                <div className="relative shrink-0 z-30">
+            <div className="flex items-center gap-0 w-full h-full">
+                {/* Card Image Structure - Static relative to parent */}
+                <div className="relative shrink-0 z-30 h-full">
                     <div style={{
                         width: '140px',
-                        height: '100px',
-                        borderRadius: '12px 0 0 12px', // Square off right side for seamless join
+                        height: '100%',
+                        borderRadius: '12px 0 0 12px',
                         overflow: 'hidden',
                         backgroundColor: 'rgb(26, 26, 26)',
-                        // No box-shadow here, handled by parent filter
                         position: 'relative'
                     }}>
                         <img
@@ -137,9 +185,17 @@ const StackItem = ({
                     </div>
                 </div>
 
-                {/* Text Info */}
-                {/* Text Info */}
-                <div className="flex-1 min-w-0 bg-black/60 backdrop-blur-md p-3 rounded-r-xl rounded-l-none -ml-2 h-[100px] flex flex-col justify-center shadow-none">
+                {/* Text Info - Delayed Slide Out Animation */}
+                <motion.div
+                    initial={isNew ? { x: -50, opacity: 0 } : false}
+                    animate={isNew ? { x: 0, opacity: 1 } : false}
+                    transition={{
+                        delay: 0.4, // Wait for flight to mostly finish
+                        duration: 0.4,
+                        ease: "easeOut"
+                    }}
+                    className="flex-1 min-w-0 bg-black/60 backdrop-blur-md p-3 rounded-r-xl rounded-l-none -ml-2 h-full flex flex-col justify-center shadow-none border-t border-b border-r border-white/10"
+                >
                     <div className="flex items-center justify-between mb-1">
                         <span className="text-white font-bold text-sm truncate" title={item.sourceName}>
                             {item.sourceName}
@@ -149,9 +205,9 @@ const StackItem = ({
                     <div className="text-xs text-slate-300 font-mono leading-tight line-clamp-3 opacity-80">
                         {item.description}
                     </div>
-                </div>
+                </motion.div>
             </div>
-        </div>
+        </motion.div>
     );
 };
 
@@ -301,7 +357,10 @@ const LIFOStack = ({
                     // Hide if not yet seen AND not currently animating in
                     // When timeout fires: seen=true, isNew=true -> Visible & Animating
                     const isSeen = seenItemsRef.current.has(item.id);
+                    // Force visibility if it's new (so the animation logic runs)
                     const isHidden = !isSeen && !isNew;
+
+                    // If it is New, we MUST render it visibly for motion to happen
 
                     return (
                         <StackItem

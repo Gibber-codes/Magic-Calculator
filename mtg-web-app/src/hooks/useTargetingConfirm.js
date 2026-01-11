@@ -127,89 +127,115 @@ const useTargetingConfirm = ({
         } else if (targetingMode.action === 'resolve-trigger') {
             const topAbility = abilityStack[abilityStack.length - 1];
             if (topAbility) {
+                // 1. Capture variables and position before we clear state
                 const targets = targetingMode.selectedIds.map(id => cards.find(c => c.id === id));
-                resolveStackAbility(topAbility, cards, startTargetingMode, targets);
+                const currentAbilityStack = [...abilityStack];
+                const stackEl = document.getElementById(`stack-item-${topAbility.id}`);
+                const stackRect = stackEl ? stackEl.getBoundingClientRect() : null;
+                const spawnPos = stackRect ? { x: stackRect.left, y: stackRect.top } : null;
 
-                const nextAbility = abilityStack.length > 1 ? abilityStack[abilityStack.length - 2] : null;
+                // 2. Clear targeting UI immediately
+                cancelTargeting();
 
-                let transitioned = false;
-                if (nextAbility) {
-                    const abilityDef = nextAbility.triggerObj?.ability;
-                    const explicitRequired = abilityDef?.requiresTarget;
+                // 3. Resolve after delay so battlefield returns to normal first
+                setTimeout(() => {
+                    resolveStackAbility(topAbility, cards, startTargetingMode, targets, spawnPos);
 
-                    if (explicitRequired) {
-                        transitioned = true;
+                    const nextAbility = currentAbilityStack.length > 1 ? currentAbilityStack[currentAbilityStack.length - 2] : null;
 
-                        const targetSpec = abilityDef.target || '';
-                        let targetType = 'permanent';
-                        if (targetSpec.includes('creature')) {
-                            targetType = 'creature';
-                        } else if (targetSpec.includes('nonland_permanent') || targetSpec.includes('nonland')) {
-                            targetType = 'nonland_permanent';
-                        }
+                    if (nextAbility) {
+                        const abilityDef = nextAbility.triggerObj?.ability;
+                        const explicitRequired = abilityDef?.requiresTarget;
 
-                        setTargetingMode({
-                            active: true,
-                            sourceId: null,
-                            action: 'resolve-trigger',
-                            mode: 'single',
-                            selectedIds: [],
-                            data: {
-                                stackAbility: nextAbility,
-                                targetType: targetType,
-                                targetSpec: targetSpec,
-                                sourceCard: cards.find(c => c.id === nextAbility.sourceId)
+                        if (explicitRequired) {
+                            const targetSpec = abilityDef.target || '';
+                            let targetType = 'permanent';
+                            if (targetSpec.includes('creature')) {
+                                targetType = 'creature';
+                            } else if (targetSpec.includes('nonland_permanent') || targetSpec.includes('nonland')) {
+                                targetType = 'nonland_permanent';
                             }
-                        });
-                    }
-                }
 
-                if (!transitioned) {
-                    cancelTargeting();
-                }
+                            setTargetingMode({
+                                active: true,
+                                sourceId: null,
+                                action: 'resolve-trigger',
+                                mode: 'single',
+                                selectedIds: [],
+                                data: {
+                                    stackAbility: nextAbility,
+                                    targetType: targetType,
+                                    targetSpec: targetSpec,
+                                    sourceCard: cards.find(c => c.id === nextAbility.sourceId)
+                                }
+                            });
+                        }
+                    }
+                }, 500);
             }
         } else if (targetingMode.action === 'activate-ability') {
+            // 1. Capture variables and position
             const targetId = targetingMode.selectedIds[0];
             const targetCard = cards.find(c => c.id === targetId);
             const sourceCard = cards.find(c => c.id === targetingMode.sourceId);
             const abilityDef = targetingMode.data;
+            const topAbility = abilityStack[abilityStack.length - 1]; // Current top item
+            const stackEl = topAbility ? document.getElementById(`stack-item-${topAbility.id}`) : null;
+            const stackRect = stackEl ? stackEl.getBoundingClientRect() : null;
+            const spawnPos = stackRect ? { x: stackRect.left, y: stackRect.top } : null;
+
+            // 2. Clear targeting immediately
+            cancelTargeting();
 
             if (targetCard && sourceCard && abilityDef && gameEngineRef.current) {
-                if (abilityDef.effect === 'attach' || abilityDef.effect === 'equip' || abilityDef.isEquip) {
-                    logAction(`Equipped ${sourceCard.name} to ${targetCard.name}`);
-                    setCards(prev => prev.map(c => {
-                        if (c.id === sourceCard.id) {
-                            return { ...c, attachedTo: targetCard.id, zone: 'attached' };
+                // 3. Resolve after delay
+                setTimeout(() => {
+                    if (abilityDef.effect === 'attach' || abilityDef.effect === 'equip' || abilityDef.isEquip) {
+                        logAction(`Equipped ${sourceCard.name} to ${targetCard.name}`);
+                        setCards(prev => prev.map(c => {
+                            if (c.id === sourceCard.id) {
+                                return { ...c, attachedTo: targetCard.id, zone: 'attached' };
+                            }
+                            return c;
+                        }));
+                    } else {
+                        const desc = abilityDef.description || 'Activated Ability';
+                        const abilityWithTarget = { ...abilityDef, targetIds: [targetCard.id] };
+
+                        try {
+                            const triggerObj = gameEngineRef.current.resolveEffect({
+                                source: sourceCard,
+                                ability: abilityWithTarget
+                            });
+                            const result = triggerObj.execute(cards, recentCards);
+                            let newCards = result.newCards || result;
+                            const triggers = result.triggers || [];
+
+                            // Tag new cards with spawn position
+                            if (spawnPos) {
+                                const oldIds = new Set(cards.map(c => c.id));
+                                newCards = newCards.map(c => {
+                                    if (!oldIds.has(c.id)) {
+                                        return { ...c, spawnSourcePos: spawnPos };
+                                    }
+                                    return c;
+                                });
+                            }
+
+                            setCards(newCards);
+                            logAction(`Activated: ${desc}`);
+
+                            triggers.forEach(t => {
+                                const tDesc = t.description || t.ability?.description || 'Triggered Ability';
+                                addToStack(t.source, tDesc, 'trigger', t);
+                            });
+
+                        } catch (e) {
+                            console.error("Failed to resolve ability:", e);
+                            logAction(`Error activating ability: ${e.message}`);
                         }
-                        return c;
-                    }));
-                } else {
-                    const desc = abilityDef.description || 'Activated Ability';
-                    const abilityWithTarget = { ...abilityDef, targetIds: [targetCard.id] };
-
-                    try {
-                        const triggerObj = gameEngineRef.current.resolveEffect({
-                            source: sourceCard,
-                            ability: abilityWithTarget
-                        });
-                        const result = triggerObj.execute(cards, recentCards);
-                        const newCards = result.newCards || result;
-                        const triggers = result.triggers || [];
-
-                        setCards(newCards);
-                        logAction(`Activated: ${desc}`);
-
-                        triggers.forEach(t => {
-                            const tDesc = t.description || t.ability?.description || 'Triggered Ability';
-                            addToStack(t.source, tDesc, 'trigger', t);
-                        });
-
-                    } catch (e) {
-                        console.error("Failed to resolve ability:", e);
-                        logAction(`Error activating ability: ${e.message}`);
                     }
-                }
-                cancelTargeting();
+                }, 500);
             }
         } else if (targetingMode.action === 'enchant') {
             const targetId = targetingMode.selectedIds[0];

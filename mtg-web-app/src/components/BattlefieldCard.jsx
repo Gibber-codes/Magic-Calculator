@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { Plus, Minus, Trash2, RotateCcw, Sparkles, Sword, Layers, Repeat, Maximize2, Zap, X } from 'lucide-react';
 import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './RedesignedCardFrame';
@@ -7,6 +8,7 @@ import { formatBigNumber } from '../utils/formatters';
 import { useIsTouchDevice } from '../hooks/useTouchInteractions';
 import SelectedCardControls from './SelectedCardControls';
 import { extractActivatedAbilities } from '../utils/keywordParser';
+import { playTokenFlight } from '../utils/animations';
 
 // Constants
 const CARD_WIDTH = 140;
@@ -498,8 +500,8 @@ const BattlefieldCard = ({
 
                     {/* Stack Count */}
                     {isStack && (
-                        <div className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${displayCount > 0 ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-600 text-white'}`}>
-                            <span className="text-xs font-bold">x{count}</span>
+                        <div className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${arrivedCount > 0 ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-600 text-white'}`}>
+                            <span className="text-xs font-bold">x{arrivedCount}</span>
                         </div>
                     )}
                 </div>
@@ -560,33 +562,114 @@ const BattlefieldCard = ({
 
     // Prevent animation on mount
     const [isMounted, setIsMounted] = useState(false);
+    const [spawnOffset, setSpawnOffset] = useState(null);
+    const cardRef = useRef(null);
+    const [arrivedCount, setArrivedCount] = useState(() => {
+        const current = (stackCards && stackCards.length > 0) ? stackCards : [card];
+        const spawningCount = current.filter(c => c.spawnSourcePos).length;
+        return current.length - spawningCount;
+    });
+    const animatedIds = useRef(new Set());
+
     useEffect(() => {
         requestAnimationFrame(() => setIsMounted(true));
     }, []);
 
+    // Sync arrivedCount with total count ONLY if no new cards are currently animating
+    useEffect(() => {
+        const currentCards = (stackCards && stackCards.length > 0) ? stackCards : [card];
+        const spawningCount = currentCards.filter(c => c.spawnSourcePos && !animatedIds.current.has(c.id)).length;
+
+        // Only force sync if we aren't in the middle of a spawn sequence
+        if (spawningCount === 0) {
+            setArrivedCount(count);
+        }
+    }, [count, stackCards, card.spawnSourcePos]);
+
+    // NEW: Calculate fly-in offset for tokens spawning from stack
+    const [isFlying, setIsFlying] = useState(false);
+
+    useLayoutEffect(() => {
+        const currentCards = (stackCards && stackCards.length > 0) ? stackCards : [card];
+        const cardsToAnimate = currentCards.filter(c => c.spawnSourcePos && !animatedIds.current.has(c.id));
+
+        if (cardsToAnimate.length > 0 && cardRef.current) {
+            // Immediately set arrivedCount to existing cards (those NOT spawning)
+            const spawningIds = new Set(cardsToAnimate.map(c => c.id));
+            const existingCount = currentCards.filter(c => !spawningIds.has(c.id)).length;
+
+            setArrivedCount(existingCount);
+
+            const rect = cardRef.current.getBoundingClientRect();
+
+            // Set spawnOffset only once for the leader if it's new
+            if (card.spawnSourcePos && !spawnOffset) {
+                setSpawnOffset({
+                    x: card.spawnSourcePos.x - rect.left,
+                    y: card.spawnSourcePos.y - rect.top
+                });
+            }
+
+            // Stagger each token animation
+            cardsToAnimate.forEach((c) => {
+                animatedIds.current.add(c.id);
+                const delay = c.spawnDelay || 0;
+
+                setTimeout(async () => {
+                    // Start flight proxy
+                    await playTokenFlight({
+                        left: c.spawnSourcePos.x,
+                        top: c.spawnSourcePos.y,
+                        width: 140,
+                        height: 100
+                    }, rect, c.art_crop || c.image_normal);
+
+                    // Once landed, increment arrived count
+                    setArrivedCount(prev => prev + 1);
+                }, delay);
+            });
+        }
+    }, [stackCards, card.id]);
+
     return (
         <>
             {/* 1. Normal List Render (Placeholder) */}
-            <div
+            <motion.div
+                ref={cardRef}
+                id={`card-${card.id}`}
+                initial={spawnOffset ? {
+                    x: spawnOffset.x,
+                    y: spawnOffset.y,
+                    scale: 0.6,
+                    opacity: 0,
+                    rotate: card.spawnRotation || 0
+                } : false}
+                animate={{
+                    x: 0,
+                    y: 0,
+                    scale: 1,
+                    opacity: (arrivedCount === 0 && (stackCards.length > 0 || card.spawnSourcePos)) ? 0 : (card.tapped && !isSelected ? 0.8 : 1),
+                    rotate: card.tapped ? (card.image_rotation || 90) : 0
+                }}
+                transition={{
+                    type: "spring",
+                    stiffness: 80, // Slower flight to the board
+                    damping: 15,
+                    opacity: { duration: 0.3 }
+                }}
                 className={`${isRelative ? 'relative' : 'absolute'} cursor-pointer flex flex-col items-center
                     ${isHovered ? 'z-50' : ''}
-                    ${!isDragging && isMounted ? 'transition-[transform,box-shadow,opacity] duration-200 ease-out' : ''}
-                    ${card.tapped && !isSelected ? 'opacity-80' : ''}
+                    ${!isDragging && isMounted && !spawnOffset ? 'transition-[box-shadow] duration-200 ease-out' : ''}
                     rounded-xl`}
                 style={{
                     width: CARD_WIDTH,
+                    zIndex: isHovered ? 50 : (isSelected ? 60 : (arrivedCount > 0 ? 30 : 0)),
                     ...(isRelative ? {} : { left: x, top: y }),
                 }}
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
                 onPointerLeave={handlePointerUp}
                 onPointerMove={handlePointerMove}
-                onMouseDown={(e) => {
-                    if (!isTouch && !isLongPressingRef.current) {
-                        e.stopPropagation();
-                        onMouseDown(e, card);
-                    }
-                }}
                 onClick={(e) => {
                     if (isTouch && !isLongPressingRef.current) {
                         e.stopPropagation();
@@ -603,7 +686,7 @@ const BattlefieldCard = ({
                         <RotateCcw size={32} className="text-white drop-shadow-md opacity-80" />
                     </div>
                 )}
-            </div >
+            </motion.div >
 
             {/* Selection overlay moved to SelectionMenu component */}
 

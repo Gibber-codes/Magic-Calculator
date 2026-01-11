@@ -288,10 +288,19 @@ const App = () => {
     cardPositions
   });
 
+  // Timer for delayed targeting
+  const targetingTimerRef = useRef(null);
+
   // Effect: Auto-open targeting for top stack item if it requires targets
   // This prevents the "Resolve Twice" feel (Click Stack -> Click Overlay)
   // NOTE: Kept in App.jsx due to dependency on handleResolveWithTargeting
   useEffect(() => {
+    // Clear any pending targeting triggers
+    if (targetingTimerRef.current) {
+      clearTimeout(targetingTimerRef.current);
+      targetingTimerRef.current = null;
+    }
+
     if (abilityStack.length > 0 && !targetingMode.active) {
       const topItem = abilityStack[abilityStack.length - 1];
       const abilityDef = topItem.triggerObj?.ability;
@@ -304,10 +313,20 @@ const App = () => {
           !abilityDef.targetIds;
 
         if (explicitRequired || textHeuristic) {
-          handleResolveWithTargeting(topItem);
+          // Delay targeting mode to allow stack animation (Flight + Reveal) to finish
+          targetingTimerRef.current = setTimeout(() => {
+            handleResolveWithTargeting(topItem);
+            targetingTimerRef.current = null;
+          }, 600);
         }
       }
     }
+
+    return () => {
+      if (targetingTimerRef.current) {
+        clearTimeout(targetingTimerRef.current);
+      }
+    };
   }, [abilityStack, targetingMode.active]);
 
   // Wrap handleMultiSelect to pass visibleStacks
