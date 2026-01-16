@@ -17,7 +17,12 @@ import { TopBanner, ArtWindow, BottomBanner, PowerToughnessBanner } from './comp
 import { formatBigNumber } from './utils/formatters';
 import { getModeConfig } from './utils/modeConfig';
 import { getCardAbilities, extractActivatedAbilities, extractEffects, parseOracleText } from './utils/keywordParser';
-import { getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard, isPlaceholderLand, isMinimalDisplayLand, BASIC_LAND_COLORS, calculateCardStats } from './utils/cardUtils';
+import {
+  getTypeFromTypeLine, isCreature, isLand, createBattlefieldCard, isPlaceholderLand,
+  isMinimalDisplayLand, BASIC_LAND_COLORS, calculateCardStats, sortBattlefieldCards,
+  calculateEffectiveTotal
+} from './utils/cardUtils';
+
 import { searchScryfall, getScryfallCard, formatScryfallCard, fetchRelatedTokens } from './utils/scryfallService';
 import { SIGNATURE_DATA } from './data/signatureCards';
 import LIFOStack from './components/LIFOStack';
@@ -38,6 +43,7 @@ import usePhaseHandlers from './hooks/usePhaseHandlers';
 import useCardActions from './hooks/useCardActions';
 import useTargetingConfirm from './hooks/useTargetingConfirm';
 import useSearch from './hooks/useSearch';
+import { useBattlefieldLayout } from './hooks/useBattlefieldLayout';
 
 // Constants imported from config/constants.js
 // PRESETS imported from config/presets.js
@@ -147,130 +153,11 @@ const App = () => {
 
   // Filter Cards for View - Unified Battlefield
   // Exclude attached cards from main grid
-  const visibleRawCards = useMemo(() => {
-    return cards.filter(c => c.zone === 'battlefield' && !c.attachedTo);
-  }, [cards]);
-
-  // Group Identical Cards for Stacking
-  const visibleStacks = useMemo(() => {
-    const groups = [];
-    const groupMap = new Map();
-
-    visibleRawCards.forEach(card => {
-      // Find attachments for this card
-      const attachments = cards.filter(c => c.attachedTo === card.id);
-      // Create a unique key for attachments (based on name so identical setups stack)
-      const attachmentKey = attachments.map(a => a.name).sort().join(',');
-
-      // Key defines identity for stacking
-      // Includes temporary buffs so modified creatures split from the stack
-      const key = `${card.name}|${card.power}|${card.toughness}|${card.tapped}|${JSON.stringify(card.counters)}|${card.faceDown || false}|${card.type_line}|${card.isToken}|${card.tempPowerBonus || 0}|${card.tempToughnessBonus || 0}|[${attachmentKey}]`;
-
-      if (!groupMap.has(key)) {
-        const group = { key, leader: card, count: 1, cards: [card], id: card.id }; // Added 'id' for easier access
-        groupMap.set(key, group);
-        groups.push(group);
-      } else {
-        const group = groupMap.get(key);
-        group.count++;
-        group.cards.push(card);
-      }
-    });
-    return groups;
-  }, [visibleRawCards, cards]);
-
-  // Grouped Layout Calculation
-  const cardPositions = useMemo(() => {
-    if (!battlefieldRef.current) return {};
-    // Use window dimensions if ref is not ready or to maintain consistency
-    const containerWidth = window.innerWidth;
-    const containerHeight = window.innerHeight;
-
-    // Account for bottom navigation bar (combat tracker + phase buttons) AND top header
-    const usableHeight = containerHeight - BOTTOM_BAR_HEIGHT - TOP_BAR_HEIGHT;
-
-    const centerX = containerWidth / 2;
-    // CenterY should be LOCAL to the container
-    const centerY = usableHeight / 2;
-
-    // Dynamic spread based on available height
-    // Card height is 200px. We need >210px gap to avoid overlap.
-    const baseSpread = 250;
-    const scaleFactor = Math.min(1, usableHeight / 900);
-    const spread = Math.max(220, baseSpread * scaleFactor); // Min 220px
-
-    // Dynamic Row Offsets
-    // Creatures: Up by 1 spread
-    // Others: Center
-    // Lands: Down by 1 spread
-    // Dynamic Row Offsets
-    // Creatures: Up by 1 spread
-    // Others: Center
-    // Lands: Down by fixed amount (tight gap) to account for minimal display height
-    const creatureRowY = centerY - spread;
-    const othersRowY = centerY;
-    const landsRowY = centerY + 215; // Tight gap (Others bottom at +100, Land top at +115)
-
-    const positions = {};
-
-    // Group cards by category using STACKS
-    // Use type_line for flexible matching (e.g. "Artifact Creature" goes to creatures, "Token Creature" goes to creatures)
-    // Helpers moved to module scope for reuse
-
-    // Note: isCreature and isLand are now available in module scope
-
-    const lands = visibleStacks.filter(g => isMinimalDisplayLand(g.leader));
-    const creatures = visibleStacks.filter(g => isCreature(g.leader));
-    // Others now includes Non-Basic Lands (Complex Lands)
-    const others = visibleStacks.filter(g => !isCreature(g.leader) && !isMinimalDisplayLand(g.leader));
-
-    // Helper to position a row of cards
-    const layoutRow = (items, yPos, xOffset = 0) => {
-      // Apply GLOBAL vertical offset to everything
-      const finalY = yPos + verticalOffsetY;
-      const count = items.length;
-      if (count === 0) return;
-      const totalWidth = count * CARD_WIDTH + (count - 1) * CARD_GAP;
-
-      // Calculate centered startX, but clamp to 0 (with small padding) if row is too wide
-      const EDGE_PADDING = 8;
-      let startX = centerX - totalWidth / 2;
-
-      // If the row is wider than the screen, start from left edge + padding
-      // This allows horizontal scroll to reveal all cards
-      if (totalWidth > containerWidth) {
-        startX = EDGE_PADDING;
-      } else {
-        // Even for centered rows, don't let startX go negative
-        startX = Math.max(EDGE_PADDING, startX);
-      }
-
-      items.forEach((group, index) => {
-        positions[group.leader.id] = {
-          id: group.leader.id,
-          x: startX + index * (CARD_WIDTH + CARD_GAP) + xOffset,
-          // Convert Center Line Y to Top Edge Y for rendering
-          y: finalY - (200 / 2)
-        };
-      });
-    };
-
-    // Define Rows (Y positions)
-    // Visual Order (Top to Bottom): Creatures -> Others -> Lands
-
-    // Creatures at Top
-    layoutRow(creatures, creatureRowY, creatureScrollX);
-
-    // Others (Artifacts/Enchantments) under creatures
-    layoutRow(others, othersRowY, othersScrollX);
-
-    // Lands at bottom
-    layoutRow(lands, landsRowY, landsScrollX);
-
-    // Fallback/Overflow handling would be needed for many cards, but simple rows for now.
-
-    return positions;
-  }, [visibleStacks, cards, activePanel, showSearchOverlay, creatureScrollX, othersScrollX, landsScrollX, verticalOffsetY, windowSize]);
+  // --- Layout (from hook) ---
+  const { visibleStacks, cardPositions } = useBattlefieldLayout({
+    cards, activePanel, showSearchOverlay, creatureScrollX, othersScrollX, landsScrollX,
+    verticalOffsetY, windowSize, battlefieldRef
+  });
 
   // --- Phase Handlers (from hook) ---
   const {
@@ -411,7 +298,7 @@ const App = () => {
   const landCount = cards.filter(c => c.zone === 'battlefield' && isLand(c)).length;
 
   // Unified Battlefield List (excluding lands which are in side panel)
-  const battlefieldCards = visibleStacks.filter(g => {
+  const unfilteredBattlefieldCards = visibleStacks.filter(g => {
     // Basic filter: hide lands reserved for side panel
     if (isMinimalDisplayLand(g.leader)) return false;
 
@@ -423,48 +310,9 @@ const App = () => {
     }
 
     return true;
-  }).sort((a, b) => {
-    // 1. Creatures First
-    const aIsCreature = isCreature(a.leader);
-    const bIsCreature = isCreature(b.leader);
-
-    if (aIsCreature && !bIsCreature) return -1;
-    if (!aIsCreature && bIsCreature) return 1;
-
-    if (aIsCreature) {
-      // Both are Creatures
-
-      // 2. Equipped Creatures First (Creatures with attachments)
-      const aAttachments = cards.filter(c => c.attachedTo === a.leader.id);
-      const bAttachments = cards.filter(c => c.attachedTo === b.leader.id);
-      const aEquipped = aAttachments.length > 0;
-      const bEquipped = bAttachments.length > 0;
-
-      if (aEquipped && !bEquipped) return -1;
-      if (!aEquipped && bEquipped) return 1;
-
-      // 3. Greatest Power First
-      const aStats = calculateCardStats(a.leader, cards, aAttachments);
-      const bStats = calculateCardStats(b.leader, cards, bAttachments);
-      if (aStats.power !== bStats.power) return bStats.power - aStats.power;
-
-      // 4. Highest Stacks First
-      if (a.count !== b.count) return b.count - a.count;
-
-      return 0;
-    } else {
-      // Non-Creatures
-
-      // 5. Equipment First
-      const aIsEquipment = a.leader.type_line && a.leader.type_line.includes('Equipment');
-      const bIsEquipment = b.leader.type_line && b.leader.type_line.includes('Equipment');
-
-      if (aIsEquipment && !bIsEquipment) return -1;
-      if (!aIsEquipment && bIsEquipment) return 1;
-
-      return 0;
-    }
   });
+
+  const battlefieldCards = sortBattlefieldCards(unfilteredBattlefieldCards, cards);
 
   const handleBgClick = (e) => {
     // Only close panels if the click was directly on the background container
@@ -667,9 +515,10 @@ const App = () => {
       {activePanel === 'add' ? null : selectedCard ? (
         <SelectionMenu
           selectedCard={selectedCard}
-          stackCount={visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards.length || 1}
+          stackCount={calculateEffectiveTotal(visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard])}
           stackCards={visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard]}
           allCards={cards}
+
           onAction={handleCardAction}
           onDeselect={() => setSelectedCard(null)}
           onActivateAbility={(card, ability) => {

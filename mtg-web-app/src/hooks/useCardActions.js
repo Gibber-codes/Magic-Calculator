@@ -359,6 +359,7 @@ const useCardActions = ({
 
     // Add Card Handler
     const handleAddCard = useCallback((def, count = 1) => {
+        if (!def) return;
         setTimeout(() => {
             let currentCards = [...cards];
             const addedCards = [];
@@ -394,7 +395,7 @@ const useCardActions = ({
 
                             if (!requiresManualTargeting) {
                                 try {
-                                    const result = t.execute(currentCards);
+                                    const result = t.execute(currentCards, recentCards);
                                     currentCards = result.newCards;
 
                                     const desc = t.ability.description || `${t.source.name}: Token entered`;
@@ -457,7 +458,7 @@ const useCardActions = ({
 
             logAction(`Added ${count} ${def.name}(s)`);
         }, 50);
-    }, [cards, setCards, gameEngineRef, logAction, saveHistoryState, addToStack, setRecentCards, startTargetingMode]);
+    }, [cards, setCards, gameEngineRef, logAction, saveHistoryState, addToStack, setRecentCards, startTargetingMode, recentCards]);
 
     // Add to Recents Handler
     const handleAddToRecents = useCallback((def) => {

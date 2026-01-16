@@ -28,12 +28,15 @@ const SelectedCardControls = ({
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef(null);
 
+    // For sliders, we limit selection to the number of physical card objects in the stack
+    const sliderMax = stackCards.length > 0 ? stackCards.length : 1;
+
     // Reset modifyCount and convertCount when card changes or stack changes
     useEffect(() => {
-        const count = stackCount > 1 ? stackCount : 1;
-        setModifyCount(count);
-        setConvertCount(count);
-    }, [card?.id, stackCount]);
+        setModifyCount(sliderMax);
+        setConvertCount(sliderMax);
+    }, [card?.id, sliderMax]);
+
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -53,10 +56,12 @@ const SelectedCardControls = ({
     const stats = calculateCardStats(liveCard, allCards);
 
     const isCreature = card.type === 'Creature' || (card.type_line && card.type_line.includes('Creature'));
-    const isStack = stackCount > 1;
+    const isStack = stackCount > 1n;
+    const displayCount = formatBigNumber(stackCount);
 
     // Determine current count of SELECTED type (for display)
     const countersObj = typeof card.counters === 'number' ? { '+1/+1': card.counters } : (card.counters || {});
+
     const currentSelectedCount = countersObj[selectedCounterType] || 0;
 
     const handlePTUpdate = (powerChange, toughnessChange, type) => {
@@ -170,12 +175,13 @@ const SelectedCardControls = ({
                             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700">
                                 <div className="flex items-center justify-between mb-1">
                                     <span className="text-xs text-slate-400">Convert Amount</span>
-                                    <span className="text-sm font-bold text-white">{convertCount} / {stackCount}</span>
+                                    <span className="text-sm font-bold text-white">{convertCount} / {displayCount}</span>
                                 </div>
                                 <input
                                     type="range"
                                     min="1"
-                                    max={stackCount}
+                                    max={sliderMax}
+
                                     value={convertCount}
                                     onChange={(e) => setConvertCount(parseInt(e.target.value))}
                                     className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
@@ -347,7 +353,7 @@ const SelectedCardControls = ({
                                 <input
                                     type="range"
                                     min="1"
-                                    max={stackCount}
+                                    max={sliderMax}
                                     value={modifyCount}
                                     onChange={(e) => setModifyCount(parseInt(e.target.value))}
                                     className={`w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer ${activeModifierMode === 'pt-perm' ? 'accent-emerald-500' :
@@ -356,7 +362,7 @@ const SelectedCardControls = ({
                                         }`}
                                 />
                                 <div className="text-xs text-slate-400 text-center mt-1">
-                                    Apply to {modifyCount} of {stackCount}
+                                    Apply to {modifyCount} of {displayCount}
                                 </div>
                             </div>
                         )}

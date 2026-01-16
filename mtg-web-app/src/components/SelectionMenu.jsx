@@ -238,10 +238,11 @@ const SelectionMenu = ({
 
                         {/* Stack Count Badge */}
                         {isStack && (
-                            <div className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 border-2 border-white/20 shadow-lg z-20">
-                                <span className="text-white font-bold text-sm">x{stackCount}</span>
+                            <div className="absolute top-2 right-2 flex items-center justify-center h-8 px-2 rounded-full bg-blue-600 border-2 border-white/20 shadow-lg z-20">
+                                <span className="text-white font-bold text-sm">x{formatBigNumber(stackCount)}</span>
                             </div>
                         )}
+
 
                         {/* P/T Modifier Breakdown Overlay (Bottom Right) */}
                         {stats && (

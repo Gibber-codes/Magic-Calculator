@@ -214,12 +214,44 @@ const useTargetingConfirm = ({
                             // Tag new cards with spawn position
                             if (spawnPos) {
                                 const oldIds = new Set(cards.map(c => c.id));
+                                const taggedCards = newCards.filter(c => !oldIds.has(c.id));
+                                const newCardsCount = taggedCards.length;
+
+                                // MEGA-SWARM CONFIG:
+                                const VISUAL_CAP = 50;
+                                const TIME_CAP = 4000;
+
+                                const visualStep = Math.max(1, Math.floor(newCardsCount / VISUAL_CAP));
+                                const staggerDelay = Math.min(200, TIME_CAP / Math.max(1, newCardsCount));
+
+                                let newIndex = 0;
                                 newCards = newCards.map(c => {
-                                    if (!oldIds.has(c.id)) {
-                                        return { ...c, spawnSourcePos: spawnPos };
+                                    const isExisting = oldIds.has(c.id);
+
+                                    // CLEANUP: Strip animation tags from EXISTING cards
+                                    if (isExisting && (c.spawnSourcePos || c.spawnDelay)) {
+                                        const { spawnSourcePos, spawnDelay, isNewToken, flightDuration, ...rest } = c;
+                                        return rest;
+                                    }
+
+                                    if (!isExisting) {
+                                        const currentIndex = newIndex++;
+                                        const isWithinVisualCap = (currentIndex % visualStep === 0) && (currentIndex / visualStep < VISUAL_CAP);
+
+                                        return {
+                                            ...c,
+                                            spawnSourcePos: isWithinVisualCap ? spawnPos : null,
+                                            spawnDelay: currentIndex * staggerDelay,
+                                            flightDuration: 1000,
+                                            isNewToken: true
+                                        };
                                     }
                                     return c;
                                 });
+
+                                if (newCardsCount > VISUAL_CAP) {
+                                    console.log(`[MegaSwarm] Targeting: Distributed ${VISUAL_CAP} flights across ${newCardsCount} cards. Stagger: ${staggerDelay.toFixed(1)}ms`);
+                                }
                             }
 
                             setCards(newCards);

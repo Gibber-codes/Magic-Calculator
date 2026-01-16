@@ -1,6 +1,8 @@
-import React, { useRef, useState, useLayoutEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
+import { motion, AnimatePresence, animate, useMotionValue, useTransform } from 'framer-motion';
 import { Play, X, Layers, Zap, RefreshCw, Clock } from 'lucide-react';
+import { formatBigNumber } from '../utils/formatters';
+import { TopBanner, ArtWindow, BottomBanner } from './RedesignedCardFrame';
 
 const CARD_SPACING = 15; // px between cards horizontally (base spacing for newest card)
 const MAX_VISIBLE_STACK = 4;
@@ -35,7 +37,7 @@ const StackItem = ({
 
     // Using CSS transforms for cleaner calc
     // But we need the offset.
-    const cardWidth = 320;
+    const cardWidth = 360;
 
     // Position Calculation
     // We want the whole cluster centered.
@@ -99,31 +101,33 @@ const StackItem = ({
             if (sourceEl) {
                 const sourceRect = sourceEl.getBoundingClientRect();
 
-                // Approximate Target Position (Fixed Stack at bottom center)
-                // Stack Item Width = 320px
-                // Image Width = 140px. Image is on the Left.
-                // Image Center is 70px from Left Edge.
-                // Stack Item Center is 160px from Left Edge.
-                // Image Offset from Center = 70 - 160 = -90px.
+                // New Stack Item Layout:
+                // - Total Width = 360px
+                // - Card Frame (left side) = 140px wide
+                // - Card Frame Center relative to Stack Center = 70 - 180 = -110px
+                //
+                // Target: Stack is centered at screen center bottom.
+                // We want the CARD FRAME to start aligned with the source card.
 
                 const targetStackCenterX = window.innerWidth / 2;
                 const targetStackCenterY = window.innerHeight - 180; // Approx bottom-32 center
 
-                // We want the IMAGE (not the stack center) to start at the SOURCE.
-                // TargetImageX = TargetStackCenterX - 90.
-
-                const targetImageCenterX = targetStackCenterX - 90;
+                // Card frame center is 70px from left edge of stack item
+                // Stack item center is at 180px from left edge of stack item
+                // Offset = 70 - 180 = -110px
+                const targetCardFrameCenterX = targetStackCenterX - 110;
+                const targetCardFrameCenterY = targetStackCenterY; // Vertically centered
 
                 const sourceCenterX = sourceRect.left + sourceRect.width / 2;
                 const sourceCenterY = sourceRect.top + sourceRect.height / 2;
 
-                const deltaX = sourceCenterX - targetImageCenterX; // Calculate delta relative to Image Center
-                const deltaY = sourceCenterY - targetStackCenterY;
+                const deltaX = sourceCenterX - targetCardFrameCenterX;
+                const deltaY = sourceCenterY - targetCardFrameCenterY;
 
                 return {
                     x: deltaX,
                     y: deltaY,
-                    scale: 0.4, // Start smaller (card size-ish)
+                    scale: 1, // Start at same size as battlefield card
                     opacity: 1 // Visible immediately so we see the image fly
                 };
             }
@@ -156,45 +160,69 @@ const StackItem = ({
                 left: `calc(50% + ${itemX}px)`,
                 top: `${itemY}px`,
                 zIndex: zIndex,
-                width: '320px',
-                height: '100px',
+                width: '360px',
+                height: '160px',
                 // filter handled via style for performance
                 filter: `brightness(${Math.pow(0.7, index)}) contrast(${Math.pow(0.85, index)})${index === 0 ? ' drop-shadow(0 4px 14px rgba(34, 211, 238, 0.5))' : ''}`
             }}
         >
-            <div className="flex items-center gap-0 w-full h-full">
-                {/* Card Image Structure - Static relative to parent */}
-                <div className="relative shrink-0 z-30 h-full">
-                    <div style={{
-                        width: '140px',
-                        height: '100%',
-                        borderRadius: '12px 0 0 12px',
-                        overflow: 'hidden',
-                        backgroundColor: 'rgb(26, 26, 26)',
-                        position: 'relative'
-                    }}>
-                        <img
-                            alt={item.sourceName}
-                            className="w-full h-full object-cover"
-                            src={item.sourceArt || 'https://cards.scryfall.io/art_crop/front/7/1/71dadbb3-7b8a-4656-973f-65a3284afe07.jpg?1682206565'}
-                            style={{
-                                objectPosition: '0% 15%',
-                                transform: `rotate(${item.sourceRotation || 0}deg)`
-                            }}
-                        />
+            <div className="flex items-stretch gap-0 h-full">
+                {/* REDESIGNED CARD FRAME - Vertical Layout */}
+                <div className="relative flex flex-col items-center rounded-xl transition-all duration-300 shrink-0 z-30" style={{ width: 140 }}>
+                    {/* Top Banner */}
+                    <div className="z-30 relative" style={{ marginBottom: -4 }}>
+                        <TopBanner width={140} height={28} colorIdentity={item.sourceColor || null}>
+                            <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: '#ffffff' }}>
+                                {item.sourceName}
+                            </div>
+                        </TopBanner>
+                    </div>
+
+                    {/* Art Window */}
+                    <div className="z-30 relative">
+                        <ArtWindow width={140} height={100}>
+                            <img
+                                alt={item.sourceName}
+                                className="w-full h-full object-cover"
+                                src={item.sourceArt || 'https://cards.scryfall.io/art_crop/front/7/1/71dadbb3-7b8a-4656-973f-65a3284afe07.jpg?1682206565'}
+                                style={{
+                                    objectPosition: '0% 15%',
+                                    transform: `rotate(${item.sourceRotation || 0}deg)`
+                                }}
+                            />
+                        </ArtWindow>
+                    </div>
+
+                    {/* Bottom Banner */}
+                    <div className="z-30 relative" style={{ marginTop: 4 }}>
+                        <BottomBanner width={140} height={28}>
+                            <div style={{ width: '80%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                <div className="w-full flex justify-between items-center px-1">
+                                    <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>
+                                        {item.sourceType || 'Ability'}
+                                    </span>
+                                </div>
+                            </div>
+                            {item.sourcePT && (
+                                <div className="text-[10px] font-bold flex gap-0.5 text-white">
+                                    <span>{item.sourcePT}</span>
+                                </div>
+                            )}
+                        </BottomBanner>
                     </div>
                 </div>
 
-                {/* Text Info - Delayed Slide Out Animation */}
+                {/* Info Panel - Slides out from the right */}
                 <motion.div
                     initial={isNew ? { x: -50, opacity: 0 } : false}
                     animate={isNew ? { x: 0, opacity: 1 } : false}
                     transition={{
-                        delay: 0.4, // Wait for flight to mostly finish
+                        delay: 0.4,
                         duration: 0.4,
                         ease: "easeOut"
                     }}
-                    className="flex-1 min-w-0 bg-black/60 backdrop-blur-md p-3 rounded-r-xl rounded-l-none -ml-2 h-full flex flex-col justify-center shadow-none border-t border-b border-r border-white/10"
+                    className="flex-1 min-w-0 bg-black/60 backdrop-blur-md p-3 rounded-r-xl rounded-l-none -ml-2 flex flex-col justify-center shadow-none border-t border-b border-r border-white/10"
+                    style={{ height: 160 }} // Match card frame height
                 >
                     <div className="flex items-center justify-between mb-1">
                         <span className="text-white font-bold text-sm truncate" title={item.sourceName}>
@@ -202,13 +230,29 @@ const StackItem = ({
                         </span>
                         {isTop && <TriggerIcon size={14} className="text-slate-400 shrink-0" />}
                     </div>
-                    <div className="text-xs text-slate-300 font-mono leading-tight line-clamp-3 opacity-80">
+                    <div className="text-xs text-slate-300 font-mono leading-tight line-clamp-4 opacity-80">
                         {item.description}
                     </div>
                 </motion.div>
             </div>
         </motion.div>
     );
+};
+
+const CountUp = ({ to }) => {
+    const count = useMotionValue(0);
+    const [rounded, setRounded] = useState(0);
+
+    useEffect(() => {
+        const controls = animate(count, to, {
+            duration: 0.5,
+            ease: "circOut",
+            onUpdate: (v) => setRounded(Math.round(v))
+        });
+        return () => controls.stop();
+    }, [to, count]);
+
+    return formatBigNumber(rounded);
 };
 
 const LIFOStack = ({
@@ -283,14 +327,15 @@ const LIFOStack = ({
         }
 
         // 2. Handle Additions Sequential
-        // Find items that are in 'items' but not yet in 'renderedItems'
-        // We need to preserve the order from 'items'
-        // Let's find the first missing item
-        const firstMissingIndex = items.findIndex(i => !currentRenderedIds.has(i.id));
+        const missingItems = items.filter(i => !currentRenderedIds.has(i.id));
 
-        if (firstMissingIndex !== -1 && !processingRef.current) {
+        if (missingItems.length > 0 && !processingRef.current) {
             processingRef.current = true;
-            const newItem = items[firstMissingIndex];
+
+            // Get the NEXT item to add (preserve order)
+            // We want to add the oldest missing item first to maintain stack order?
+            // Actually, LIFO stack, usually we add to the end.
+            const newItem = missingItems[0];
             const newItemId = newItem.id;
 
             // Mark as New so it animates
@@ -300,23 +345,16 @@ const LIFOStack = ({
                 return next;
             });
 
-            // Add to rendered list with a slight delay to allow 'New' state to set?
-            // No, we add it, and because it's in newItemIds, it animates.
+            // Determine dynamic delay based on backlog size
+            // If we have a lot of items waiting, go FASTER
+            const backlogSize = missingItems.length;
+            const dynamicDelay = backlogSize > 5 ? 50 : 200; // Fast processing for bursts
 
-            // Wait a bit before adding the next one?
             setTimeout(() => {
                 setRenderedItems(prev => {
-                    // Re-construct the list based on 'items' order up to this new item
-                    // Or just append? 'items' is the source of truth for order.
-                    // We should take 'items' up to the point we have processed.
-                    // Actually, simpler: just match 'items' structure filtering out unseen ones.
-                    // But we want to add ONE.
                     const newRendered = [...prev];
-                    // Insert at correct position? 
-                    // Since it's a stack, usually append. 
-                    // But let's be safe: insert at proper index?
-                    // Stack usually pushes to end.
-                    newRendered.splice(firstMissingIndex, 0, newItem);
+                    // Append to end
+                    newRendered.push(newItem);
                     return newRendered;
                 });
 
@@ -333,34 +371,31 @@ const LIFOStack = ({
                     });
                 }, 500); // Animation duration
 
-            }, 200); // 200ms delay between additions
+            }, dynamicDelay);
         }
     }, [items, renderedItems]);
 
     // If empty, render empty placeholder to keep component mounted
     if (!renderedItems || renderedItems.length === 0) {
-        return <div className="fixed left-1/2 -translate-x-1/2 bottom-32 z-[60] perspective-1000 w-[320px] h-[100px] pointer-events-none" />;
+        return <div className="fixed left-1/2 -translate-x-1/2 bottom-32 z-[60] perspective-1000 w-[360px] h-[160px] pointer-events-none" />;
     }
 
     const visibleItems = renderedItems.slice(-MAX_VISIBLE_STACK);
     const hiddenCount = Math.max(0, renderedItems.length - MAX_VISIBLE_STACK);
 
     return (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-32 z-[60] perspective-1000">
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-32 z-[60] perspective-1000" id="stack-container">
             {/* Main Stack Container */}
-            <div className="relative w-[320px] h-[100px]">
+            <div className="relative w-[360px] h-[160px]" id="stack-list">
 
                 {/* Render Items - reversed so newest is first */}
                 {[...visibleItems].reverse().map((item, index) => {
                     const isTop = index === 0; // First item (newest) is top
                     const isNew = newItemIds.has(item.id);
-                    // Hide if not yet seen AND not currently animating in
-                    // When timeout fires: seen=true, isNew=true -> Visible & Animating
-                    const isSeen = seenItemsRef.current.has(item.id);
-                    // Force visibility if it's new (so the animation logic runs)
-                    const isHidden = !isSeen && !isNew;
 
-                    // If it is New, we MUST render it visibly for motion to happen
+                    // Logic simplified: If it's in the list, we show it.
+                    // 'isNew' controls the entrance animation.
+                    const isHidden = false;
 
                     return (
                         <StackItem
@@ -380,14 +415,19 @@ const LIFOStack = ({
                 })}
 
                 {/* Hidden Items Indicator */}
-                {hiddenCount > 0 && (
-                    <div
-                        className="absolute -top-6 left-0 bg-slate-900 border border-slate-700 text-slate-400 text-[10px] px-2 py-1 rounded-full shadow-xl flex items-center gap-1"
-                    >
-                        <Layers size={10} />
-                        +{hiddenCount} more
-                    </div>
-                )}
+                <AnimatePresence>
+                    {hiddenCount > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10, scale: 0.8 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            className="absolute -top-6 left-0 bg-slate-900 border border-slate-700 text-slate-400 text-[10px] px-2 py-1 rounded-full shadow-xl flex items-center gap-1 z-0"
+                        >
+                            <Layers size={10} />
+                            +<CountUp to={hiddenCount} /> more
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );

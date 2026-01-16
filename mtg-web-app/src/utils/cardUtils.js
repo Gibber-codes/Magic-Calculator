@@ -12,6 +12,18 @@ export const getTypeFromTypeLine = (typeLine) => {
 export const isCreature = (c) => c.type_line && c.type_line.toLowerCase().includes('creature');
 export const isLand = (c) => c.type_line && c.type_line.toLowerCase().includes('land') && !isCreature(c);
 
+/**
+ * Calculates the total number of items in a stack of cards,
+ * accounting for virtualized tokens that represent astronomical counts.
+ */
+export const calculateEffectiveTotal = (stackCards = []) => {
+    return stackCards.reduce((acc, c) => {
+        const val = c.isVirtualStack ? BigInt(c.virtualStackSize || 0n) : 1n;
+        return acc + val;
+    }, 0n);
+};
+
+
 export const createBattlefieldCard = (cardDef, extra = {}, context = {}) => {
     const { cards = [], gameEngineRef = null } = context;
     const type = getTypeFromTypeLine(cardDef.type_line);
@@ -91,6 +103,7 @@ export const createBattlefieldCard = (cardDef, extra = {}, context = {}) => {
         attachedTo: null, // ID of card this is attached to
         abilities: abilities || [],
         replacementEffects: replacementEffects || [],
+        entersWithCounters: entersWithCounters, // Add entersWithCounters to the return object
         activeFaceIndex,
         card_faces: mergedDef.card_faces, // Ensure faces are passed through
         ...extra,
@@ -308,4 +321,77 @@ export const isBasicLand = (card) => {
 
 export const isMinimalDisplayLand = (card) => {
     return isPlaceholderLand(card) || isBasicLand(card);
+};
+
+/**
+ * Card Colors - Hex mapping for SVGs
+ */
+export const getCardHexColors = (colors) => {
+    // Default Gray (Artifact/Colorless)
+    let c = { borderColor: '#6b7280', fillColor: '#374151', text: 'black' };
+
+    if (!colors || colors.length === 0) return c;
+
+    if (colors.length > 1) {
+        // Gold
+        return { borderColor: '#ca8a04', fillColor: '#eab308', text: 'black' };
+    }
+
+    const map = {
+        'W': { borderColor: '#d4d4d8', fillColor: '#fef9c3', text: 'black' }, // Zinc/Yellow
+        'U': { borderColor: '#2563eb', fillColor: '#60a5fa', text: 'black' }, // Blue
+        'B': { borderColor: '#1f2937', fillColor: '#4b5563', text: 'white' }, // Dark Gray
+        'R': { borderColor: '#b91c1c', fillColor: '#ef4444', text: 'black' }, // Red
+        'G': { borderColor: '#15803d', fillColor: '#22c55e', text: 'black' }  // Green
+    };
+
+    return map[colors[0]] || c;
+};
+
+/**
+ * Sorting logic for battlefield stacks
+ */
+export const sortBattlefieldCards = (stacks, allCards) => {
+    return [...stacks].sort((a, b) => {
+        // 1. Creatures First
+        const aIsCreature = isCreature(a.leader);
+        const bIsCreature = isCreature(b.leader);
+
+        if (aIsCreature && !bIsCreature) return -1;
+        if (!aIsCreature && bIsCreature) return 1;
+
+        if (aIsCreature) {
+            // Both are Creatures
+
+            // 2. Equipped Creatures First (Creatures with attachments)
+            const aAttachments = allCards.filter(c => c.attachedTo === a.leader.id);
+            const bAttachments = allCards.filter(c => c.attachedTo === b.leader.id);
+            const aEquipped = aAttachments.length > 0;
+            const bEquipped = bAttachments.length > 0;
+
+            if (aEquipped && !bEquipped) return -1;
+            if (!aEquipped && bEquipped) return 1;
+
+            // 3. Greatest Power First
+            const aStats = calculateCardStats(a.leader, allCards, aAttachments);
+            const bStats = calculateCardStats(b.leader, allCards, bAttachments);
+            if (aStats.power !== bStats.power) return bStats.power - aStats.power;
+
+            // 4. Highest Stacks First
+            if (a.count !== b.count) return b.count - a.count;
+
+            return 0;
+        } else {
+            // Non-Creatures
+
+            // 5. Equipment First
+            const aIsEquipment = a.leader.type_line && a.leader.type_line.includes('Equipment');
+            const bIsEquipment = b.leader.type_line && b.leader.type_line.includes('Equipment');
+
+            if (aIsEquipment && !bIsEquipment) return -1;
+            if (!aIsEquipment && bIsEquipment) return 1;
+
+            return 0;
+        }
+    });
 };

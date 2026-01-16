@@ -62,6 +62,22 @@ const useGameState = () => {
         if (gameEngineRef.current) {
             gameEngineRef.current.updateBattlefield(cards);
         }
+
+        // --- Spawn State Decay ---
+        // Automatically clear spawnSourcePos after 3s to prevent repeat flights on remount
+        const hasSpawning = cards.some(c => c.spawnSourcePos);
+        if (hasSpawning) {
+            const timer = setTimeout(() => {
+                setCards(prev => prev.map(c => {
+                    if (c.spawnSourcePos) {
+                        const { spawnSourcePos, spawnDelay, ...rest } = c;
+                        return rest;
+                    }
+                    return c;
+                }));
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
     }, [cards]);
 
     // --- Actions ---
@@ -71,7 +87,8 @@ const useGameState = () => {
     }, []);
 
     const saveHistoryState = useCallback((newCards) => {
-        setHistory(prev => [...prev, JSON.parse(JSON.stringify(cards))]);
+        // Use structuredClone to support BigInt serialization
+        setHistory(prev => [...prev, structuredClone(cards)]);
         setCards(newCards);
         setFuture([]); // Clear redo stack on new action
     }, [cards]);
@@ -79,7 +96,8 @@ const useGameState = () => {
     const undo = useCallback(() => {
         if (history.length > 0) {
             const prev = history[history.length - 1];
-            setFuture(prevFuture => [JSON.parse(JSON.stringify(cards)), ...prevFuture]); // Push current to future
+            // Use structuredClone to duplicate state for future stack
+            setFuture(prevFuture => [structuredClone(cards), ...prevFuture]);
             setCards(prev);
             setHistory(prevHist => prevHist.slice(0, -1));
         }
@@ -88,11 +106,13 @@ const useGameState = () => {
     const redo = useCallback(() => {
         if (future.length > 0) {
             const next = future[0];
-            setHistory(prevHist => [...prevHist, JSON.parse(JSON.stringify(cards))]); // Push current to history
+            // Use structuredClone to duplicate state for history stack
+            setHistory(prevHist => [...prevHist, structuredClone(cards)]);
             setCards(next);
             setFuture(prevFuture => prevFuture.slice(1));
         }
     }, [future, cards]);
+
 
     // --- Phase Management ---
 
@@ -111,6 +131,15 @@ const useGameState = () => {
         // 1. If phase is 'Beginning', we trigger untap.
         // 2. We set currentPhase to 'Beginning' and maybe track step internally if we wanted full granularity exposed.
         // For now, we keep the UI phase-based but execute step logic.
+
+        // CLEAR ANIMATION TAGS: On phase change, ensure no old cards re-fly
+        setCards(prev => prev.map(c => {
+            if (c.isNewToken || c.spawnSourcePos || c.spawnDelay) {
+                const { isNewToken, spawnSourcePos, spawnDelay, flightDuration, ...rest } = c;
+                return rest;
+            }
+            return c;
+        }));
 
         setCurrentPhase(phase);
         logAction(`Phase: ${phase}`);
@@ -173,14 +202,17 @@ const useGameState = () => {
         setCurrentPhase(null);
         setCurrentCombatStep(null);
 
-        // Clear attacking status and temporary buffs from all creatures
+        // Clear attacking status, temporary buffs, and ANIMATION TAGS from all creatures
         setCards(prev => {
-            let updatedCards = prev.map(c => ({
-                ...c,
-                attacking: false,
-                tempPowerBonus: 0,
-                tempToughnessBonus: 0
-            }));
+            let updatedCards = prev.map(c => {
+                const { isNewToken, spawnSourcePos, spawnDelay, flightDuration, ...rest } = c;
+                return {
+                    ...rest,
+                    attacking: false,
+                    tempPowerBonus: 0,
+                    tempToughnessBonus: 0
+                };
+            });
 
             // Process sacrifice triggers if any
             endTriggers.forEach(trigger => {
@@ -261,6 +293,16 @@ const useGameState = () => {
         resolvingAbilities.current.add(ability.id);
         console.log('🔍 Starting resolution for:', ability.id, ability.sourceName);
 
+        // Auto-detect spawn position from stack item if not provided
+        let effectiveSpawnPos = spawnPos;
+        if (!effectiveSpawnPos) {
+            const stackEl = document.getElementById(`stack-item-${ability.id}`);
+            if (stackEl) {
+                const rect = stackEl.getBoundingClientRect();
+                effectiveSpawnPos = { x: rect.left, y: rect.top };
+            }
+        }
+
         // Check if this ability needs targeting BEFORE resolution
         // Skip check if manualTargets are provided (implies targeting done or not needed)
         if (!manualTargets) {
@@ -305,7 +347,6 @@ const useGameState = () => {
 
                     if (startTargetingCallback) {
                         // Instead of resolving, initiate targeting mode
-                        // Return a special flag to tell the caller to start targeting
                         resolvingAbilities.current.delete(ability.id); // Remove from resolving set
                         return { needsTargeting: true, ability: ability };
                     }
@@ -337,34 +378,15 @@ const useGameState = () => {
                 const triggers = result.triggers || [];
 
                 // MERGE LOGIC: Handle updates to existing cards (by ID) vs new cards
-                // GameEngine might return existing cards with updated properties (e.g. zone: 'graveyard')
                 let updatedCards = (() => {
                     const newIds = new Set(resultNewCards.map(c => c.id));
                     const kept = cards.filter(c => !newIds.has(c.id));
                     return [...kept, ...resultNewCards];
                 })();
 
-                // Tag new cards with spawn position for animation
-                if (spawnPos) {
-                    const oldIds = new Set(cards.map(c => c.id));
-                    let newIndex = 0;
-                    updatedCards = updatedCards.map(c => {
-                        if (!oldIds.has(c.id)) {
-                            return {
-                                ...c,
-                                spawnSourcePos: spawnPos,
-                                spawnDelay: (newIndex++) * 200 // 200ms stagger
-                            };
-                        }
-                        return c;
-                    });
-                }
-
-                setCards(updatedCards);
                 logAction(ability.triggerObj.log?.description || `Resolved: ${ability.sourceName} - ${ability.description}`);
 
                 // Update stack state: remove the resolved ability AND add new triggers
-                // But first, auto-resolve token triggers that don't need targeting
                 const triggersToAdd = [];
                 let finalCards = updatedCards;
 
@@ -399,7 +421,9 @@ const useGameState = () => {
                     if (isAutoResolvable && t.execute) {
                         try {
                             const autoResult = t.execute(finalCards);
-                            finalCards = autoResult.newCards || finalCards;
+                            const autoNewCards = autoResult.newCards || finalCards;
+
+                            finalCards = autoNewCards;
                             const desc = t.description || t.ability?.description || `${t.source.name}: Token effect`;
                             logAction(`Auto-resolved: ${desc}`);
 
@@ -441,10 +465,57 @@ const useGameState = () => {
                     }
                 });
 
-                // Update cards with the final state after auto-resolutions
-                if (finalCards !== updatedCards) {
-                    setCards(finalCards);
+                // TAG ALL NEW CARDS (Main + Auto-resolves) with spawn position for animation
+                if (effectiveSpawnPos) {
+                    const baseIds = new Set(cards.map(c => c.id));
+                    const newCards = finalCards.filter(c => !baseIds.has(c.id));
+                    const newCardsCount = newCards.length;
+
+                    // DYNAMIC ANIMATION CONFIG:
+                    const VISUAL_CAP = 50;
+                    const TIME_CAP = newCardsCount > 20 ? 1500 : 2500; // Aggressive time caps
+
+                    const visualStep = Math.max(1, Math.floor(newCardsCount / VISUAL_CAP));
+                    const staggerDelay = Math.min(newCardsCount > 8 ? 40 : 100, TIME_CAP / Math.max(1, newCardsCount));
+
+                    // Tiered flight duration based on quantity
+                    let dynamicDuration = 700;
+                    if (newCardsCount >= 8) dynamicDuration = 250;     // Rapid fire
+                    else if (newCardsCount >= 4) dynamicDuration = 500; // Fast
+                    else dynamicDuration = 700;                         // Standard
+
+                    let staggerIndex = 0;
+                    finalCards = finalCards.map(c => {
+                        const isExisting = baseIds.has(c.id);
+
+                        // CLEANUP: Strip animation tags from EXISTING cards
+                        if (isExisting && (c.spawnSourcePos || c.spawnDelay)) {
+                            const { spawnSourcePos, spawnDelay, isNewToken, flightDuration, ...rest } = c;
+                            return rest;
+                        }
+
+                        if (!isExisting) {
+                            const currentIndex = staggerIndex++;
+                            const isWithinVisualCap = (currentIndex % visualStep === 0) && (currentIndex / visualStep < VISUAL_CAP);
+
+                            return {
+                                ...c,
+                                spawnSourcePos: isWithinVisualCap ? effectiveSpawnPos : null,
+                                spawnDelay: currentIndex * staggerDelay,
+                                flightDuration: dynamicDuration,
+                                isNewToken: true
+                            };
+                        }
+                        return c;
+                    });
+
+                    if (newCardsCount > VISUAL_CAP) {
+                        console.log(`[MegaSwarm] Distributed ${VISUAL_CAP} flights across ${newCardsCount} cards. Stagger: ${staggerDelay.toFixed(1)}ms`);
+                    }
                 }
+
+                // Update cards with the final state
+                setCards(finalCards);
 
                 setAbilityStack(prev => {
                     const filtered = prev.filter(a => a.id !== ability.id);
@@ -453,7 +524,6 @@ const useGameState = () => {
                         const desc = isDeferred ? t.description : (t.ability?.description || `${t.source.name} triggered`);
                         const type = isDeferred ? t.trigger : 'trigger';
 
-                        // Use token template info if available for better UI
                         let displayName = t.source.name;
                         let displayColors = t.source.colors || [];
                         let displayArt = t.source.art_crop || t.source.image_uris?.art_crop || t.source.image_uris?.normal;
@@ -485,7 +555,6 @@ const useGameState = () => {
             } catch (err) {
                 console.error("Failed to execute ability:", err);
                 logAction(`Error resolving ${ability.sourceName}: ${err.message}`);
-                // Safely remove the crashing ability to prevent stuck state
                 setAbilityStack(prev => prev.filter(a => a.id !== ability.id));
             }
         } else {
@@ -531,7 +600,57 @@ const useGameState = () => {
             }
         });
 
-        // Update cards with final state
+        // Find stack position for animation
+        const stackEl = document.getElementById('stack-container') || document.getElementById('stack-list');
+        const stackRect = stackEl?.getBoundingClientRect();
+        const spawnPos = stackRect ? { x: stackRect.left, y: stackRect.top } : null;
+
+        if (spawnPos) {
+            const baseIds = new Set(cards.map(c => c.id));
+            const newCardsCount = currentCards.filter(c => !baseIds.has(c.id)).length;
+
+            const VISUAL_CAP = 50;
+            const TIME_CAP = newCardsCount > 20 ? 1500 : 2500;
+
+            const visualStep = Math.max(1, Math.floor(newCardsCount / VISUAL_CAP));
+            const staggerDelay = Math.min(newCardsCount > 8 ? 40 : 100, TIME_CAP / Math.max(1, newCardsCount));
+
+            // Tiered flight duration
+            let dynamicDuration = 700;
+            if (newCardsCount >= 8) dynamicDuration = 250;     // Rapid fire
+            else if (newCardsCount >= 4) dynamicDuration = 500; // Fast
+            else dynamicDuration = 700;                         // Standard
+
+            let staggerIndex = 0;
+            currentCards = currentCards.map(c => {
+                const isExisting = baseIds.has(c.id);
+
+                // CLEANUP: Strip animation tags from EXISTING cards
+                if (isExisting && (c.spawnSourcePos || c.spawnDelay)) {
+                    const { spawnSourcePos, spawnDelay, isNewToken, flightDuration, ...rest } = c;
+                    return rest;
+                }
+
+                if (!isExisting) {
+                    const currentIndex = staggerIndex++;
+                    const isWithinVisualCap = (currentIndex % visualStep === 0) && (currentIndex / visualStep < VISUAL_CAP);
+
+                    return {
+                        ...c,
+                        spawnSourcePos: isWithinVisualCap ? spawnPos : null,
+                        spawnDelay: currentIndex * staggerDelay,
+                        flightDuration: dynamicDuration,
+                        isNewToken: true
+                    };
+                }
+                return c;
+            });
+
+            if (newCardsCount > VISUAL_CAP) {
+                console.log(`[MegaSwarm] ResolveAll: Distributed ${VISUAL_CAP} flights across ${newCardsCount} cards. Stagger: ${staggerDelay.toFixed(1)}ms`);
+            }
+        }
+
         setCards(currentCards);
 
         if (stackToResolve.length > 0) {

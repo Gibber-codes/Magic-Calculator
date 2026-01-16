@@ -663,6 +663,7 @@ export function getCardAbilities(card) {
         abilities: card.abilities || [...triggeredAbilities, ...activatedAbilities],
         replacementEffects: card.replacementEffects || parsed.replacementEffects,
         keywords: card.keywords || parsed.keywords,
+        entersWithCounters: card.entersWithCounters !== undefined ? card.entersWithCounters : parsed.entersWithCounters,
         parsed: !(hasAbilities && hasReplacements && hasKeywords)
     };
 }
