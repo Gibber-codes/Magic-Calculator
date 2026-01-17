@@ -60,6 +60,7 @@ const SelectionMenu = ({
     onConvertLand,
     onCounterChange
 }) => {
+    const [showFullImage, setShowFullImage] = useState(false);
 
 
     useEffect(() => {
@@ -220,18 +221,27 @@ const SelectionMenu = ({
                     </div>
 
                     {/* ART WINDOW */}
-                    <div className="w-full h-[225px] relative bg-slate-900/30 overflow-hidden group">
+                    <button
+                        className="w-full h-[225px] relative bg-slate-900/30 overflow-hidden group cursor-zoom-in border-none p-0 outline-none"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Art window clicked, showing full image for:', card.name);
+                            setShowFullImage(true);
+                        }}
+                    >
                         {/* Art Image */}
                         {card.art_crop ? (
                             <img
                                 src={card.art_crop}
                                 alt={card.name}
-                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 pointer-events-none"
                                 style={{ objectPosition: card.activeFaceIndex === 1 ? '100% 15%' : '0% 15%' }}
                             />
                         ) : (
-                            <div className="w-full h-full bg-slate-700/50"></div>
+                            <div className="w-full h-full bg-slate-700/50 pointer-events-none"></div>
                         )}
+
+
 
                         {/* Subtle Pattern Overlay */}
                         <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.02) 10px, rgba(255,255,255,.02) 20px)' }}></div>
@@ -271,7 +281,7 @@ const SelectionMenu = ({
                                 )}
                             </div>
                         )}
-                    </div>
+                    </button>
 
                     {/* BOTTOM FOOTER: Type + Total P/T */}
                     <div className="h-8 bg-black/50 flex items-center justify-between px-3 relative z-10" style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
@@ -312,7 +322,33 @@ const SelectionMenu = ({
                 {/* Backdrop Click Handler (Invisible layer covering screen except card) */}
                 <div className="fixed inset-0 -z-10" onClick={onDeselect}></div>
             </div>
+
+            {/* Full Image Preview Overlay */}
+            {showFullImage && (
+                <div
+                    className="fixed inset-0 z-[110] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-300 pointer-events-auto"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setShowFullImage(false);
+                    }}
+                >
+                    <div className="relative w-full max-w-sm aspect-[2.5/3.5] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 shrink-0 animate-in zoom-in-95 duration-300">
+                        <img
+                            src={card.image_normal || card.image_uris?.normal || card.art_crop}
+                            alt={card.name}
+                            className="w-full h-full object-cover"
+                        />
+                    </div>
+                    <button
+                        className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                        onClick={() => setShowFullImage(false)}
+                    >
+                        <X size={24} />
+                    </button>
+                </div>
+            )}
         </div>,
+
         document.body
     );
 };

@@ -96,27 +96,22 @@ const StackItem = ({
         if (!isNew) return { opacity: 0, scale: 0.9, y: -50 };
 
         // Try to find source on battlefield
+        // Try to find source on battlefield (including buried in stacks)
         if (item.sourceId) {
-            const sourceEl = document.getElementById(`card-${item.sourceId}`);
+            const sourceEl = document.querySelector(`[data-card-ids~="${item.sourceId}"]`);
             if (sourceEl) {
+
                 const sourceRect = sourceEl.getBoundingClientRect();
 
-                // New Stack Item Layout:
-                // - Total Width = 360px
-                // - Card Frame (left side) = 140px wide
-                // - Card Frame Center relative to Stack Center = 70 - 180 = -110px
-                //
-                // Target: Stack is centered at screen center bottom.
-                // We want the CARD FRAME to start aligned with the source card.
+                // Target: Stack is centered at bottom of screen.
+                // Horizontal: window.innerWidth / 2 + itemX (left edge of stack item)
+                // Center of card frame (140px wide) is 70px from that edge.
+                const targetCardFrameCenterX = (window.innerWidth / 2) + itemX + 70;
 
-                const targetStackCenterX = window.innerWidth / 2;
-                const targetStackCenterY = window.innerHeight - 180; // Approx bottom-32 center
-
-                // Card frame center is 70px from left edge of stack item
-                // Stack item center is at 180px from left edge of stack item
-                // Offset = 70 - 180 = -110px
-                const targetCardFrameCenterX = targetStackCenterX - 110;
-                const targetCardFrameCenterY = targetStackCenterY; // Vertically centered
+                // Vertical: container is bottom-32 (128px from bottom). Height 160px.
+                // Center of item is at (window.innerHeight - 128 - 160/2) = window.innerHeight - 208
+                // Plus the vertical stagger (itemY)
+                const targetCardFrameCenterY = window.innerHeight - 208 + itemY;
 
                 const sourceCenterX = sourceRect.left + sourceRect.width / 2;
                 const sourceCenterY = sourceRect.top + sourceRect.height / 2;
@@ -132,6 +127,7 @@ const StackItem = ({
                 };
             }
         }
+
 
         // Fallback: Drop from top
         return { y: -150, scale: 0.8, opacity: 0 };

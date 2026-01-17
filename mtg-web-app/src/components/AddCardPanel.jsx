@@ -131,6 +131,14 @@ const AddCardPanel = ({
     return (
         <>
 
+            {/* Backdrop to close on click outside - elevated z-index to be above battlefield cards */}
+            <div
+                className="fixed inset-0 z-[70] bg-black/20 backdrop-blur-[2px]"
+                onClick={(e) => {
+                    console.log('AddCardPanel backdrop clicked');
+                    onClose();
+                }}
+            />
 
             {/* Bottom Sheet Panel */}
             <div
@@ -141,7 +149,7 @@ const AddCardPanel = ({
                     ${isInputFocused ? 'top-0' : 'bottom-0'}
                     bg-slate-900/60 backdrop-blur-xl 
                     border-t border-white/10 
-                    shadow-2xl z-50 
+                    shadow-2xl z-[80] 
                     flex flex-col 
                     transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
                     ${isInputFocused ? 'rounded-b-3xl' : 'rounded-t-3xl'} overflow-hidden

@@ -176,9 +176,17 @@ const BattlefieldCard = ({
 
     // derived glow classes
     let activeGlow = '';
-    if (isSource) activeGlow = 'shadow-[0_0_25px_rgba(59,130,246,1)] scale-105 z-40 animate-pulse';
-    else if (isValidTarget || isDeclaredAttacker) activeGlow = 'shadow-[0_0_25px_rgba(220,38,38,1)] scale-105 z-40';
-    else if (isEligibleAttacker) activeGlow = 'shadow-[0_0_20px_rgba(59,130,246,1)] z-40';
+    if (isSource) {
+        activeGlow = 'shadow-[0_0_25px_rgba(59,130,246,1)] scale-105 z-40 animate-pulse';
+    } else if (isValidTarget || isEligibleAttacker) {
+        // If the card is a valid candidate (target or attacker),
+        // it glows RED if selected, and BLUE if just potentially available.
+        if (isDeclaredAttacker || selectedCount > 0) {
+            activeGlow = 'shadow-[0_0_25px_rgba(220,38,38,1)] scale-105 z-40';
+        } else {
+            activeGlow = 'shadow-[0_0_25px_rgba(59,130,246,1)] z-40';
+        }
+    }
 
     return (
         <>
@@ -210,8 +218,10 @@ const BattlefieldCard = ({
                     ${isHovered ? 'z-50' : ''}
                     ${!isDragging && isMounted && !spawnOffset ? 'transition-[box-shadow] duration-200 ease-out' : ''}
                 rounded-xl`}
+                data-card-ids={(stackCards.length > 0 ? stackCards : [card]).map(c => c.id).join(' ')}
 
                 style={{
+
                     width: CARD_WIDTH,
                     zIndex: isHovered ? 50 : (isSelected ? 60 : (arrivedCount > 0 ? 30 : 0)),
                     ...(isRelative ? {} : { left: x, top: y }),
