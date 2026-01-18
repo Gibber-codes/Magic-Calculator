@@ -11,15 +11,18 @@ const BottomControlPanel = ({
     currentCombatStep,
     onAdvancePhase,
     onEndTurn,
-    isTargetingMode = false,
-    onCancelTargeting,
     onConfirmTargeting,
     confirmLabel = 'Confirm',
     isConfirmDisabled = false,
     showSelectAll = false,
     stackCount = 0,
     onResolveStackItem,
-    onRejectStackItem
+    onRejectStackItem,
+    autoMode = false, // New Prop
+    onDeclareAttackers, // New Prop
+    isTargetingMode = false,
+    onCancelTargeting,
+    hasEndStepActions = false // New Prop
 }) => {
     return (
         <div className="px-3 py-3 w-full animate-in slide-in-from-bottom duration-300" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
@@ -57,8 +60,48 @@ const BottomControlPanel = ({
                             <span className="text-emerald-400 text-xs font-bold uppercase tracking-wide">Resolve</span>
                         </div>
                     </button>
+                ) : autoMode ? (
+                    // AUTO MODE: Calculate OR Clean Up
+                    currentPhase === 'Main 2' ? (
+                        hasEndStepActions ? (
+                            // Clean Up Button (Auto Mode - Main 2 - Actions Pending)
+                            <button
+                                onClick={onEndTurn}
+                                className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-slate-500/50 bg-slate-800/90 hover:border-slate-400 active:scale-95 transition-all"
+                            >
+                                <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
+                                    <RotateCcw className="w-8 h-8 text-gray-400" />
+                                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wide leading-tight">Clean Up</span>
+                                </div>
+                            </button>
+                        ) : (
+                            // Calculate Button (Auto Mode - Main 2 - No Actions)
+                            // This serves as the "Finish Turn" button but keeps the unified look
+                            <button
+                                onClick={onEndTurn}
+                                className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-yellow-500/50 bg-slate-800/90 hover:border-yellow-400 active:scale-95 transition-all"
+                            >
+                                <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
+                                    <Play className="w-8 h-8 text-yellow-400 fill-current" />
+                                    <span className="text-yellow-400 text-xs font-bold uppercase tracking-wide">Calculate</span>
+                                </div>
+                            </button>
+                        )
+                    ) : (
+                        // Calculate Button (Auto Mode - Start & Continue)
+                        // REPLACES "Start Turn" logic for Auto Mode
+                        <button
+                            onClick={onAdvancePhase} // handleAutoCalculate handles start-of-turn cleanup too
+                            className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-yellow-500/50 bg-slate-800/90 hover:border-yellow-400 active:scale-95 transition-all"
+                        >
+                            <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
+                                <Play className="w-8 h-8 text-yellow-400 fill-current" />
+                                <span className="text-yellow-400 text-xs font-bold uppercase tracking-wide">Calculate</span>
+                            </div>
+                        </button>
+                    )
                 ) : !currentPhase ? (
-                    // START TURN
+                    // START TURN (Manual Mode)
                     <button
                         onClick={onStartTurn}
                         className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-green-500/50 bg-slate-800/90 hover:border-green-400 active:scale-95 transition-all"
@@ -69,11 +112,11 @@ const BottomControlPanel = ({
                         </div>
                     </button>
                 ) : (
-                    // SMART PHASE BUTTON
+                    // SMART PHASE BUTTON (Manual Mode - In Game)
                     <button
                         onClick={onAdvancePhase}
                         className={`flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 transition-all active:scale-95 
-                            ${currentPhase === 'Main 1'
+                                ${currentPhase === 'Main 1'
                                 ? 'border-red-500/50 bg-slate-800/90 hover:border-red-400'
                                 : currentPhase === 'Main 2'
                                     ? 'border-slate-500/50 bg-slate-800/90 hover:border-slate-400'
@@ -171,7 +214,35 @@ const BottomControlPanel = ({
                         </div>
                     </button>
                 ) : (
-                    <div className="flex-1 max-w-[140px]"></div>
+                    // EMPTY SLOT - Show Attack Button in Auto Mode
+                    autoMode ? (
+                        <div className="flex-1 max-w-[140px] h-20">
+                            {/* We need a specific action handler for Attack passed in via a prop, OR we assume onAdvancePhase handles it if we pass a special arg? 
+                                Actually, the plan said "Attack" button logic: startTargetingMode('declare-attackers').
+                                BottomControlPanel doesn't directly access `startTargetingMode`. 
+                                We should reuse an existing callback or add a new one?
+                                Slot 1 is already handled. Slot 3 is this one.
+                                Let's assume the parent passes a handler or we rely on the fact that we can call something else.
+                                
+                                Wait, `handleSmartPhaseAdvance` in standard mode triggers 'Attack' when in Main 1.
+                                Here we want a DEDICATED Attack button.
+                                
+                                We need a new prop `onDeclareAttackers` or similar. OR passing strictly `onSelectAll`? No.
+                                Let's add `onDeclareAttackers` to the props destructuring at the top.
+                            */}
+                            <button
+                                onClick={onDeclareAttackers}
+                                className="w-full h-full rounded-lg overflow-hidden shadow-lg border-2 border-red-500/50 bg-slate-800/90 hover:border-red-400 active:scale-95 transition-all"
+                            >
+                                <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
+                                    <ArrowRight className="w-8 h-8 text-red-400" />
+                                    <span className="text-red-400 text-xs font-bold uppercase tracking-wide">Attack</span>
+                                </div>
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex-1 max-w-[140px]"></div>
+                    )
                 )}
 
                 {/* SLOT 4: MORE - Hidden in Targeting Mode */}
@@ -187,7 +258,7 @@ const BottomControlPanel = ({
                 )}
 
             </div>
-        </div>
+        </div >
     );
 };
 

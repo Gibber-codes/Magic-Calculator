@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, Calculator, Percent, TrendingUp, BarChart3 } from 'lucide-react';
+import { X, Calculator, Percent, TrendingUp, BarChart3, PenTool, Zap } from 'lucide-react';
 
-const CalculationMenu = ({ isOpen, onClose }) => {
+const CalculationMenu = ({ isOpen, onClose, onToggleAutoMode, autoMode }) => {
     if (!isOpen) return null;
 
     return (
@@ -42,14 +42,24 @@ const CalculationMenu = ({ isOpen, onClose }) => {
                         </div>
                     </button>
 
-                    <button className="p-4 bg-gray-800 hover:bg-gray-700 rounded-xl flex items-center gap-4 transition-all group border border-gray-700 hover:border-gray-600">
-                        <div className="p-3 bg-orange-900/50 rounded-lg text-orange-400 group-hover:text-orange-300">
-                            <BarChart3 size={24} />
+                    <button
+                        onClick={onToggleAutoMode}
+                        className={`p-4 rounded-xl flex items-center gap-4 transition-all group border border-gray-700 hover:border-gray-600
+                            ${autoMode ? 'bg-indigo-900/40 border-indigo-500/50' : 'bg-gray-800 hover:bg-gray-700'}
+                        `}
+                    >
+                        <div className={`p-3 rounded-lg ${autoMode ? 'bg-indigo-500 text-white' : 'bg-blue-900/50 text-blue-400 group-hover:text-blue-300'}`}>
+                            {autoMode ? <Zap size={24} fill="currentColor" /> : <Zap size={24} />}
                         </div>
-                        <div className="text-left">
-                            <h3 className="font-bold text-gray-200">Mana Curve Analyzer</h3>
-                            <p className="text-xs text-gray-500">Check deck consistency</p>
+                        <div className="text-left flex-1">
+                            <h3 className={`font-bold ${autoMode ? 'text-indigo-300' : 'text-gray-200'}`}>
+                                {autoMode ? 'Automatic Mode Active' : 'Automatic Calculations'}
+                            </h3>
+                            <p className="text-xs text-gray-500">
+                                {autoMode ? 'Calculates phases & triggers automatically' : 'Switch to automatic turn management'}
+                            </p>
                         </div>
+                        {autoMode && <div className="w-3 h-3 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)] animate-pulse" />}
                     </button>
                 </div>
             </div>

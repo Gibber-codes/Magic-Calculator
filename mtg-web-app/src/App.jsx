@@ -100,6 +100,8 @@ const App = () => {
   const [loadingPreset, setLoadingPreset] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showCalculationMenu, setShowCalculationMenu] = useState(false);
+  const [autoMode, setAutoMode] = useState(true); // Auto Calculation Mode State (Default: True)
+  const [hasEndStepActions, setHasEndStepActions] = useState(false); // Track if cleanup is needed
 
   const battlefieldRef = useRef(null);
   const dragRef = useRef({ startX: 0, startY: 0, initialScrollX: 0, initialOffsetY: 0, axis: null, rowType: null });
@@ -166,13 +168,15 @@ const App = () => {
     handleSmartPhaseAdvance,
     handleStartTurn,
     advanceCombatStep,
-    advancePhase
+    advancePhase,
+    handleAutoCalculate
   } = usePhaseHandlers({
     gameState,
     targeting,
     cards,
     setCards,
-    cardPositions
+    cardPositions,
+    setHasEndStepActions
   });
 
   // Timer for delayed targeting
@@ -482,7 +486,7 @@ const App = () => {
 
       {/* Phase Tracker - Floating above Controls */}
       <PhaseTracker
-        isVisible={!!currentPhase || !!passingPhase}
+        isVisible={(!!currentPhase || !!passingPhase) && !autoMode}
         currentPhase={currentPhase}
         currentCombatStep={currentCombatStep}
         passingPhase={passingPhase}
@@ -550,8 +554,10 @@ const App = () => {
           // New Props for Navigation
           currentPhase={currentPhase}
           currentCombatStep={currentCombatStep}
-          onAdvancePhase={handleSmartPhaseAdvance}
-          onEndTurn={endTurn}
+          onEndTurn={() => {
+            endTurn();
+            setHasEndStepActions(false);
+          }}
           stackCount={abilityStack.length}
           // Targeting Mode Props
           isTargetingMode={targetingMode.active}
@@ -567,6 +573,19 @@ const App = () => {
           onRejectStackItem={() => {
             const topItem = abilityStack[abilityStack.length - 1];
             if (topItem) removeFromStack(topItem);
+          }}
+          autoMode={autoMode}
+          onAdvancePhase={autoMode ? handleAutoCalculate : handleSmartPhaseAdvance}
+          hasEndStepActions={hasEndStepActions}
+          onDeclareAttackers={() => {
+            setTargetingMode({
+              active: true,
+              mode: 'multiple',
+              action: 'declare-attackers',
+              sourceId: null,
+              selectedIds: []
+            });
+            logAction("Select creatures to attack, then Confirm.");
           }}
         />
       )}
@@ -590,7 +609,15 @@ const App = () => {
         />
       )}
 
-      <CalculationMenu isOpen={showCalculationMenu} onClose={() => setShowCalculationMenu(false)} />
+      <CalculationMenu
+        isOpen={showCalculationMenu}
+        onClose={() => setShowCalculationMenu(false)}
+        autoMode={autoMode}
+        onToggleAutoMode={() => {
+          setAutoMode(!autoMode);
+          setShowCalculationMenu(false);
+        }}
+      />
 
       <AddCardPanel
         isOpen={activePanel === 'add'}

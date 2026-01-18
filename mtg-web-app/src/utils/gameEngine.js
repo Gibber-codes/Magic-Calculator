@@ -153,6 +153,42 @@ export class GameEngine {
     }
 
     /**
+     * Check if there are any pending triggers for a specific phase (Delayed or Standard)
+     * Non-destructive peek.
+     */
+    checkPendingTriggers(phase) {
+        // 1. Check Delayed Triggers
+        const triggerMap = {
+            beginning: 'beginning_step',
+            combat: 'beginning_of_combat',
+            main: 'main_phase',
+            'Main 2': 'main_phase',
+            end: 'end_step',
+            'End': 'end_step',
+        };
+        const currentTriggerType = triggerMap[phase];
+        if (!currentTriggerType) return false;
+
+        const hasDelayed = this.delayedTriggers.some(dt => dt.phase === currentTriggerType);
+        if (hasDelayed) return true;
+
+        // 2. Check Standard Triggers (Card Abilities)
+        // We reuse the logic from findTriggersForPhase but exit early if found
+        // Optimization: plain for-loop to break early
+        for (const card of this.cards) {
+            if (card.abilities) {
+                for (const ability of card.abilities) {
+                    if (ability.trigger === currentTriggerType) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Process an attack declaration
      * Returns triggers caused by these attackers
      */

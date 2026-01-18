@@ -17,7 +17,8 @@ const usePhaseHandlers = ({
     targeting,
     cards,
     setCards,
-    cardPositions
+    cardPositions,
+    setHasEndStepActions
 }) => {
     // Destructure what we need from gameState
     const {
@@ -184,6 +185,103 @@ const usePhaseHandlers = ({
         }
     }, [baseAdvancePhase, handlePhaseChange]);
 
+    // Automatic Calculations Mode Logic
+    const handleAutoCalculate = useCallback(() => {
+        // Logic:
+        // 1. Untap/Upkeep/Draw (Beginning)
+        // 2. Pre-Combat Main (Main)
+        // 3. Combat Steps (Combat)
+        // 4. Post-Combat Main (Main 2) - STOP HERE based on requirements
+
+        // We can re-use handlePhaseChange to generate triggers for each phase
+        // BUT we need to be careful about state updates (setCards) happening multiple times in one event loop
+        // Ideally, gameEngine should support simulating a full turn sequence
+
+        // SIMPLIFIED APPROACH:
+        // Trigger 'Beginning', 'Main', 'Combat', 'Main 2' sequentially and collect all triggers.
+        // Then push them all to the stack.
+        // Finally set UI phase to 'Main 2'.
+
+        logAction("Running Auto-Calculation...");
+
+        const phasesToRun = ['beginning', 'main', 'combat', 'main 2'];
+        let allTriggers = [];
+
+        // We need to use a temporary copy of cards to simulate the progression through phases
+        // so that later phases see the state changes from earlier ones (e.g. untapping)
+        // However, usePhaseHandlers relies on `baseHandlePhaseChange` which calls engine functions that return triggers.
+        // Those engine functions might assume they are working on the *current* cards.
+
+        // Let's use gameEngineRef directly if possible for cleaner simulation
+        if (!gameState.gameEngineRef.current) return;
+
+        const engine = gameState.gameEngineRef.current;
+        let currentSimulatedCards = [...cards]; // Start with current state
+
+        // 1. Phase: Beginning (Untap is handled inside processPhaseChange('beginning'))
+        // Note: engine.processPhaseChange returns triggers. It might NOT return the *new card state* if it's just checking for triggers.
+        // Actually, looking at usePhaseHandlers, `handlePhaseChange` calls `baseHandlePhaseChange` which calls `engine.processPhaseChange`.
+        // And `handleStartTurn` manually calls `setCards` to clear attacking/etc.
+
+        // Let's replicate `handleStartTurn` cleanup first
+        currentSimulatedCards = currentSimulatedCards.map(c => ({
+            ...c,
+            attacking: false,
+            tapped: false // Untap all (part of Beginning usually, but we do it explicitly here for safety)
+        }));
+
+        phasesToRun.forEach(phase => {
+            // Get triggers for this phase
+            const phaseTriggers = engine.processPhaseChange(phase, true);
+            if (phaseTriggers && phaseTriggers.length > 0) {
+                allTriggers = [...allTriggers, ...phaseTriggers];
+            }
+        });
+
+        // Update global card state (mainly untapping and cleanup)
+        setCards(currentSimulatedCards);
+
+        // Add collected triggers to stack
+        if (allTriggers.length > 0) {
+            // Sort all collected triggers by position (optional, but good for UX)
+            // Reuse the existing sorting logic if we can, or just dump them
+            const sortedTriggers = [...allTriggers].sort((a, b) => {
+                const posA = cardPositions[a.source.id];
+                const posB = cardPositions[b.source.id];
+                if (!posA || !posB) return 0;
+                return posB.x - posA.x; // Right-to-Left priority
+            });
+
+            sortedTriggers.forEach(t => {
+                const description = t.ability?.description || `${t.source.name} triggered`; // Generic fallbacks
+                addToStack(t.source, description, 'at', t);
+            });
+        } else {
+            logAction("Auto-Calc: No triggers found.");
+        }
+
+        // Check if Clean Up is needed (End Step Triggers)
+        const needsCleanup = engine && typeof engine.checkPendingTriggers === 'function'
+            ? engine.checkPendingTriggers('end')
+            : false;
+
+        if (setHasEndStepActions) {
+            setHasEndStepActions(needsCleanup);
+        }
+
+        if (needsCleanup) {
+            // Set final state to 'Main 2' so the "Clean Up" button appears
+            if (gameState.setCurrentPhase) {
+                gameState.setCurrentPhase('Main 2');
+            }
+            logAction("End Step actions detected. Use 'Clean Up' to resolve.");
+        } else {
+            // No cleanup needed? End turn automatically to avoid redundant clicks
+            logAction("No end-step actions. Closing turn.");
+            endTurn();
+        }
+    }, [cards, setCards, addToStack, logAction, gameState, cardPositions, setHasEndStepActions, endTurn]);
+
     return {
         // Phase State
         passingPhase,
@@ -193,7 +291,8 @@ const usePhaseHandlers = ({
         handleSmartPhaseAdvance,
         handleStartTurn,
         advanceCombatStep,
-        advancePhase
+        advancePhase,
+        handleAutoCalculate // Export new handler
     };
 };
 

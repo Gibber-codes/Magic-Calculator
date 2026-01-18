@@ -9,7 +9,6 @@ A Magic: The Gathering battlefield calculator and simulator.
 cd mtg-web-app
 npm install
 npm run dev
-```
 
 #### Tech Stack
 - **Frontend**: React + Vite + TailwindCSS
