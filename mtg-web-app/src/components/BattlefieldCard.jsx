@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Shield } from 'lucide-react';
 import { isLand, isCreature, calculateCardStats, calculateEffectiveTotal, isMinimalDisplayLand, getCardHexColors } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
 import { useIsTouchDevice } from '../hooks/useTouchInteractions';
@@ -41,7 +41,8 @@ const BattlefieldCard = ({
     onActivateAbility,
     onCounterChange,
     onConvertLand,
-    isRelative = false
+    isRelative = false,
+    isPendingOnStack = false
 }) => {
     const stats = calculateCardStats(card, allCards, attachments);
     const colors = getCardHexColors(card.colors);
@@ -198,15 +199,13 @@ const BattlefieldCard = ({
                     x: spawnOffset.x,
                     y: spawnOffset.y,
                     scale: 0.6,
-                    opacity: 0,
-                    rotate: card.spawnRotation || 0
+                    opacity: 0
                 } : false}
                 animate={{
                     x: 0,
                     y: 0,
                     scale: 1,
-                    opacity: (arrivedCount === 0 && (stackCards.length > 0 || card.spawnSourcePos)) ? 0 : (card.tapped && !isSelected ? 0.8 : 1),
-                    rotate: card.tapped ? (card.image_rotation || 90) : 0
+                    opacity: (isPendingOnStack || (card.spawnSourcePos && !landedIds.has(card.id)) || (arrivedCount === 0 && (stackCards.length > 0 || card.spawnSourcePos))) ? 0 : (card.tapped && !isSelected ? 0.8 : 1)
                 }}
                 transition={{
                     type: "spring",
@@ -286,6 +285,13 @@ const BattlefieldCard = ({
                 {card.tapped && !isSelected && (
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
                         <RotateCcw size={32} className="text-white drop-shadow-md opacity-80" />
+                    </div>
+                )}
+
+                {/* Blocked Indicator - Simple Red Shield */}
+                {card.isBlocked && (
+                    <div className="absolute -top-2 -right-2 z-50 bg-red-600/90 rounded-full p-1.5 shadow-lg border border-white/20 animate-in zoom-in duration-200" title="Blocked">
+                        <Shield size={14} className="text-white fill-red-400" />
                     </div>
                 )}
             </motion.div >

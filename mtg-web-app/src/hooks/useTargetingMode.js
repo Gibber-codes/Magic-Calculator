@@ -117,10 +117,12 @@ const useTargetingMode = (gameState) => {
     }, [targetingMode, cards, logAction, setCards, cancelTargeting, gameEngineRef, addToStack]);
 
     const handleMultiSelect = useCallback((card, visibleStacks) => {
-        if (targetingMode.action === 'declare-attackers') {
+        if (targetingMode.action === 'declare-attackers' || targetingMode.action === 'declare-blockers') {
             const isCreature = card.type === 'Creature' || (card.type_line && card.type_line.includes('Creature'));
             if (!isCreature) return;
-            if (card.tapped) return;
+
+            // For attackers, must be untapped. For blockers (selecting attackers), no tap check needed here, managed by eligibility
+            if (targetingMode.action === 'declare-attackers' && card.tapped) return;
 
             // Single card click behavior (toggle 1)
             setTargetingMode(prev => {
@@ -192,25 +194,31 @@ const useTargetingMode = (gameState) => {
             return c;
         }));
 
-        // Process attack triggers
-        if (gameEngineRef.current) {
-            console.log(`[Confirm] Processing attack triggers for:`, attackerIds);
-            const triggers = gameEngineRef.current.processAttackDeclaration(attackerIds);
-            console.log(`[Confirm] Triggers found:`, triggers.length);
+        let hasTriggers = false;
 
-            triggers.forEach(t => {
-                const description = t.ability.description ||
-                    `Whenever ${t.source.name} attacks: ${t.ability.effect}`;
-                addToStack(t.source, description, 'on_attack', t);
-            });
+        // Process attack triggers
+        try {
+            if (gameEngineRef.current) {
+                console.log(`[Confirm] Processing attack triggers for:`, attackerIds);
+                const triggers = gameEngineRef.current.processAttackDeclaration(attackerIds);
+                console.log(`[Confirm] Triggers found:`, triggers.length);
+
+                if (triggers.length > 0) hasTriggers = true;
+
+                triggers.forEach(t => {
+                    const description = t.ability.description ||
+                        `Whenever ${t.source.name} attacks: ${t.ability.effect}`;
+                    addToStack(t.source, description, 'on_attack', t);
+                });
+            }
+        } catch (error) {
+            console.error("[Confirm] Error processing attack triggers:", error);
+            logAction("Error processing attack triggers check console");
         }
 
         logAction(`Declared ${attackers.length} attackers`);
         cancelTargeting();
-
-        // Advance to Main Phase 2 after declaring attackers
-        setCurrentPhase('Main 2');
-        setCurrentCombatStep(null);
+        return hasTriggers;
     }, [cards, targetingMode.selectedIds, saveHistoryState, setCards, gameEngineRef, addToStack, logAction, cancelTargeting, setCurrentPhase, setCurrentCombatStep]);
 
     return {

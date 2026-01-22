@@ -283,13 +283,20 @@ const useCardActions = ({
             saveHistoryState(newCards);
             return;
         } else if (action === 'equip') {
-            setTargetingMode({
-                active: true,
-                sourceId: targetCard.id,
-                action: 'equip',
-                mode: 'single',
-                selectedIds: []
+            const triggerObj = gameEngineRef.current?.resolveEffect({
+                source: targetCard,
+                ability: {
+                    trigger: 'activated',
+                    effect: 'equip',
+                    target: 'creature',
+                    description: `Equip ${targetCard.name}`,
+                    requiresTarget: true
+                }
             });
+
+            if (triggerObj) {
+                addToStack(targetCard, triggerObj.description, 'activated', triggerObj);
+            }
             return;
         } else {
             // Delegate to GameEngine for counter/tap actions
@@ -517,19 +524,25 @@ const useCardActions = ({
 
     // Activate Ability Handler
     const handleActivateAbility = useCallback((card, abilityDef) => {
-        if (abilityDef.requiresTarget) {
-            if (abilityDef.effect === 'equip' || abilityDef.effect === 'attach' || abilityDef.isEquip) {
-                startTargetingMode({
-                    sourceId: card.id,
-                    action: 'activate-ability',
-                    mode: 'single',
-                    data: {
-                        ...abilityDef,
-                        targetType: 'creature'
-                    }
-                });
-                return;
+        if (abilityDef.isEquip || abilityDef.effect === 'equip' || abilityDef.effect === 'attach') {
+            const triggerObj = gameEngineRef.current?.resolveEffect({
+                source: card,
+                ability: {
+                    ...abilityDef,
+                    trigger: 'activated',
+                    requiresTarget: true,
+                    effect: abilityDef.effect || 'equip',
+                    description: abilityDef.description || `Equip ${card.name}`
+                }
+            });
+
+            if (triggerObj) {
+                addToStack(card, triggerObj.description, 'activated', triggerObj);
             }
+            return;
+        }
+
+        if (abilityDef.requiresTarget) {
 
             const triggerObj = gameEngineRef.current?.resolveEffect({
                 source: card,

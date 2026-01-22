@@ -2,7 +2,7 @@
  * MTG Game Engine
  * Handles phase management, triggered abilities, and replacement effects
  */
-import { calculateCardStats } from './cardUtils';
+import { calculateCardStats, getTypeFromTypeLine } from './cardUtils';
 import localCardData from '../data/scryfall_cards.json';
 import { SIGNATURE_DATA } from '../data/signatureCards';
 import { formatBigNumber } from './formatters';
@@ -198,6 +198,76 @@ export class GameEngine {
         return triggers.flatMap(trigger => this.resolveEffect(trigger));
     }
 
+    /**
+     * Find all triggered abilities that match "on_attack" for a set of attackers
+     */
+    findAttackTriggers(attackerIds) {
+        const triggers = [];
+        const attackers = this.cards.filter(c => attackerIds.includes(c.id));
+
+        attackers.forEach(creature => {
+            // 1. Check the creature itself for attack triggers
+            if (creature.abilities) {
+                creature.abilities.forEach(ability => {
+                    if (ability.trigger === 'on_attack') {
+                        triggers.push({
+                            source: creature,
+                            ability: ability
+                        });
+                    }
+                });
+            }
+
+            // 2. Check for "Battle cry" and other keywords that imply attack triggers
+            // (Standard keyword handlers might already be in abilities, but check oracle_text just in case)
+            if (creature.oracle_text?.toLowerCase().includes('battle cry')) {
+                // Check if this is already handled by an explicit ability to avoid duplicates
+                // We check for the functional effect because the parser might have generated it from reminder text
+                // without preserving the "Battle cry" name in the description.
+                const alreadyHasBattleCry = creature.abilities?.some(a =>
+                    a.trigger === 'on_attack' &&
+                    a.effect === 'buff_creature' &&
+                    a.target === 'all_other_attacking_creatures'
+                );
+
+                if (!alreadyHasBattleCry) {
+                    // Battle cry logic: each OTHER attacking creature gets +1/+0
+                    triggers.push({
+                        source: creature,
+                        ability: {
+                            trigger: 'on_attack',
+                            effect: 'buff_creature',
+                            target: 'all_other_attacking_creatures',
+                            amount: 1,
+                            buffType: 'power',
+                            description: 'Battle cry (Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn.)'
+                        }
+                    });
+                }
+            }
+
+            // 3. Check for equipment/auras attached to this creature
+            const attachments = this.cards.filter(c => c.attachedTo === creature.id);
+            attachments.forEach(attachment => {
+                if (attachment.abilities) {
+                    attachment.abilities.forEach(ability => {
+                        if (ability.trigger === 'on_attack') {
+                            triggers.push({
+                                source: attachment,
+                                ability: {
+                                    ...ability,
+                                    sourceCreature: creature // Store which creature triggered it for stat refs (e.g. Ouroboroid-like buffs)
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        });
+
+        return triggers;
+    }
+
 
 
     /**
@@ -216,7 +286,10 @@ export class GameEngine {
                     newTokens.forEach(token => {
                         triggers.push({
                             source: card,
-                            ability: ability,
+                            ability: {
+                                ...ability,
+                                triggerCardId: token.id // Pass the ID of the token that triggered it
+                            },
                         });
                     });
                 }
@@ -351,7 +424,7 @@ export class GameEngine {
                     finalTargets = this.findTargets(ability.target, cards, liveSource);
                 }
 
-                return this.executeEffect(cards, finalTargets || [], { ...ability, sourceId: source.id }, resolveFinal, _recent);
+                return this.executeEffect(cards, finalTargets || [], { ...ability, sourceId: source.id, triggerCardId: ability.triggerCardId }, resolveFinal, _recent);
             }
         };
     }
@@ -434,6 +507,13 @@ export class GameEngine {
 
             case 'this':
                 // "this" is usually handled via source; we return empty here
+                return [];
+
+            case 'trigger_card':
+                if (source && source.triggerCardId) {
+                    const target = pool.find(c => c.id === source.triggerCardId);
+                    return target ? [target] : [];
+                }
                 return [];
 
             case 'all_permanents_you_control':
@@ -1069,6 +1149,7 @@ export class GameEngine {
                     attachedTo: target.id,
                     zone: 'attached',
                     isToken: true,
+                    type: getTypeFromTypeLine(template.type_line || template.type || 'Enchantment'),
                     tapped: false,
                     counters: {},
                     colors: template.colors || ['W'],
@@ -1090,7 +1171,9 @@ export class GameEngine {
                         name: `${t.name} Token`,
                         type: t.type || 'Creature',
                         type_line: t.isToken ? t.type_line : `Token ${t.type_line || 'Creature'}`,
-                        power: t.power, toughness: t.toughness, counters: 0, isToken: true, tapped: false, zone: 'battlefield'
+                        power: t.power, toughness: t.toughness, counters: 0, isToken: true,
+                        type: getTypeFromTypeLine(t.type_line || t.type || 'Creature'),
+                        tapped: false, zone: 'battlefield'
                     };
                 }, value);
 
@@ -1117,7 +1200,8 @@ export class GameEngine {
                     ...related, id: Date.now() + i + Math.random(), isToken: true, tapped: ability.tappedAndAttacking, attacking: ability.tappedAndAttacking, counters: 0, zone: 'battlefield', attachedTo: null,
                     type: related.type_line?.includes('Creature') ? 'Creature' : 'Token'
                 } : {
-                    id: Date.now() + i + Math.random(), name: 'Token', type: 'Creature', type_line: 'Token Creature', power: 1, toughness: 1, colors: [], counters: 0, isToken: true, tapped: ability.tappedAndAttacking, attacking: ability.tappedAndAttacking, zone: 'battlefield'
+                    id: Date.now() + i + Math.random(), name: 'Token', type: 'Creature', type_line: 'Token Creature', power: 1, toughness: 1, colors: [], counters: 0,
+                    isToken: true, type: 'Creature', tapped: ability.tappedAndAttacking, attacking: ability.tappedAndAttacking, zone: 'battlefield'
                 }, value);
 
             case 'create_named_token':
@@ -1133,7 +1217,8 @@ export class GameEngine {
                 return processSequentialTokens((i) => {
                     const w = {
                         ...(warriorData || { name: 'Warrior Token', type_line: 'Token Creature — Warrior', power: 1, toughness: 1, colors: ['R'] }),
-                        id: Date.now() + i + Math.random(), isToken: true, tapped: true, attacking: true, counters: 0, zone: 'battlefield'
+                        id: Date.now() + i + Math.random(), isToken: true, tapped: true, attacking: true, counters: 0, zone: 'battlefield',
+                        type: 'Creature'
                     };
                     warriorIds.push(w.id);
                     return w;

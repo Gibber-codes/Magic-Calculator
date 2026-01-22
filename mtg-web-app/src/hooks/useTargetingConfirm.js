@@ -21,7 +21,8 @@ const useTargetingConfirm = ({
     setTargetingMode,
     startTargetingMode,
     cancelTargeting,
-    handleConfirmAttackers
+    handleConfirmAttackers,
+    advanceCombatStep // New dependency
 }) => {
 
     // Resolve ability that requires targeting
@@ -64,6 +65,12 @@ const useTargetingConfirm = ({
         if (targetingMode.action === 'declare-attackers') {
             const isCreatureCard = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature'));
             return isCreatureCard && !c.tapped;
+        }
+
+        if (targetingMode.action === 'declare-blockers') {
+            const isCreatureCard = c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature'));
+            // Simply select any attacking creature
+            return isCreatureCard && c.attacking;
         }
 
         if (targetingMode.action === 'equip') return c.type === 'Creature';
@@ -123,7 +130,46 @@ const useTargetingConfirm = ({
         if (!targetingMode.active) return;
 
         if (targetingMode.action === 'declare-attackers') {
-            handleConfirmAttackers();
+            const hasTriggers = handleConfirmAttackers();
+            // Only auto-advance if NO triggers were added to the stack.
+            // If triggers exist, user must resolve them first.
+            if (!hasTriggers && advanceCombatStep) {
+                setTimeout(() => advanceCombatStep(), 300);
+            } else if (hasTriggers) {
+                logAction("Resolve triggers before declaring blockers.");
+            }
+        } else if (targetingMode.action === 'declare-blockers') {
+            const blockedIds = targetingMode.selectedIds;
+
+            if (blockedIds.length > 0) {
+                setCards(prev => prev.map(c => {
+                    if (blockedIds.includes(c.id)) {
+                        return { ...c, isBlocked: true };
+                    }
+                    return c;
+                }));
+                logAction(`Marked ${blockedIds.length} attackers as blocked.`);
+            } else {
+                logAction("No attackers marked as blocked.");
+            }
+
+            // Clear targeting
+            cancelTargeting();
+
+            // Auto-advance to Next Step (Combat Damage) - Pass updated cards to prevent stale closure
+            if (advanceCombatStep) setTimeout(() => {
+                let currentCards = cards;
+                if (blockedIds.length > 0) {
+                    currentCards = cards.map(c => {
+                        if (blockedIds.includes(c.id)) {
+                            return { ...c, isBlocked: true };
+                        }
+                        return c;
+                    });
+                }
+                advanceCombatStep(currentCards);
+            }, 150);
+
         } else if (targetingMode.action === 'resolve-trigger') {
             const topAbility = abilityStack[abilityStack.length - 1];
             if (topAbility) {

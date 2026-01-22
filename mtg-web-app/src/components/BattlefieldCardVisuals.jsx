@@ -1,7 +1,8 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import { RotateCcw, Trash2 } from 'lucide-react';
 import { TopBanner, ArtWindow, BottomBanner } from './RedesignedCardFrame';
-import { getCardHexColors } from '../utils/cardUtils';
+import { getCardHexColors, isCreature } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
 
 export const AttachmentBanners = ({ attachments, CARD_WIDTH, onAction, isEligibleAttacker }) => {
@@ -20,8 +21,16 @@ export const AttachmentBanners = ({ attachments, CARD_WIDTH, onAction, isEligibl
             ) : (
                 attachments.map((att) => {
                     const attColors = getCardHexColors(att.colors);
+                    const isNew = !!att.spawnSourcePos; // Hide if currently in flight
+
                     return (
-                        <div key={att.id} className="relative w-full z-10 transition-all duration-300">
+                        <motion.div
+                            key={att.id}
+                            initial={isNew ? { opacity: 0, y: -20 } : false}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={isNew ? { delay: (att.spawnDelay || 0) / 1000 + (att.flightDuration || 700) / 1000, duration: 0.3 } : {}}
+                            className="relative w-full z-10 transition-all duration-300"
+                        >
                             <div
                                 className="flex flex-col items-center cursor-pointer"
                                 onClick={(e) => {
@@ -38,7 +47,7 @@ export const AttachmentBanners = ({ attachments, CARD_WIDTH, onAction, isEligibl
                                     </TopBanner>
                                 </div>
                             </div>
-                        </div>
+                        </motion.div>
                     );
                 })
             )}
@@ -94,7 +103,7 @@ export const CardArt = ({ card, CARD_WIDTH, artHeight, isModified, plusOne, coun
 
 
             {/* Counter Indicators */}
-            {isModified && card.type === 'Creature' && (
+            {isModified && isCreature(card) && (
                 <div className="absolute top-2 left-2 flex flex-col gap-1 items-start z-20">
                     {plusOne > 0 &&
                         <div className="bg-green-600 rounded-lg px-1.5 h-6 flex items-center justify-center shadow-lg border border-green-800">
@@ -134,7 +143,7 @@ export const CardFooter = ({ card, cardType, totalPower, totalToughness, CARD_WI
                         <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>{cardType}</span>
                     </div>
                 </div>
-                {card.type === 'Creature' && (
+                {isCreature(card) && (
                     <div className="text-[10px] font-bold flex gap-0.5 text-white">
                         <span>{formatBigNumber(totalPower)}</span>/<span>{formatBigNumber(totalToughness)}</span>
                     </div>

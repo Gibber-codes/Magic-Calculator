@@ -14,7 +14,9 @@ export const useBattlefieldLayout = ({
     landsScrollX,
     verticalOffsetY,
     windowSize,
-    battlefieldRef
+    battlefieldRef,
+    abilityStack = [],
+    targetingMode = {}
 }) => {
     // Layout Constants (could be moved to constants.js if needed)
     const BOTTOM_BAR_HEIGHT = 0;
@@ -22,8 +24,22 @@ export const useBattlefieldLayout = ({
 
     // 1. Identify cards on the battlefield that are not attached to anything
     const visibleRawCards = useMemo(() => {
-        return cards.filter(c => c.zone === 'battlefield' && !c.attachedTo);
-    }, [cards]);
+        return cards.filter(c => {
+            // Must be on battlefield and not attached
+            if (c.zone !== 'battlefield' || c.attachedTo) return false;
+
+            // EXCLUSION: Hide from layout if it's currently pending on the stack as an equipment
+            const isPendingOnStack =
+                abilityStack.some(a => a.sourceId === c.id && (a.triggerObj?.ability?.effect === 'equip' || a.triggerObj?.ability?.effect === 'attach')) ||
+                (targetingMode.active &&
+                    (targetingMode.action === 'equip' ||
+                        targetingMode.action === 'resolve-trigger' ||
+                        (targetingMode.action === 'activate-ability' && (targetingMode.data?.effect === 'equip' || targetingMode.data?.isEquip))) &&
+                    targetingMode.sourceId === c.id);
+
+            return !isPendingOnStack;
+        });
+    }, [cards, abilityStack, targetingMode]);
 
     // 2. Group identical cards into stacks for the UI
     const visibleStacks = useMemo(() => {

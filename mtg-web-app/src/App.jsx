@@ -36,6 +36,7 @@ import CalculationMenu from './components/CalculationMenu';
 import SelectionMenu from './components/SelectionMenu';
 import BottomControlPanel from './components/BottomControlPanel';
 import MoreOptionsPanel from './components/MoreOptionsPanel';
+import CombatSummaryPanel from './components/CombatSummaryPanel';
 
 import useGameState from './hooks/useGameState';
 import useTargetingMode from './hooks/useTargetingMode';
@@ -158,7 +159,7 @@ const App = () => {
   // --- Layout (from hook) ---
   const { visibleStacks, cardPositions } = useBattlefieldLayout({
     cards, activePanel, showSearchOverlay, creatureScrollX, othersScrollX, landsScrollX,
-    verticalOffsetY, windowSize, battlefieldRef
+    verticalOffsetY, windowSize, battlefieldRef, abilityStack, targetingMode
   });
 
   // --- Phase Handlers (from hook) ---
@@ -219,6 +220,27 @@ const App = () => {
       }
     };
   }, [abilityStack, targetingMode.active]);
+
+  // Effect: Auto-advance from Declare Attackers to Declare Blockers when stack clears
+  useEffect(() => {
+    // Only auto-advance if we are in 'Declare Attackers' AND stack is empty AND we are not currently targeting
+    if (
+      currentPhase === 'Combat' &&
+      currentCombatStep === 'Declare Attackers' &&
+      abilityStack.length === 0 &&
+      !targetingMode.active
+    ) {
+      // Small delay to ensure users see the stack cleared
+      const timer = setTimeout(() => {
+        // Re-check conditions inside timeout to be safe
+        if (currentCombatStep === 'Declare Attackers' && abilityStack.length === 0) {
+          logAction("Attack triggers resolved. Advancing to Blockers.");
+          advanceCombatStep();
+        }
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [currentPhase, currentCombatStep, abilityStack.length, targetingMode.active, advanceCombatStep, logAction]);
 
   // Wrap handleMultiSelect to pass visibleStacks
   const handleMultiSelect = (card) => {
@@ -293,7 +315,10 @@ const App = () => {
     setTargetingMode,
     startTargetingMode,
     cancelTargeting,
-    handleConfirmAttackers
+    startTargetingMode,
+    cancelTargeting,
+    handleConfirmAttackers,
+    advanceCombatStep // Pass advance handler
   });
 
   // --- Render ---
@@ -450,6 +475,18 @@ const App = () => {
                 isSelected: selectedCard?.id === card.id,
                 stackCards: stackCards,
                 attachments: attachments,
+                isPendingOnStack: stackCards.some(c =>
+                  abilityStack.some(a => {
+                    const isSource = a.sourceId === c.id;
+                    const effect = a.triggerObj?.ability?.effect || a.ability?.effect;
+                    return isSource && (effect === 'equip' || effect === 'attach');
+                  })
+                ) || (targetingMode.active &&
+                  (targetingMode.action === 'equip' ||
+                    targetingMode.action === 'resolve-trigger' ||
+                    (targetingMode.action === 'activate-ability' && (targetingMode.data?.effect === 'equip' || targetingMode.data?.isEquip))) &&
+                  stackCards.some(c => c.id === (targetingMode.sourceId || targetingMode.data?.sourceCard?.id || targetingMode.data?.stackAbility?.sourceId))),
+
 
                 // Targeting Props
                 isTargeting: targetingMode.active, // General targeting flag
@@ -513,6 +550,32 @@ const App = () => {
           </div>
         </div>
       )}
+
+      {/* Declare Blockers Title - Floating above Control Panel */}
+      {targetingMode.active && targetingMode.action === 'declare-blockers' && (
+        <div className="fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200" style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}>
+          <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-6 py-3 rounded-lg border border-blue-500/50 shadow-2xl">
+            <ShieldOff className="w-7 h-7 text-blue-500" />
+            <h2 className="text-white font-bold text-2xl">Declare Blockers</h2>
+            {targetingMode.selectedIds && targetingMode.selectedIds.length > 0 ? (
+              <span className="bg-blue-900/40 text-blue-300 text-sm px-3 py-1 rounded-full font-bold">
+                {targetingMode.selectedIds.length} Blocked
+              </span>
+            ) : (
+              <span className="text-gray-400 text-sm italic">
+                Select blocked attackers
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Combat Summary Panel - Shown during Combat Damage step */}
+      <CombatSummaryPanel
+        cards={cards}
+        isVisible={currentCombatStep === 'Combat Damage'}
+        onClose={() => advanceCombatStep()}
+      />
 
       {/* New Bottom Control Panel, Selection Menu, or Attacker Confirmation */}
       {/* Hide controls if Add Panel is open, to let it replace the bottom area */}
@@ -578,6 +641,10 @@ const App = () => {
           onAdvancePhase={autoMode ? handleAutoCalculate : handleSmartPhaseAdvance}
           hasEndStepActions={hasEndStepActions}
           onDeclareAttackers={() => {
+            // SYNC STATE: Ensure we are formally in Combat phase so subsequent steps (Blockers) work
+            setCurrentPhase('Combat');
+            setCurrentCombatStep('Declare Attackers');
+
             setTargetingMode({
               active: true,
               mode: 'multiple',

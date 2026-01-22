@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { calculateCardStats } from '../utils/cardUtils';
+import { playTokenFlight } from '../utils/animations';
 import GameEngine from '../utils/gameEngine';
 
 // --- Constants ---
@@ -50,6 +52,9 @@ const useGameState = () => {
     const [isStackCollapsed, setIsStackCollapsed] = useState(false);
     const resolvingAbilities = useRef(new Set()); // Track abilities currently being resolved
 
+    // --- Animation Queue State ---
+    const [pendingAnimations, setPendingAnimations] = useState([]);
+
     // --- Engine Reference ---
     const gameEngineRef = useRef(null);
 
@@ -57,6 +62,24 @@ const useGameState = () => {
     useEffect(() => {
         gameEngineRef.current = new GameEngine(cards);
     }, []);
+
+    // Process Pending Animations (Deferred to allow layout updates)
+    useLayoutEffect(() => {
+        if (pendingAnimations.length > 0) {
+            // Trigger animations in the next frame to ensure the DOM is fully stable
+            requestAnimationFrame(() => {
+                pendingAnimations.forEach(anim => {
+                    const targetEl = document.getElementById(`card-${anim.targetId}`);
+                    if (targetEl) {
+                        const targetRect = targetEl.getBoundingClientRect();
+                        playTokenFlight(anim.sourceRect, targetRect, anim.card, anim.duration);
+                    }
+                });
+            });
+            // Clear queue immediately
+            setPendingAnimations([]);
+        }
+    }, [pendingAnimations]);
 
     useEffect(() => {
         if (gameEngineRef.current) {
@@ -164,18 +187,29 @@ const useGameState = () => {
         return [];
     }, [logAction, untapAll]);
 
+    // Ref to track latest combat step for callbacks avoids stale closures
+    const currentCombatStepRef = useRef(currentCombatStep);
+    useEffect(() => {
+        currentCombatStepRef.current = currentCombatStep;
+    }, [currentCombatStep]);
+
     const advanceCombatStep = useCallback(() => {
-        const currentIdx = COMBAT_STEPS.indexOf(currentCombatStep);
+        const currentStep = currentCombatStepRef.current;
+        const currentIdx = COMBAT_STEPS.indexOf(currentStep);
+        console.log(`[DEBUG] advanceCombatStep (REF): current=${currentStep}, idx=${currentIdx}`);
+
         if (currentIdx !== -1 && currentIdx < COMBAT_STEPS.length - 1) {
             const nextStep = COMBAT_STEPS[currentIdx + 1];
+            console.log(`[DEBUG] transitioning to ${nextStep}`);
             setCurrentCombatStep(nextStep);
             logAction(`Combat Step: ${nextStep}`);
             return { nextStep, shouldDeclareAttackers: nextStep === 'Declare Attackers' };
         } else {
+            console.log(`[DEBUG] advancing phase`);
             // All combat steps complete, signal to advance phase
             return { shouldAdvancePhase: true };
         }
-    }, [currentCombatStep, logAction]);
+    }, [logAction]);
 
     const advancePhase = useCallback(() => {
         if (!currentPhase) {
@@ -209,6 +243,7 @@ const useGameState = () => {
                 return {
                     ...rest,
                     attacking: false,
+                    isBlocked: false,
                     tempPowerBonus: 0,
                     tempToughnessBonus: 0
                 };
@@ -269,7 +304,7 @@ const useGameState = () => {
             triggerType: detectedType || 'when',
             trigger: triggerObj?.trigger, // Store the actual trigger type (e.g., 'deferred_token_creation')
             triggerObj: triggerObj,
-            requiresTarget: triggerObj?.requiresTarget || false,
+            requiresTarget: triggerObj?.requiresTarget || triggerObj?.ability?.requiresTarget || false,
             ability: triggerObj?.ability,
             target: triggerObj?.ability?.target,
             // Only use tokenTemplate art for deferred_token_creation, not for the parent trigger
@@ -307,10 +342,11 @@ const useGameState = () => {
         // Skip check if manualTargets are provided (implies targeting done or not needed)
         if (!manualTargets) {
             // 1. New Explicit Logic
-            if (ability.requiresTarget) {
+            if (ability.requiresTarget || ability.ability?.effect === 'equip' || ability.triggerObj?.ability?.effect === 'equip') {
                 // Check if valid targets exist
                 const source = recentCards.find(c => c.id === ability.sourceId) || { id: ability.sourceId };
-                const validTargets = gameEngineRef.current ? gameEngineRef.current.findTargets(ability.target, recentCards, source) : [];
+                const targetSpec = ability.target || ability.ability?.target || ability.triggerObj?.ability?.target || 'creature';
+                const validTargets = gameEngineRef.current ? gameEngineRef.current.findTargets(targetSpec, recentCards, source) : [];
 
                 if (validTargets.length === 0) {
                     logAction(`Ability fizzled: No valid targets for ${ability.sourceName}`);
@@ -471,46 +507,68 @@ const useGameState = () => {
                     const newCards = finalCards.filter(c => !baseIds.has(c.id));
                     const newCardsCount = newCards.length;
 
+                    // Detect Equipment being attached to something new
+                    const attachedEquipment = finalCards.filter(c => {
+                        const oldCard = cards.find(oc => oc.id === c.id);
+                        return c.attachedTo && oldCard && oldCard.attachedTo !== c.attachedTo;
+                    });
+
                     // DYNAMIC ANIMATION CONFIG:
                     const VISUAL_CAP = 50;
-                    const TIME_CAP = newCardsCount > 20 ? 1500 : 2500; // Aggressive time caps
+                    const TIME_CAP = (newCardsCount + attachedEquipment.length) > 20 ? 1500 : 2500;
 
                     const visualStep = Math.max(1, Math.floor(newCardsCount / VISUAL_CAP));
-                    const staggerDelay = Math.min(newCardsCount > 8 ? 40 : 100, TIME_CAP / Math.max(1, newCardsCount));
+                    const staggerDelay = Math.min(newCardsCount > 8 ? 40 : 100, TIME_CAP / Math.max(1, newCardsCount + attachedEquipment.length));
 
                     // Tiered flight duration based on quantity
                     let dynamicDuration = 700;
-                    if (newCardsCount >= 8) dynamicDuration = 250;     // Rapid fire
-                    else if (newCardsCount >= 4) dynamicDuration = 500; // Fast
-                    else dynamicDuration = 700;                         // Standard
+                    if (newCardsCount >= 8) dynamicDuration = 250;
+                    else if (newCardsCount >= 4) dynamicDuration = 500;
+                    else dynamicDuration = 700;
 
                     let staggerIndex = 0;
                     finalCards = finalCards.map(c => {
                         const isExisting = baseIds.has(c.id);
+                        const isEquipping = attachedEquipment.some(ae => ae.id === c.id);
 
-                        // CLEANUP: Strip animation tags from EXISTING cards
-                        if (isExisting && (c.spawnSourcePos || c.spawnDelay)) {
+                        // CLEANUP: Strip animation tags from EXISTING cards (unless they are currently equipping)
+                        if (isExisting && !isEquipping && (c.spawnSourcePos || c.spawnDelay)) {
                             const { spawnSourcePos, spawnDelay, isNewToken, flightDuration, ...rest } = c;
                             return rest;
                         }
 
-                        if (!isExisting) {
+                        if (!isExisting || isEquipping) {
                             const currentIndex = staggerIndex++;
                             const isWithinVisualCap = (currentIndex % visualStep === 0) && (currentIndex / visualStep < VISUAL_CAP);
+
+                            // Queue manual flight animation for existing equipment
+                            if (isEquipping && isWithinVisualCap) {
+                                setPendingAnimations(prev => [...prev, {
+                                    sourceRect: {
+                                        left: effectiveSpawnPos.x,
+                                        top: effectiveSpawnPos.y,
+                                        width: 140,
+                                        height: 100
+                                    },
+                                    card: c,
+                                    duration: dynamicDuration,
+                                    targetId: c.attachedTo
+                                }]);
+                            }
 
                             return {
                                 ...c,
                                 spawnSourcePos: isWithinVisualCap ? effectiveSpawnPos : null,
                                 spawnDelay: currentIndex * staggerDelay,
                                 flightDuration: dynamicDuration,
-                                isNewToken: true
+                                isNewToken: !isExisting
                             };
                         }
                         return c;
                     });
 
                     if (newCardsCount > VISUAL_CAP) {
-                        console.log(`[MegaSwarm] Distributed ${VISUAL_CAP} flights across ${newCardsCount} cards. Stagger: ${staggerDelay.toFixed(1)}ms`);
+                        // console.log(`[MegaSwarm] Distributed ${VISUAL_CAP} flights across ${newCardsCount} cards. Stagger: ${staggerDelay.toFixed(1)}ms`);
                     }
                 }
 

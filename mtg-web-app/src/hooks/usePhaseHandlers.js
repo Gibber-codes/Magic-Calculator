@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { calculateUnblockedDamage } from '../utils/combatUtils';
 
 /**
  * Hook for phase-related game handlers
@@ -29,7 +30,8 @@ const usePhaseHandlers = ({
         handlePhaseChange: baseHandlePhaseChange,
         advanceCombatStep: baseAdvanceCombatStep,
         advancePhase: baseAdvancePhase,
-        endTurn
+        endTurn,
+        setCurrentCombatStep // Destructure this to enable manual updates
     } = gameState;
 
     // Destructure targeting
@@ -90,6 +92,8 @@ const usePhaseHandlers = ({
             handlePhaseChange('Combat');
         } else if (currentPhase === 'Combat') {
             if (!targetingMode.active) {
+                // Manually starting declaration
+                gameState.setCurrentCombatStep('Declare Attackers');
                 setTargetingMode({
                     active: true,
                     mode: 'multiple',
@@ -158,8 +162,11 @@ const usePhaseHandlers = ({
     }, [abilityStack.length, startPhasePassAnimation]);
 
     // Wrap advanceCombatStep
-    const advanceCombatStep = useCallback(() => {
+    const advanceCombatStep = useCallback((cardsOverride) => {
         const result = baseAdvanceCombatStep();
+        const currentCards = cardsOverride || cards;
+        console.log(`[DEBUG] usePhaseHandlers advanceCombatStep result:`, result);
+
         if (result.shouldDeclareAttackers) {
             setTargetingMode({
                 active: true,
@@ -169,13 +176,30 @@ const usePhaseHandlers = ({
                 selectedIds: []
             });
             logAction("Select creatures to attack, then Confirm.");
+        } else if (result.nextStep === 'Declare Blockers') {
+            console.log(`[DEBUG] entering Declare Blockers`);
+            setCurrentCombatStep('Declare Blockers'); // Validate this update
+            setTargetingMode({
+                active: true,
+                mode: 'multiple',
+                action: 'declare-blockers',
+                sourceId: null,
+                selectedIds: []
+            });
+            logAction("Select attacking creatures to mark as blocked.");
+        } else if (result.nextStep === 'Combat Damage') {
+            // New logic: Calculate and log unblocked damage
+            const damage = calculateUnblockedDamage(currentCards);
+
+            logAction(`Combat Damage: Dealing ${damage} damage to opponent.`);
+            setCurrentCombatStep('Combat Damage');
         } else if (result.shouldAdvancePhase) {
             const nextPhase = baseAdvancePhase();
             if (nextPhase) {
                 handlePhaseChange(nextPhase);
             }
         }
-    }, [baseAdvanceCombatStep, baseAdvancePhase, setTargetingMode, logAction, handlePhaseChange]);
+    }, [baseAdvanceCombatStep, baseAdvancePhase, setTargetingMode, logAction, handlePhaseChange, cards, setCurrentCombatStep]);
 
     // Wrap advancePhase
     const advancePhase = useCallback(() => {

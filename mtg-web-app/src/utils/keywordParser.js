@@ -139,6 +139,18 @@ export const EFFECT_PATTERNS = [
         },
         target: 'target_creature'
     },
+    // Add counters to "that token / that creature" (Wildwood Mentor second effect)
+    {
+        pattern: /put (a|one|two|three|X) \+1\/\+1 counters? on (?:that creature|that token)/i,
+        effect: 'add_counters',
+        parseAmount: (match) => {
+            const val = (match[1] || 'a').toLowerCase();
+            const map = { 'a': 1, 'one': 1, 'two': 2, 'three': 3 };
+            if (val === 'x') return 'this.power';
+            return map[val] || parseInt(val) || 1;
+        },
+        target: 'trigger_card'
+    },
     // Double counters on self (Mossborn Hydra)
     {
         pattern: /double the number of \+1\/\+1 counters on this creature/i,
@@ -418,7 +430,8 @@ export function extractTriggers(oracleText) {
                 triggers.push({
                     ...triggerData,
                     effects: effects.length > 0 ? effects : [{ effect: 'unknown' }],
-                    original: sentence
+                    original: sentence,
+                    description: sentence // Ensure full sentence is preserved for multi-effects
                 });
 
                 // Stop checking patterns for this sentence once we found a match
@@ -449,36 +462,48 @@ export function extractEffects(oracleText) {
     if (!oracleText) return [];
 
     const effects = [];
+    const ranges = []; // Track ranges of found matches to prevent overlap
 
     for (const { pattern, parseAmount, parseName, parseProperties, parseTarget, parseTokenName, parseTappedAndAttacking, parseBuffType, parseToughnessAmount, ...effectData } of EFFECT_PATTERNS) {
         const match = oracleText.match(pattern);
         if (match) {
-            const effect = { ...effectData };
-            if (parseAmount) {
-                effect.amount = parseAmount(match);
+            const start = match.index;
+            const end = start + match[0].length;
+
+            // Check for overlap with existing matches
+            const isOverlapping = ranges.some(r =>
+                (start < r.end) && (r.start < end) // Standard intersection check
+            );
+
+            if (!isOverlapping) {
+                const effect = { ...effectData };
+                if (parseAmount) {
+                    effect.amount = parseAmount(match);
+                }
+                if (parseToughnessAmount) {
+                    effect.toughnessAmount = parseToughnessAmount(match);
+                }
+                if (parseBuffType) {
+                    effect.buffType = parseBuffType(match);
+                }
+                if (parseName) {
+                    effect.tokenName = parseName(match);
+                }
+                if (parseProperties) {
+                    effect.tokenProps = parseProperties(match);
+                }
+                if (parseTarget) {
+                    effect.target = parseTarget(match);
+                }
+                if (parseTokenName) {
+                    effect.tokenName = parseTokenName(match);
+                }
+                if (parseTappedAndAttacking) {
+                    effect.tappedAndAttacking = parseTappedAndAttacking(match);
+                }
+                effects.push(effect);
+                ranges.push({ start, end });
             }
-            if (parseToughnessAmount) {
-                effect.toughnessAmount = parseToughnessAmount(match);
-            }
-            if (parseBuffType) {
-                effect.buffType = parseBuffType(match);
-            }
-            if (parseName) {
-                effect.tokenName = parseName(match);
-            }
-            if (parseProperties) {
-                effect.tokenProps = parseProperties(match);
-            }
-            if (parseTarget) {
-                effect.target = parseTarget(match);
-            }
-            if (parseTokenName) {
-                effect.tokenName = parseTokenName(match);
-            }
-            if (parseTappedAndAttacking) {
-                effect.tappedAndAttacking = parseTappedAndAttacking(match);
-            }
-            effects.push(effect);
         }
     }
 
@@ -632,10 +657,50 @@ export function getCardAbilities(card) {
         };
 
         if (t.trigger === 'on_enter_or_attack') {
-            triggeredAbilities.push({ ...baseAbility, trigger: 'on_enter_battlefield' });
-            triggeredAbilities.push({ ...baseAbility, trigger: 'on_attack' });
+            t.effects.forEach(e => {
+                triggeredAbilities.push({
+                    ...baseAbility,
+                    trigger: 'on_enter_battlefield',
+                    effect: e.effect,
+                    target: e.target,
+                    amount: e.amount,
+                    tokenName: e.tokenName,
+                    tokenProps: e.tokenProps,
+                    tappedAndAttacking: e.tappedAndAttacking,
+                    buffType: e.buffType,
+                    delayedEffect: e.delayedEffect,
+                    description: t.description || e.effect
+                });
+                triggeredAbilities.push({
+                    ...baseAbility,
+                    trigger: 'on_attack',
+                    effect: e.effect,
+                    target: e.target,
+                    amount: e.amount,
+                    tokenName: e.tokenName,
+                    tokenProps: e.tokenProps,
+                    tappedAndAttacking: e.tappedAndAttacking,
+                    buffType: e.buffType,
+                    delayedEffect: e.delayedEffect,
+                    description: t.description || e.effect
+                });
+            });
         } else {
-            triggeredAbilities.push({ ...baseAbility, trigger: t.trigger });
+            t.effects.forEach(e => {
+                triggeredAbilities.push({
+                    ...baseAbility,
+                    trigger: t.trigger,
+                    effect: e.effect,
+                    target: e.target,
+                    amount: e.amount,
+                    tokenName: e.tokenName,
+                    tokenProps: e.tokenProps,
+                    tappedAndAttacking: e.tappedAndAttacking,
+                    buffType: e.buffType,
+                    delayedEffect: e.delayedEffect,
+                    description: t.description || e.effect
+                });
+            });
         }
     });
 

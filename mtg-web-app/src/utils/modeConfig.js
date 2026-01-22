@@ -1,4 +1,4 @@
-import { Sword, Link, Zap, Trash2 } from 'lucide-react';
+import { Sword, Link, Zap, Trash2, ShieldOff } from 'lucide-react';
 
 /**
  * Get mode-specific labels and styling for targeting overlays
@@ -13,6 +13,13 @@ export const getModeConfig = (mode) => {
             confirmLabel: 'Confirm Attacks',
             color: 'red',
             showSelectAll: true
+        },
+        'declare-blockers': {
+            title: 'Declare Blockers',
+            icon: ShieldOff,
+            confirmLabel: 'Confirm Blockers',
+            color: 'blue',
+            showSelectAll: false
         },
         'equip': {
             title: 'Choose Target',
