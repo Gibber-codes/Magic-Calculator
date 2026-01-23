@@ -16,30 +16,16 @@ export const calculateUnblockedDamage = (cards) => {
         c.zone === 'battlefield' // Ensure they are still on the battlefield
     );
 
-    let totalDamage = 0;
+    // Use BigInt for calculation to avoid precision loss with astronomical numbers
+    let totalDamageBig = 0n;
 
     unblockedAttackers.forEach(attacker => {
-        // Calculate effective stats (including buffs, counters, etc.)
         const stats = calculateCardStats(attacker, cards);
-
-        // Handle stacks (if multiple of the same token are attacking as a stack)
-        // Note: Currently, 'attacking' is a property on individual card objects. 
-        // If the stack logic is purely visual, individual cards have the state. 
-        // If a stack object has 'attacking', we'd need to multiply by count.
-        // Based on current architecture, usually individual tokens are flattened for state actions like attacking.
-        // However, let's allow for the possibility of stack-based keys if that ever changes.
-        // For now, consistent with useGameState, we assume flattened cards for combat or robust objects.
-
-        const count = attacker.isVirtualStack ? BigInt(attacker.tokenCount || 1n) : 1n;
+        const count = attacker.isVirtualStack ? BigInt(attacker.virtualStackSize || 0n) : 1n;
         const damage = BigInt(Math.max(0, stats.power));
 
-        // Use BigInt for calculation then convert safely for display/return
-        // Capping at safe integer for UI display purposes as 'number' type is requested
-        const totalForCard = damage * count;
-
-        // Accumulate (convert to number for simple return, assuming damage won't exceed Number.MAX_SAFE_INTEGER in typical usage)
-        totalDamage += Number(totalForCard);
+        totalDamageBig += damage * count;
     });
 
-    return totalDamage;
+    return totalDamageBig;
 };

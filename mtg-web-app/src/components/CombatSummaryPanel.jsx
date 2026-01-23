@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sword, Zap, X } from 'lucide-react';
 import { calculateCardStats } from '../utils/cardUtils';
+import { formatBigNumber } from '../utils/formatters';
 
 /**
  * Combat Summary Panel
@@ -16,19 +17,32 @@ const CombatSummaryPanel = ({ cards, isVisible, onClose }) => {
         c.zone === 'battlefield'
     );
 
-    // Calculate damage for each attacker
-    const attackerDetails = unblockedAttackers.map(attacker => {
+    // Calculate damage for each attacker and group by name + power
+    const groupedAttackers = unblockedAttackers.reduce((acc, attacker) => {
         const stats = calculateCardStats(attacker, cards);
-        return {
-            id: attacker.id,
-            name: attacker.name,
-            power: Math.max(0, stats.power),
-            art: attacker.art_crop || attacker.image_normal
-        };
-    });
+        const power = Math.max(0, stats.power);
+        const count = attacker.isVirtualStack ? BigInt(attacker.virtualStackSize || 0n) : 1n;
+        const key = `${attacker.name}-${power}`;
 
-    // Total damage
-    const totalDamage = attackerDetails.reduce((sum, a) => sum + a.power, 0);
+        if (!acc[key]) {
+            acc[key] = {
+                name: attacker.name,
+                power: power,
+                count: 0n,
+                totalPower: 0n,
+                art: attacker.art_crop || attacker.image_normal
+            };
+        }
+        acc[key].count += count;
+        acc[key].totalPower += BigInt(power) * count;
+        return acc;
+    }, {});
+
+    const attackerDetails = Object.values(groupedAttackers);
+
+    // Total damage (using BigInt for max precision)
+    const totalDamageBig = attackerDetails.reduce((sum, a) => sum + a.totalPower, 0n);
+    const totalDamage = formatBigNumber(totalDamageBig);
 
     return (
         <div
@@ -60,9 +74,9 @@ const CombatSummaryPanel = ({ cards, isVisible, onClose }) => {
                         </p>
                     ) : (
                         <ul className="space-y-2">
-                            {attackerDetails.map(attacker => (
+                            {attackerDetails.map((attacker, idx) => (
                                 <li
-                                    key={attacker.id}
+                                    key={`${attacker.name}-${attacker.power}-${idx}`}
                                     className="flex items-center justify-between text-sm"
                                 >
                                     <div className="flex items-center gap-2">
@@ -73,12 +87,14 @@ const CombatSummaryPanel = ({ cards, isVisible, onClose }) => {
                                                 className="w-8 h-8 rounded object-cover border border-slate-600"
                                             />
                                         )}
-                                        <span className="text-gray-200 truncate max-w-[180px]">
-                                            {attacker.name}
-                                        </span>
+                                        <div className="flex flex-col justify-center">
+                                            <span className="text-sm font-medium text-gray-200">
+                                                {formatBigNumber(attacker.count)} × {attacker.power}
+                                            </span>
+                                        </div>
                                     </div>
                                     <span className="text-red-400 font-bold">
-                                        {attacker.power}
+                                        {formatBigNumber(attacker.totalPower)}
                                     </span>
                                 </li>
                             ))}

@@ -124,14 +124,15 @@ const useTargetingMode = (gameState) => {
             // For attackers, must be untapped. For blockers (selecting attackers), no tap check needed here, managed by eligibility
             if (targetingMode.action === 'declare-attackers' && card.tapped) return;
 
-            // Single card click behavior (toggle 1)
+            // Single card click behavior (toggle the entire stack)
+            const stack = visibleStacks?.find(s => s.cards.some(c => c.id === card.id));
+            const stackIds = stack ? stack.cards.map(c => c.id) : [card.id];
+
             setTargetingMode(prev => {
-                const exists = prev.selectedIds.includes(card.id);
-                // If it's part of a stack, we might want to smarter toggle?
-                // For now, simple toggle of the specific card clicked (leader)
-                const newIds = exists
-                    ? prev.selectedIds.filter(id => id !== card.id)
-                    : [...prev.selectedIds, card.id];
+                const someExist = stackIds.some(id => prev.selectedIds.includes(id));
+                const newIds = someExist
+                    ? prev.selectedIds.filter(id => !stackIds.includes(id))
+                    : [...prev.selectedIds, ...stackIds];
                 return { ...prev, selectedIds: newIds };
             });
         }

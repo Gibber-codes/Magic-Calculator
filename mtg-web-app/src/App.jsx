@@ -544,7 +544,7 @@ const App = () => {
             <h2 className="text-white font-bold text-2xl">Declare Attackers</h2>
             {targetingMode.selectedIds && targetingMode.selectedIds.length > 0 && (
               <span className="bg-red-900/40 text-red-400 text-sm px-3 py-1 rounded-full font-bold">
-                {targetingMode.selectedIds.length} Selected
+                {formatBigNumber(calculateEffectiveTotal(cards.filter(c => targetingMode.selectedIds.includes(c.id))))} Selected
               </span>
             )}
           </div>
@@ -559,7 +559,7 @@ const App = () => {
             <h2 className="text-white font-bold text-2xl">Declare Blockers</h2>
             {targetingMode.selectedIds && targetingMode.selectedIds.length > 0 ? (
               <span className="bg-blue-900/40 text-blue-300 text-sm px-3 py-1 rounded-full font-bold">
-                {targetingMode.selectedIds.length} Blocked
+                {formatBigNumber(calculateEffectiveTotal(cards.filter(c => targetingMode.selectedIds.includes(c.id))))} Blocked
               </span>
             ) : (
               <span className="text-gray-400 text-sm italic">
@@ -626,9 +626,10 @@ const App = () => {
           isTargetingMode={targetingMode.active}
           onCancelTargeting={cancelTargeting}
           onConfirmTargeting={handleConfirmTargetingAction}
+          targetingMode={targetingMode}
           confirmLabel={getModeConfig(targetingMode.action).confirmLabel}
           showSelectAll={getModeConfig(targetingMode.action).showSelectAll}
-          isConfirmDisabled={targetingMode.selectedIds.length === 0}
+          isConfirmDisabled={targetingMode.selectedIds.length === 0 && !['declare-attackers', 'declare-blockers'].includes(targetingMode.action)}
           onResolveStackItem={() => {
             const topItem = abilityStack[abilityStack.length - 1];
             if (topItem) handleResolveWithTargeting(topItem);

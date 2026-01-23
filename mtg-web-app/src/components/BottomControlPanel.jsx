@@ -22,7 +22,8 @@ const BottomControlPanel = ({
     onDeclareAttackers, // New Prop
     isTargetingMode = false,
     onCancelTargeting,
-    hasEndStepActions = false // New Prop
+    hasEndStepActions = false, // New Prop
+    targetingMode = {} // Added targetingMode state
 }) => {
     return (
         <div className="px-3 py-3 w-full animate-in slide-in-from-bottom duration-300" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
@@ -42,7 +43,9 @@ const BottomControlPanel = ({
                         <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
                             <CheckCircle className={`w-8 h-8 ${!isConfirmDisabled ? 'text-purple-400' : 'text-gray-500'}`} />
                             <span className={`text-xs font-bold uppercase tracking-wide ${!isConfirmDisabled ? 'text-purple-400' : 'text-gray-500'}`}>
-                                {confirmLabel}
+                                {isTargetingMode && (targetingMode.action === 'declare-attackers' || targetingMode.action === 'declare-blockers') && targetingMode.selectedIds.length === 0
+                                    ? (targetingMode.action === 'declare-attackers' ? 'No Attackers' : 'No Blockers')
+                                    : confirmLabel}
                             </span>
                         </div>
                     </button>

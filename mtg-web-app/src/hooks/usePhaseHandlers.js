@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { calculateUnblockedDamage } from '../utils/combatUtils';
+import { formatBigNumber } from '../utils/formatters';
 
 /**
  * Hook for phase-related game handlers
@@ -191,7 +192,7 @@ const usePhaseHandlers = ({
             // New logic: Calculate and log unblocked damage
             const damage = calculateUnblockedDamage(currentCards);
 
-            logAction(`Combat Damage: Dealing ${damage} damage to opponent.`);
+            logAction(`Combat Damage: Dealing ${formatBigNumber(damage)} damage to opponent.`);
             setCurrentCombatStep('Combat Damage');
         } else if (result.shouldAdvancePhase) {
             const nextPhase = baseAdvancePhase();
