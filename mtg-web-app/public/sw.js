@@ -35,9 +35,15 @@ self.addEventListener('fetch', (event) => {
     // Skip non-GET requests
     if (event.request.method !== 'GET') return;
 
-    // For API calls (Scryfall), always use network
+    // For API calls (Scryfall), always use network (with basic fallback)
     if (event.request.url.includes('api.scryfall.com')) {
-        event.respondWith(fetch(event.request));
+        event.respondWith(
+            fetch(event.request).catch(() => {
+                return new Response(JSON.stringify({ error: 'Network Error' }), {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            })
+        );
         return;
     }
 
@@ -45,12 +51,29 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(event.request)
             .then((response) => {
+                // Check if response is valid
+                if (!response || response.status !== 200 || response.type !== 'basic') {
+                    return response;
+                }
+
                 // Clone and cache the response
                 const responseClone = response.clone();
                 caches.open(CACHE_NAME)
                     .then((cache) => cache.put(event.request, responseClone));
                 return response;
             })
-            .catch(() => caches.match(event.request))
+            .catch(async () => {
+                const cachedResponse = await caches.match(event.request);
+                if (cachedResponse) return cachedResponse;
+
+                // SPA Fallback: Return index.html for navigation requests
+                if (event.request.mode === 'navigate') {
+                    const indexCache = await caches.match('/index.html');
+                    return indexCache || fetch('/index.html'); // Try fetch if not in cache (dev mode resilience)
+                }
+
+                // Return 404 instead of failing the promise causing "Failed to convert value to 'Response'"
+                return new Response('Not found', { status: 404, statusText: 'Not Found' });
+            })
     );
 });

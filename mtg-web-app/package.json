@@ -12,16 +12,22 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "framer-motion": "^12.25.0",
+    "fuse.js": "^7.1.0",
     "lucide-react": "^0.555.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-horizontal-scrolling-menu": "^8.2.0",
-    "tailwind-merge": "^3.4.0"
+    "react-hot-toast": "^2.6.0",
+    "react-router-dom": "^7.13.0",
+    "react-webcam": "^7.2.0",
+    "tailwind-merge": "^3.4.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-basic-ssl": "^2.1.4",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.22",
     "eslint": "^9.39.1",

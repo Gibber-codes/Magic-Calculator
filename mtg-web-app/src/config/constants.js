@@ -1,5 +1,11 @@
 import { RotateCcw, Zap, Sword, History } from 'lucide-react';
 
+export const APP_VERSION = '1.0.0';
+
+// AdSense Configuration
+export const ADSENSE_CLIENT_ID = 'ca-pub-XXXXXXXXXX'; // Replace with actual ID
+export const ADSENSE_SLOT_ID = 'YYYYYYYY'; // Replace with actual Slot ID
+
 // Layout Constants
 export const CARD_WIDTH = 140;
 export const CARD_HEIGHT = 200;

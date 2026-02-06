@@ -2,6 +2,8 @@ import { useCallback } from 'react';
 import { parseOracleText, extractEffects } from '../utils/keywordParser';
 import { createBattlefieldCard, isPlaceholderLand, BASIC_LAND_COLORS } from '../utils/cardUtils';
 import { getScryfallCard, formatScryfallCard, fetchRelatedTokens } from '../utils/scryfallService';
+import { trackCardUsage, checkAutoSaveCandidate } from '../utils/favorites';
+import { toast } from 'react-hot-toast';
 import { SIGNATURE_DATA } from '../data/signatureCards';
 import { PRESETS } from '../config/presets';
 import cardData from '../data/scryfall_cards.json';
@@ -388,6 +390,19 @@ const useCardActions = ({
                 const newCard = createBattlefieldCard(def, {}, { cards: currentCards, gameEngineRef });
                 currentCards = [...currentCards, newCard];
                 addedCards.push(newCard);
+
+                // Auto-Save Logic (Favorites)
+                try {
+                    const stableId = def.id || def.oracle_id || def.name;
+                    trackCardUsage(stableId);
+                    const wasAutoSaved = checkAutoSaveCandidate({ ...def, id: stableId });
+
+                    if (wasAutoSaved) {
+                        toast.success(`${def.name} added to Favorites`, { icon: '♥', duration: 4000 });
+                    }
+                } catch (e) {
+                    console.warn("Auto-save check failed", e);
+                }
 
                 if (gameEngineRef.current) {
                     gameEngineRef.current.updateBattlefield(currentCards);
