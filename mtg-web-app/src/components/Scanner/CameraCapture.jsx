@@ -147,14 +147,19 @@ export default function CameraCapture({ onCapture }) {
                     className="w-full h-full object-cover"
                 />
 
-                {/* Guide Overlay */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="border-2 border-white border-dashed rounded-lg w-4/5 h-1/3 
-                          flex items-center justify-center shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                        <p className="text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded">
-                            Frame card names clearly
+                {/* Simple Alignment Guide */}
+                <div className="absolute inset-0 pointer-events-none flex flex-col items-center">
+                    {/* Centered OCR guide: Matches ocrEngine.js y: 0.40, height: 0.20 */}
+                    <div className="absolute top-[50%] w-full flex flex-col items-center">
+                        <div className="w-full border-b-2 border-yellow-400 border-dotted opacity-60" />
+                        <p className="mt-1 text-yellow-400 text-[10px] font-bold uppercase tracking-widest opacity-80">
+                            Align Card Name Here
                         </p>
                     </div>
+
+                    <p className="absolute bottom-10 text-white/40 text-xs text-center px-4">
+                        Center the card name on the line for best scan
+                    </p>
                 </div>
             </div>
 

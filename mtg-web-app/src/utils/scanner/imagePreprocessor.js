@@ -13,33 +13,31 @@ export async function preprocessImage(imageDataUrl) {
             canvas.width = img.width;
             canvas.height = img.height;
 
-            // Draw original image
             ctx.drawImage(img, 0, 0);
 
-            // Get image data
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
 
-            // Convert to grayscale + increase contrast
+            // Grayscale + Simple Sharpen
             for (let i = 0; i < data.length; i += 4) {
-                // Grayscale conversion
                 const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-
-                // Contrast enhancement (make text pop)
-                const contrast = 1.5;
-                const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-                const enhanced = factor * (gray - 128) + 128;
-
-                data[i] = enhanced;     // R
-                data[i + 1] = enhanced; // G
-                data[i + 2] = enhanced; // B
-                // Alpha channel (i+3) unchanged
+                data[i] = gray;
+                data[i + 1] = gray;
+                data[i + 2] = gray;
             }
 
-            // Put processed image back
-            ctx.putImageData(imageData, 0, 0);
+            // Simple Sharpening placeholder (Tesseract does better with sharpened edges)
+            // We'll just increase contrast slightly for now as JS sharpening is heavy
+            const contrast = 20;
+            const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+            for (let i = 0; i < data.length; i += 4) {
+                data[i] = Math.max(0, Math.min(255, factor * (data[i] - 128) + 128));
+                data[i + 1] = data[i];
+                data[i + 2] = data[i];
+            }
 
-            resolve(canvas.toDataURL('image/jpeg', 0.95));
+            ctx.putImageData(imageData, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
         };
         img.src = imageDataUrl;
     });

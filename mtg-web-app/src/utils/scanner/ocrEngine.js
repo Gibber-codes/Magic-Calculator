@@ -1,5 +1,5 @@
 import { createWorker } from 'tesseract.js';
-import { preprocessImage } from './imagePreprocessor';
+import { preprocessImage, cropImage } from './imagePreprocessor';
 
 let worker = null;
 
@@ -18,8 +18,8 @@ async function getWorker() {
 
         // Configure for MTG card names
         await worker.setParameters({
-            tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz,'-. ",
-            tessedit_pageseg_mode: '11', // Sparse text
+            tessedit_pageseg_mode: '3', // Fully automatic page segmentation
+            tessjs_create_osd: '1',
         });
     }
     return worker;
@@ -28,25 +28,74 @@ async function getWorker() {
 /**
  * Process image and extract text
  * @param {string} imageDataUrl - Base64 image
- * @returns {Promise<string>} - Extracted text
+ * @returns {Promise<Object>} - Extracted text and debug info
  */
 export async function processImage(imageDataUrl) {
     try {
-        // Preprocess for better OCR
-        const preprocessed = await preprocessImage(imageDataUrl);
+        // 1. Crop to the "Alignment Zone" (Tighter focus on Name area)
+        const cropConfig = await new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => {
+                resolve({
+                    x: img.width * 0.05,
+                    y: img.height * 0.40, // Centered crop
+                    width: img.width * 0.90,
+                    height: img.height * 0.20  // Tighter vertical focus
+                });
+            };
+            img.src = imageDataUrl;
+        });
+
+        const cropped = await cropImage(imageDataUrl, cropConfig);
+
+        // 2. Preprocess for better OCR (Binarization)
+        const preprocessed = await preprocessImage(cropped);
 
         // Get worker
         const ocrWorker = await getWorker();
 
-        // Perform OCR
-        const { data } = await ocrWorker.recognize(preprocessed);
+        // Perform OCR on Cropped Area
+        let result = await ocrWorker.recognize(preprocessed);
 
-        console.log('Raw OCR text:', data.text);
+        // Fallback: If we got nothing, try the full image with simpler settings
+        if (!result.data.text || result.data.text.trim().length < 4) {
+            console.log('Cropped scan failed, trying full image...');
+            // For full image, PSM 3 (Auto) is better
+            const fullWorker = await getWorker();
+            await fullWorker.setParameters({ tessedit_pageseg_mode: '3' });
+            result = await fullWorker.recognize(imageDataUrl);
+        }
 
-        // Clean up extracted text
-        const cleaned = cleanOCRText(data.text);
+        const { data } = result;
+        console.log('Final OCR Text:', data.text);
+        console.log('OCR Confidence:', data.confidence);
 
-        return cleaned;
+        // Map lines with their confidence
+        let lines = (data.lines || []).map(line => ({
+            text: (line.text || '').trim(),
+            confidence: line.confidence || 0
+        })).filter(l => l.text.length > 3);
+
+        // FALLBACK: If lines are empty but we have text, split by newline
+        if (lines.length === 0 && data.text) {
+            console.log('OCR Result missing discrete lines, falling back to text split...');
+            lines = data.text
+                .split('\n')
+                .map(line => ({
+                    text: line.trim(),
+                    confidence: data.confidence || 0
+                }))
+                .filter(l => l.text.length > 3);
+        }
+
+        console.log(`Final processed lines: ${lines.length}`);
+
+        return {
+            text: data.text || '',
+            lines: lines,
+            overallConfidence: data.confidence || 0,
+            debugImage: preprocessed
+        };
     } catch (error) {
         console.error('OCR failed:', error);
         throw error;
@@ -60,7 +109,7 @@ function cleanOCRText(rawText) {
     return rawText
         .split('\n')
         .map(line => line.trim())
-        .filter(line => line.length > 2) // Remove single char noise
+        .filter(line => line.length > 2)
         .join('\n');
 }
 

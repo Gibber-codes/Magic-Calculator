@@ -2,15 +2,19 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import CameraCapture from './CameraCapture';
 import ConfirmationPanel from './ConfirmationPanel';
+import DebugConsole from './DebugConsole';
 
 export default function ScannerModal({ isOpen, onClose, onCardsConfirmed }) {
     const [capturedImage, setCapturedImage] = useState(null);
     const [detectedCards, setDetectedCards] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [debugInfo, setDebugInfo] = useState(null); // New state for debug info
 
     const handleCapture = async (imageDataUrl) => {
         setCapturedImage(imageDataUrl);
         setIsProcessing(true);
+        setDebugInfo(null);
+        setDetectedCards([]); // Clear previous
 
         try {
             // Import dynamically to avoid loading OCR on initial page load
@@ -18,15 +22,29 @@ export default function ScannerModal({ isOpen, onClose, onCardsConfirmed }) {
             const { matchCards } = await import('../../utils/scanner/cardMatcher');
 
             // OCR the image
-            const extractedText = await processImage(imageDataUrl);
+            const ocrResult = await processImage(imageDataUrl);
+
+            // Store debug info
+            setDebugInfo({
+                image: ocrResult.debugImage,
+                text: ocrResult.text,
+                confidence: ocrResult.overallConfidence
+            });
 
             // Match against Scryfall
-            const matches = await matchCards(extractedText);
+            const matches = await matchCards(ocrResult);
 
             setDetectedCards(matches);
+
+            // If no matches, we still want to show the panel so user can see why
+            // implicit fall-through to finally block which stops loading
         } catch (error) {
-            console.error('Scan failed:', error);
-            alert('Scan failed. Please try again with better lighting.');
+            console.error('Scan process failed:', error);
+            // Don't alert, just show error in debug info if possible
+            setDebugInfo(prev => ({
+                ...prev,
+                error: error?.message || (typeof error === 'string' ? error : 'Unknown system error')
+            }));
         } finally {
             setIsProcessing(false);
         }
@@ -42,6 +60,7 @@ export default function ScannerModal({ isOpen, onClose, onCardsConfirmed }) {
         setCapturedImage(null);
         setDetectedCards([]);
         setIsProcessing(false);
+        setDebugInfo(null);
     };
 
     if (!isOpen) return null;
@@ -67,9 +86,12 @@ export default function ScannerModal({ isOpen, onClose, onCardsConfirmed }) {
                         isProcessing={isProcessing}
                         onConfirm={handleConfirm}
                         onRetake={handleReset}
+                        debugInfo={debugInfo}
                     />
                 )}
             </div>
+
+            <DebugConsole />
         </div>
     );
 }

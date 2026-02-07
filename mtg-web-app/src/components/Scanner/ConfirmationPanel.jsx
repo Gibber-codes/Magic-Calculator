@@ -6,12 +6,14 @@ export default function ConfirmationPanel({
     detectedCards,
     isProcessing,
     onConfirm,
-    onRetake
+    onRetake,
+    debugInfo // New prop
 }) {
     const [cards, setCards] = useState(detectedCards);
     const [editingIndex, setEditingIndex] = useState(null);
     // eslint-disable-next-line no-unused-vars
     const [searchQuery, setSearchQuery] = useState('');
+    const [showDebug, setShowDebug] = useState(false); // Toggle debug view
 
     // Update cards when detection completes
     React.useEffect(() => {
@@ -35,15 +37,6 @@ export default function ConfirmationPanel({
 
     return (
         <div className="h-full flex flex-col bg-gray-800">
-            {/* Captured Image Preview */}
-            <div className="h-48 bg-black">
-                <img
-                    src={image}
-                    alt="Captured battlefield"
-                    className="w-full h-full object-contain"
-                />
-            </div>
-
             {/* Detection Status */}
             <div className="bg-gray-900 p-3 border-b border-gray-700">
                 {isProcessing ? (
@@ -62,9 +55,40 @@ export default function ConfirmationPanel({
             {/* Detected Cards List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 {cards.length === 0 && !isProcessing && (
-                    <div className="text-center text-gray-400 py-8">
-                        <p>No cards detected.</p>
-                        <p className="text-sm mt-2">Try retaking with better lighting.</p>
+                    <div className="text-center text-gray-400 py-4">
+                        <p className="text-lg text-white mb-2">No matches found</p>
+
+                        {debugInfo && (
+                            <div className="bg-gray-800 p-3 rounded-lg text-left text-xs font-mono space-y-2 border border-gray-700">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-yellow-400 font-bold">DEBUG VIEW</span>
+                                    {debugInfo.error && <span className="text-red-500 font-bold animate-pulse">ERROR!</span>}
+                                    <span className="text-gray-500">Confidence: {Math.round(debugInfo.confidence)}%</span>
+                                </div>
+
+                                {debugInfo.error && (
+                                    <div className="bg-red-900/30 border border-red-500/50 p-2 rounded text-red-200 text-[10px]">
+                                        {debugInfo.error}
+                                    </div>
+                                )}
+
+                                <div className="space-y-1">
+                                    <p className="text-gray-400">What the scanner saw:</p>
+                                    <img
+                                        src={debugInfo.image}
+                                        alt="Processed view"
+                                        className="w-full h-auto border border-gray-600 rounded"
+                                    />
+                                </div>
+
+                                <div>
+                                    <p className="text-gray-400">Raw Text Read:</p>
+                                    <pre className="bg-black p-2 rounded overflow-x-auto whitespace-pre-wrap text-green-400">
+                                        {debugInfo.text || "No text detected"}
+                                    </pre>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -87,7 +111,11 @@ export default function ConfirmationPanel({
                             <div className="text-white font-semibold">{card.name}</div>
                             <div className="text-sm text-gray-400">
                                 {card.confidence && (
-                                    <span>Confidence: {Math.round(card.confidence * 100)}%</span>
+                                    <span className={`text-xs ${card.confidence > 0.8 ? 'text-green-400' :
+                                        card.confidence > 0.5 ? 'text-yellow-400' : 'text-red-400'
+                                        }`}>
+                                        {Math.round(card.confidence * 100)}% Match
+                                    </span>
                                 )}
                             </div>
                         </div>

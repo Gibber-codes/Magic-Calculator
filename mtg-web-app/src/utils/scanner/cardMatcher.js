@@ -8,18 +8,29 @@ let cardDatabase = null;
  */
 async function initializeFuse() {
     if (!cardDatabase) {
-        // Fetch all card names from Scryfall
-        const response = await fetch('https://api.scryfall.com/catalog/card-names');
-        const data = await response.json();
-        cardDatabase = data.data.map(name => ({ name }));
+        console.log('Fetching card database from Scryfall...');
+        try {
+            const response = await fetch('https://api.scryfall.com/catalog/card-names');
+            if (!response.ok) throw new Error(`Scryfall Catalog API failed: ${response.status}`);
 
-        fuseInstance = new Fuse(cardDatabase, {
-            keys: ['name'],
-            threshold: 0.4, // 60% similarity required
-            includeScore: true,
-            ignoreLocation: true,
-            minMatchCharLength: 3
-        });
+            const data = await response.json();
+            cardDatabase = data.data.map(name => ({ name }));
+            console.log(`Loaded ${cardDatabase.length} card names.`);
+
+            fuseInstance = new Fuse(cardDatabase, {
+                keys: ['name'],
+                threshold: 0.4,
+                includeScore: true,
+                ignoreLocation: true,
+                minMatchCharLength: 3
+            });
+        } catch (err) {
+            console.error('Failed to initialize Fuse:', err);
+            // Fallback to empty to prevent crashes
+            cardDatabase = [];
+            fuseInstance = new Fuse([], {});
+            throw err;
+        }
     }
 }
 
@@ -28,23 +39,64 @@ async function initializeFuse() {
  * @param {string} ocrText - Multi-line OCR output
  * @returns {Promise<Array>} - Matched cards with metadata
  */
-export async function matchCards(ocrText) {
+export async function matchCards(ocrResult) {
     await initializeFuse();
+    console.log('Card database status:', cardDatabase ? `${cardDatabase.length} cards loaded` : 'NOT LOADED');
 
-    const lines = ocrText.split('\n').filter(line => line.length > 2);
+    // Handle both string (legacy) and object verification
+    const lines = typeof ocrResult === 'string'
+        ? ocrResult.split('\n').map(text => ({ text, confidence: 70 }))
+        : ocrResult.lines;
+
+    console.log(`Processing ${lines.length} lines for matching against database...`);
     const matches = [];
 
-    for (const line of lines) {
+    for (const lineObj of lines) {
+        const { text, confidence } = lineObj;
+
+        // Relaxed confidence check - significantly lowered to allow "dim" but correct text
+        if (confidence < 20) {
+            console.log(`Skipping very low confidence line: "${text}" (${confidence}%)`);
+            continue;
+        }
+
         // Clean line for matching
-        const cleaned = cleanTextForMatching(line);
+        const cleaned = cleanTextForMatching(text);
 
         if (cleaned.length < 3) continue;
 
         // Search Fuse
-        const results = fuseInstance.search(cleaned, { limit: 1 });
+        // Lower threshold = stricter matching (0.0 is exact, 1.0 is anything)
+        const results = fuseInstance.search(cleaned, { limit: 5 });
 
-        if (results.length > 0 && results[0].score < 0.4) {
-            const cardName = results[0].item.name;
+        if (results.length > 0) {
+            const bestMatch = results[0];
+
+            console.log(`Potential match for "${cleaned}": "${bestMatch.item.name}" (Score: ${bestMatch.score})`);
+
+            // Relaxed Fuse score check (0.5 is standard fuzzy-ish)
+            // Fuse score: 0 is perfect, 1 is bad.
+            if (bestMatch.score > 0.5) {
+                console.log(`Rejected match "${bestMatch.item.name}" - Score ${bestMatch.score} too high`);
+                continue;
+            }
+
+            const cardName = bestMatch.item.name;
+
+            // Calculate combined confidence
+            // Fuse Confidence (inverted score): 0.1 score -> 0.9 confidence
+            const matchConfidence = 1 - bestMatch.score;
+            // OCR Confidence: 80 -> 0.8
+            const ocrConfidence = confidence / 100;
+
+            // Final confidence is a weighted average or product
+            const finalConfidence = (matchConfidence * 0.6) + (ocrConfidence * 0.4);
+
+            console.log(`ACCEPTED: "${cleaned}" -> "${cardName}"`, {
+                ocrConf: confidence,
+                fuseScore: bestMatch.score,
+                finalConf: finalConfidence
+            });
 
             // Fetch full card details from Scryfall
             try {
@@ -55,9 +107,9 @@ export async function matchCards(ocrText) {
                     imageUrl: cardData.image_uris?.small || cardData.image_uris?.normal,
                     power: cardData.power,
                     toughness: cardData.toughness,
-                    confidence: 1 - results[0].score, // Higher = better
-                    originalOCR: line,
-                    data: cardData // Include full card data for game engine
+                    confidence: finalConfidence,
+                    originalOCR: text,
+                    data: cardData
                 });
             } catch (error) {
                 console.warn(`Failed to fetch details for ${cardName}`);
