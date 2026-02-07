@@ -355,9 +355,9 @@ const Game = () => {
         handleCardsConfirmed
     } = useScanner((scannedCards) => {
         let addedCount = 0;
-        scannedCards.forEach(scan => {
-            if (scan.data) {
-                handleAddCard(scan.data, 1);
+        scannedCards.forEach(card => {
+            if (card) {
+                handleAddCard(card, 1);
                 addedCount++;
             }
         });

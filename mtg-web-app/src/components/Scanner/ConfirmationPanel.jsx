@@ -31,7 +31,7 @@ export default function ConfirmationPanel({
 
     const handleConfirmAll = () => {
         // Filter out any cards without valid data
-        const validCards = cards.filter(card => card.name && card.scryfallId);
+        const validCards = cards.filter(card => card.name && (card.scryfall_id || card.scryfallId));
         onConfirm(validCards);
     };
 
@@ -98,9 +98,9 @@ export default function ConfirmationPanel({
                         className="bg-gray-700 rounded-lg p-3 flex items-center gap-3"
                     >
                         {/* Card Thumbnail */}
-                        {card.imageUrl && (
+                        {(card.image_normal || card.art_crop) && (
                             <img
-                                src={card.imageUrl}
+                                src={card.image_normal || card.art_crop}
                                 alt={card.name}
                                 className="w-12 h-12 rounded object-cover"
                             />

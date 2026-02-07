@@ -1,4 +1,5 @@
 import Fuse from 'fuse.js';
+import { formatScryfallCard, getScryfallCard } from '../scryfallService';
 
 let fuseInstance = null;
 let cardDatabase = null;
@@ -98,18 +99,17 @@ export async function matchCards(ocrResult) {
                 finalConf: finalConfidence
             });
 
-            // Fetch full card details from Scryfall
+            // Fetch full card details from Scryfall (uses cache)
             try {
-                const cardData = await fetchCardDetails(cardName);
+                const cardData = await getScryfallCard(cardName);
+                const formatted = formatScryfallCard(cardData);
+
                 matches.push({
-                    name: cardName,
-                    scryfallId: cardData.id,
-                    imageUrl: cardData.image_uris?.small || cardData.image_uris?.normal,
-                    power: cardData.power,
-                    toughness: cardData.toughness,
+                    ...formatted,
+                    scryfallId: formatted.scryfall_id, // Backward compatibility
+                    imageUrl: formatted.image_normal,   // Backward compatibility
                     confidence: finalConfidence,
-                    originalOCR: text,
-                    data: cardData
+                    originalOCR: text
                 });
             } catch (error) {
                 console.warn(`Failed to fetch details for ${cardName}`);
@@ -129,22 +129,6 @@ function cleanTextForMatching(text) {
         .replace(/\s+/g, ' ') // Normalize whitespace
         .trim()
         .toLowerCase();
-}
-
-/**
- * Fetch full card details from Scryfall
- */
-async function fetchCardDetails(cardName) {
-    const encodedName = encodeURIComponent(cardName);
-    const response = await fetch(
-        `https://api.scryfall.com/cards/named?exact=${encodedName}`
-    );
-
-    if (!response.ok) {
-        throw new Error(`Scryfall API error: ${response.status}`);
-    }
-
-    return response.json();
 }
 
 /**
