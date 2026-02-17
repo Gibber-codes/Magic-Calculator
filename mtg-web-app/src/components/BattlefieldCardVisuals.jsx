@@ -5,14 +5,14 @@ import { TopBanner, ArtWindow, BottomBanner } from './RedesignedCardFrame';
 import { getCardHexColors, isCreature } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
 
-export const AttachmentBanners = ({ attachments, CARD_WIDTH, onAction, isEligibleAttacker }) => {
+export const AttachmentBanners = ({ attachments, CARD_WIDTH, bannerHeight, onAction, isEligibleAttacker }) => {
     if (!attachments || attachments.length === 0) return null;
 
     return (
         <div className="absolute top-0 left-0 w-full flex flex-col items-center z-20 pointer-events-auto transition-all duration-300 ease-out">
             {attachments.length > 1 ? (
                 <div className="relative w-full z-10">
-                    <TopBanner width={CARD_WIDTH} height={28} colorIdentity="#374151">
+                    <TopBanner width={CARD_WIDTH} height={bannerHeight || 24} colorIdentity="#374151">
                         <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center p-1" style={{ color: 'white' }}>
                             {attachments.length} Attachments
                         </div>
@@ -40,7 +40,7 @@ export const AttachmentBanners = ({ attachments, CARD_WIDTH, onAction, isEligibl
                                 }}
                             >
                                 <div className="relative z-10">
-                                    <TopBanner width={CARD_WIDTH} height={28} colorIdentity={attColors.fillColor}>
+                                    <TopBanner width={CARD_WIDTH} height={bannerHeight || 24} colorIdentity={attColors.fillColor}>
                                         <div className="w-full text-center text-[10px] font-bold truncate leading-tight flex items-center justify-center" style={{ color: 'white' }}>
                                             {att.name}
                                         </div>
@@ -138,14 +138,11 @@ export const CardFooter = ({ card, cardType, totalPower, totalToughness, CARD_WI
     return (
         <div className="z-30 relative" style={{ marginTop: 4 }}>
             <BottomBanner width={CARD_WIDTH} height={bannerHeight}>
-                <div style={{ width: '80%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                    <div className="w-full flex justify-between items-center px-1">
-                        <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>{cardType}</span>
-                    </div>
-                </div>
                 {isCreature(card) && (
-                    <div className="text-[10px] font-bold flex gap-0.5 text-white">
-                        <span>{formatBigNumber(totalPower)}</span>/<span>{formatBigNumber(totalToughness)}</span>
+                    <div className="w-full flex justify-end pr-1">
+                        <div className="text-[10px] font-bold flex gap-0.5 text-white">
+                            <span>{formatBigNumber(totalPower)}</span>/<span>{formatBigNumber(totalToughness)}</span>
+                        </div>
                     </div>
                 )}
             </BottomBanner>
@@ -166,6 +163,7 @@ export const MinimalLandDisplay = ({
     onAction,
     setIsHovered,
     CARD_WIDTH,
+    bannerHeight,
     landColors
 }) => {
     const displayText = (card.isPlaceholderLand || card.name === 'Land')
@@ -200,7 +198,7 @@ export const MinimalLandDisplay = ({
             <div className="relative">
                 <TopBanner
                     width={CARD_WIDTH}
-                    height={28}
+                    height={bannerHeight || 24}
                     colorIdentity={landColors.fillColor}
                 >
                     <div

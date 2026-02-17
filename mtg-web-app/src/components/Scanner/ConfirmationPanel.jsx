@@ -3,7 +3,7 @@ import { Check, X, Edit2, RotateCcw } from 'lucide-react';
 
 export default function ConfirmationPanel({
     image,
-    detectedCards,
+    detectedCards = [],
     isProcessing,
     onConfirm,
     onRetake,
@@ -92,7 +92,7 @@ export default function ConfirmationPanel({
                     </div>
                 )}
 
-                {cards.map((card, index) => (
+                {(cards || []).map((card, index) => (
                     <div
                         key={index}
                         className="bg-gray-700 rounded-lg p-3 flex items-center gap-3"

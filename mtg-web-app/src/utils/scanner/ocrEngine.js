@@ -38,7 +38,7 @@ export async function processImage(imageDataUrl) {
             img.onload = () => {
                 resolve({
                     x: img.width * 0.05,
-                    y: img.height * 0.40, // Centered crop
+                    y: img.height * 0.15, // Matches UI top-[25%] (centered on 0.20 height)
                     width: img.width * 0.90,
                     height: img.height * 0.20  // Tighter vertical focus
                 });
@@ -55,16 +55,7 @@ export async function processImage(imageDataUrl) {
         const ocrWorker = await getWorker();
 
         // Perform OCR on Cropped Area
-        let result = await ocrWorker.recognize(preprocessed);
-
-        // Fallback: If we got nothing, try the full image with simpler settings
-        if (!result.data.text || result.data.text.trim().length < 4) {
-            console.log('Cropped scan failed, trying full image...');
-            // For full image, PSM 3 (Auto) is better
-            const fullWorker = await getWorker();
-            await fullWorker.setParameters({ tessedit_pageseg_mode: '3' });
-            result = await fullWorker.recognize(imageDataUrl);
-        }
+        const result = await ocrWorker.recognize(preprocessed);
 
         const { data } = result;
         console.log('Final OCR Text:', data.text);

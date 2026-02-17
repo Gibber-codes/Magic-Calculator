@@ -17,7 +17,7 @@ import {
 } from './BattlefieldCardVisuals';
 
 // Constants
-const CARD_WIDTH = 140;
+const CARD_WIDTH = 120;
 
 const BattlefieldCard = ({
     card,
@@ -48,8 +48,8 @@ const BattlefieldCard = ({
     const colors = getCardHexColors(card.colors);
     const isTouch = useIsTouchDevice();
 
-    const bannerHeight = 28;
-    const artHeight = 100;
+    const bannerHeight = 24;
+    const artHeight = 85;
 
     // Use our new interaction hook
     const {
@@ -170,6 +170,7 @@ const BattlefieldCard = ({
                 onAction={onAction}
                 setIsHovered={handleMouseEnter} // Re-using state setter wrapper
                 CARD_WIDTH={CARD_WIDTH}
+                bannerHeight={bannerHeight}
                 landColors={getCardHexColors(card.colors)}
             />
         );
@@ -235,11 +236,12 @@ const BattlefieldCard = ({
             >
                 <div className={`relative flex flex-col items-center rounded-xl transition-all duration-300 w-full ${activeGlow}`}
 
-                    style={{ paddingTop: attachments.length > 0 ? '28px' : 0 }}
+                    style={{ paddingTop: attachments.length > 0 ? '24px' : 0 }}
                 >
                     <AttachmentBanners
                         attachments={attachments}
                         CARD_WIDTH={CARD_WIDTH}
+                        bannerHeight={bannerHeight}
                         onAction={onAction}
                         isEligibleAttacker={isEligibleAttacker}
                     />

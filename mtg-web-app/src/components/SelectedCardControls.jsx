@@ -373,35 +373,32 @@ const SelectedCardControls = ({
                 )}
 
 
-                {/* UNIVERSAL ACTIONS (Tap, Remove, Transform) */}
-                <div className="mt-4 pt-2 border-t border-white/10 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                        <button
-                            onClick={() => {
-                                onAction && onAction('tap', card);
-                                // Optional: if tapping many, we might want to handle stackCount
-                            }}
-                            className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50 text-white font-semibold text-sm transition-all active:scale-95"
-                        >
-                            <RotateCcw size={16} />
-                            <span>{card.tapped ? 'Untap' : 'Tap'}</span>
-                        </button>
-                        <button
-                            onClick={() => {
-                                if (onAction) {
-                                    // If it's a stack, we use modifyCount for removal
-                                    onAction('delete', card, isStack ? modifyCount : 1);
-                                    // Close the menu
-                                    if (onDeselect) onDeselect();
-                                }
-                            }}
-
-                            className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-600/50 hover:bg-red-500/50 border border-red-500/50 text-white font-semibold text-sm transition-all active:scale-95"
-                        >
-                            <Trash2 size={16} />
-                            <span>Remove</span>
-                        </button>
+                {/* Oracle Text for Non-Creatures with no activated abilities */}
+                {!isCreature && activatedAbilities.length === 0 && card.oracle_text && (
+                    <div className="mb-4 px-1">
+                        <div className="text-slate-300 text-sm leading-relaxed italic opacity-90">
+                            {card.oracle_text}
+                        </div>
                     </div>
+                )}
+
+                {/* UNIVERSAL ACTIONS (Transform, Remove) */}
+                <div className="mt-4 pt-2 border-t border-white/10 space-y-2">
+                    <button
+                        onClick={() => {
+                            if (onAction) {
+                                // If it's a stack, we use modifyCount for removal
+                                onAction('delete', card, isStack ? modifyCount : 1);
+                                // Close the menu
+                                if (onDeselect) onDeselect();
+                            }
+                        }}
+
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-600/50 hover:bg-red-500/50 border border-red-500/50 text-white font-semibold text-sm transition-all active:scale-95"
+                    >
+                        <Trash2 size={16} />
+                        <span>Remove Card</span>
+                    </button>
 
                     {card.card_faces && card.card_faces.length > 1 && (
                         <button

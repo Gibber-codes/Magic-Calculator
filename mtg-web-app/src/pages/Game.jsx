@@ -7,7 +7,6 @@ import {
 
 // Config
 import { CARD_WIDTH, CARD_HEIGHT, CARD_GAP, APP_VERSION } from '../config/constants';
-import { PRESETS } from '../config/presets';
 
 // Load card data from consolidated JSON file
 import cardData from '../data/scryfall_cards.json';
@@ -103,7 +102,6 @@ const Game = () => {
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
     const [previewCard, setPreviewCard] = useState(null);
-    const [loadingPreset, setLoadingPreset] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [showCalculationMenu, setShowCalculationMenu] = useState(false);
     const [autoMode, setAutoMode] = useState(true); // Auto Calculation Mode State (Default: True)
@@ -302,8 +300,6 @@ const Game = () => {
         recentCards,
         setRecentCards,
         visibleStacks,
-        loadingPreset,
-        setLoadingPreset,
         setPreviewCard,
         setSearchQuery,
         setSearchResults,
@@ -317,6 +313,7 @@ const Game = () => {
     // --- Search (from hook) ---
     const { handleSelectSearchResult } = useSearch({
         searchQuery,
+        setSearchQuery,
         setSearchResults,
         setIsSearching,
         handleAddToRecents
@@ -354,17 +351,23 @@ const Game = () => {
         closeScanner,
         handleCardsConfirmed
     } = useScanner((scannedCards) => {
-        let addedCount = 0;
         scannedCards.forEach(card => {
             if (card) {
-                handleAddCard(card, 1);
-                addedCount++;
+                handleAddToRecents(card);
             }
         });
-        if (addedCount > 0) {
-            logAction(`Scanned and added ${addedCount} cards`);
-        }
+        setActivePanel('add');
     });
+
+    const handleOpenScanner = () => {
+        setActivePanel(null);
+        openScanner();
+    };
+
+    const handleCloseScanner = () => {
+        closeScanner();
+        setActivePanel('add');
+    };
 
     // --- Render ---
 
@@ -755,9 +758,7 @@ const Game = () => {
                 onAddToRecents={handleAddToRecents}
                 onDeleteRecent={handleDeleteRecent}
                 onSelectSearchResult={handleSelectSearchResult}
-                presets={PRESETS}
-                loadingPreset={loadingPreset}
-                onLoadPreset={handleLoadPreset}
+                onOpenScanner={handleOpenScanner}
             />
 
             <HistoryPanel
@@ -775,10 +776,9 @@ const Game = () => {
             />
 
             {/* Scanner Components */}
-            <ScannerButton onClick={openScanner} />
             <ScannerModal
                 isOpen={isScannerOpen}
-                onClose={closeScanner}
+                onClose={handleCloseScanner}
                 onCardsConfirmed={handleCardsConfirmed}
             />
         </div>

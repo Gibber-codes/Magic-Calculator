@@ -1,6 +1,94 @@
 import React from 'react';
 import { Play, Plus, CheckCircle, Globe, ArrowRight, RotateCcw, X, MoreHorizontal } from 'lucide-react';
 
+const CardButton = ({
+    onClick,
+    disabled = false,
+    colorTheme = 'blue', // blue, red, green, purple, yellow, slate, emerald
+    icon: Icon,
+    label,
+    topLabel,
+    subLabel,
+    rotation = 0,
+    translateY = 0,
+    isActive = true
+}) => {
+    // Original style mappings
+    const getStyles = () => {
+        if (disabled) return 'border-slate-600/50 bg-slate-800/50 opacity-50 cursor-not-allowed';
+
+        switch (colorTheme) {
+            case 'purple': // Confirm / Select
+                return 'border-purple-500/50 bg-slate-800/90 hover:border-purple-400 text-purple-400';
+            case 'emerald': // Resolve
+                return 'border-emerald-500/50 bg-emerald-900/40 hover:border-emerald-400 hover:bg-emerald-900/60 text-emerald-400';
+            case 'blue': // Add Card / Next Phase
+                return 'border-blue-500/50 bg-slate-800/90 hover:border-blue-400 text-blue-400';
+            case 'red': // Cancel / Reject / Attack / Main 1
+                return 'border-red-500/50 bg-slate-800/90 hover:border-red-400 text-red-400';
+            case 'red-transparent': // Cancel specific (was bg-red-900/40)
+                return 'border-red-500/50 bg-red-900/40 hover:border-red-400 hover:bg-red-900/60 text-red-400';
+            case 'green': // Start Turn / Main Phase 1
+                return 'border-green-500/50 bg-slate-800/90 hover:border-green-400 text-green-400';
+            case 'yellow': // Calculate
+                return 'border-yellow-500/50 bg-slate-800/90 hover:border-yellow-400 text-yellow-400 text-yellow-400 fill-current';
+            case 'orange': // Declare Attackers (Combat)
+                return 'border-orange-500/50 bg-slate-800/90 hover:border-orange-400 text-orange-400';
+            case 'slate': // Clean Up / End Turn
+                return 'border-slate-500/50 bg-slate-800/90 hover:border-slate-400 text-gray-400';
+            default:
+                return 'border-slate-500/50 bg-slate-800/90 hover:border-slate-400 text-gray-400';
+        }
+    };
+
+    const baseStyles = getStyles();
+
+    // Extract text color class for internal elements if needed, though usually inherited or explicit
+    const textColorClass = baseStyles.match(/text-[\w-]+/)?.[0] || 'text-gray-400';
+
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            className={`
+                group relative
+                w-[100px] h-[140px] rounded-xl 
+                transition-all duration-300 ease-out
+                border-2 shadow-lg
+                ${baseStyles}
+                ${isActive ? 'shadow-2xl' : 'opacity-0 pointer-events-none'}
+                active:scale-95
+            `}
+            style={{
+                transform: `rotate(${rotation}deg) translateY(${translateY}px)`,
+                transformOrigin: 'bottom center',
+                marginBottom: -50 // Pull them down so they poke up
+            }}
+        >
+            {/* Inner Layout (Mimicking Card but with original button feel) */}
+            <div className="h-full flex flex-col">
+
+                {/* Header (Main Action Label) */}
+                <div className="h-8 w-full flex items-center justify-center border-b border-white/10 bg-black/40">
+                    <span className={`text-xs font-bold uppercase tracking-wide leading-tight ${textColorClass}`}>
+                        {label}
+                    </span>
+                </div>
+
+                {/* Main Icon Area - Expands to fill the rest of the card */}
+                <div className="flex-1 flex items-center justify-center p-3 relative">
+                    <Icon className={`w-12 h-12 ${textColorClass}`} strokeWidth={2} />
+                    {subLabel && (
+                        <div className="absolute top-2 right-2 bg-slate-900/80 rounded-full px-2 py-0.5 border border-white/10 shadow-lg">
+                            <span className="text-[10px] font-bold text-white">{subLabel.split(' ')[0]}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </button>
+    );
+};
+
 const BottomControlPanel = ({
     onStartTurn,
     onAddCard,
@@ -18,250 +106,114 @@ const BottomControlPanel = ({
     stackCount = 0,
     onResolveStackItem,
     onRejectStackItem,
-    autoMode = false, // New Prop
-    onDeclareAttackers, // New Prop
+    autoMode = false,
+    onDeclareAttackers,
     isTargetingMode = false,
     onCancelTargeting,
-    hasEndStepActions = false, // New Prop
-    targetingMode = {} // Added targetingMode state
+    hasEndStepActions = false,
+    targetingMode = {}
 }) => {
+    // 1. Collect Active Buttons
+    const buttons = [];
+
+    // --- LEFT ACTION ---
+    if (isTargetingMode) {
+        buttons.push({
+            id: 'confirm',
+            onClick: onConfirmTargeting,
+            disabled: isConfirmDisabled,
+            colorTheme: isConfirmDisabled ? 'slate' : 'purple',
+            icon: CheckCircle,
+            label: isConfirmDisabled ? 'Select' : confirmLabel,
+        });
+    } else if (stackCount > 0) {
+        buttons.push({
+            id: 'resolve',
+            onClick: onResolveStackItem,
+            colorTheme: "emerald",
+            icon: CheckCircle,
+            label: "Resolve",
+            subLabel: `${stackCount} Item${stackCount > 1 ? 's' : ''}`,
+        });
+    } else if (autoMode) {
+        if (currentPhase === 'Main 2') {
+            if (hasEndStepActions) {
+                buttons.push({ id: 'cleanup', onClick: onEndTurn, colorTheme: "slate", icon: RotateCcw, label: "Clean Up" });
+            } else {
+                buttons.push({ id: 'calculate', onClick: onEndTurn, colorTheme: "yellow", icon: Play, label: "Calculate" });
+            }
+        } else {
+            buttons.push({ id: 'calculate', onClick: onAdvancePhase, colorTheme: "yellow", icon: Play, label: "Calculate" });
+        }
+    } else if (!currentPhase) {
+        buttons.push({ id: 'start', onClick: onStartTurn, colorTheme: "green", icon: Play, label: "Start Turn" });
+    } else {
+        const theme = currentPhase === 'Main 1' ? 'red' : currentPhase === 'Main 2' ? 'slate' : 'blue';
+        const icon = (currentPhase === 'Main 1' || currentPhase === 'Combat') ? ArrowRight : currentPhase === 'Main 2' ? RotateCcw : ArrowRight;
+        const labelText = currentPhase === 'Main 1' ? 'Attack!' : currentPhase === 'Combat' ? 'Declare Blocks' : currentPhase === 'Main 2' ? 'End Turn' : 'Next Phase';
+        buttons.push({ id: 'phase', onClick: onAdvancePhase, colorTheme: theme, icon: icon, label: labelText });
+    }
+
+    // --- CENTER ACTION ---
+    if (isTargetingMode) {
+        if (showSelectAll) {
+            buttons.push({ id: 'selectAll', onClick: onSelectAll, colorTheme: "purple", icon: CheckCircle, label: "Select All" });
+        }
+    } else {
+        buttons.push({ id: 'add', onClick: onAddCard, colorTheme: "blue", icon: Plus, label: "Add Card" });
+    }
+
+    // --- RIGHT ACTION ---
+    if (isTargetingMode) {
+        buttons.push({ id: 'cancel', onClick: onCancelTargeting, colorTheme: "red", icon: X, label: "Cancel" });
+    } else if (stackCount > 0) {
+        buttons.push({ id: 'reject', onClick: onRejectStackItem, colorTheme: "red", icon: X, label: "Reject" });
+    } else if (currentPhase && currentPhase !== 'Main 2') {
+        buttons.push({ id: 'endTurn', onClick: onEndTurn, colorTheme: "slate", icon: RotateCcw, label: "End Turn" });
+    } else if (autoMode) {
+        buttons.push({ id: 'declareAttackers', onClick: onDeclareAttackers, colorTheme: "red", icon: ArrowRight, label: "Attack" });
+    } else if (!isTargetingMode) {
+        buttons.push({ id: 'more', onClick: onOpenMore, colorTheme: "slate", icon: MoreHorizontal, label: "More" });
+    }
+
     return (
-        <div className="px-3 py-3 w-full animate-in slide-in-from-bottom duration-300" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-            <div className="flex gap-2 justify-center items-center max-w-2xl mx-auto">
+        <div className="fixed bottom-0 left-0 w-full flex justify-center items-end pointer-events-none z-50 overflow-visible" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+            <div className="flex items-end justify-center -space-x-4 pointer-events-auto pb-4">
+                {buttons.map((btn, index) => {
+                    let rotation = 0;
+                    let translateY = 0;
+                    let zIndex = 10;
+                    const total = buttons.length;
 
-                {/* SLOT 1: GAME FLOW (Normal) or CONFIRM (Targeting) or RESOLVE (Stack) */}
-                {isTargetingMode ? (
-                    <button
-                        onClick={onConfirmTargeting}
-                        disabled={isConfirmDisabled}
-                        className={`flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 transition-all active:scale-95 
-                            ${!isConfirmDisabled
-                                ? 'border-purple-500/50 bg-slate-800/90 hover:border-purple-400'
-                                : 'border-slate-600/50 bg-slate-800/50 opacity-50 cursor-not-allowed'
-                            }`}
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <CheckCircle className={`w-8 h-8 ${!isConfirmDisabled ? 'text-purple-400' : 'text-gray-500'}`} />
-                            <span className={`text-xs font-bold uppercase tracking-wide ${!isConfirmDisabled ? 'text-purple-400' : 'text-gray-500'}`}>
-                                {isTargetingMode && (targetingMode.action === 'declare-attackers' || targetingMode.action === 'declare-blockers') && targetingMode.selectedIds.length === 0
-                                    ? (targetingMode.action === 'declare-attackers' ? 'No Attackers' : 'No Blockers')
-                                    : confirmLabel}
-                            </span>
-                        </div>
-                    </button>
-                ) : stackCount > 0 ? (
-                    // RESOLVE STACK ITEM
-                    <button
-                        onClick={onResolveStackItem}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-emerald-500/50 bg-emerald-900/40 hover:border-emerald-400 hover:bg-emerald-900/60 active:scale-95 transition-all"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <div className="relative">
-                                <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] text-white font-bold">{stackCount}</div>
-                                <CheckCircle className="w-8 h-8 text-emerald-400" />
-                            </div>
-                            <span className="text-emerald-400 text-xs font-bold uppercase tracking-wide">Resolve</span>
-                        </div>
-                    </button>
-                ) : autoMode ? (
-                    // AUTO MODE: Calculate OR Clean Up
-                    currentPhase === 'Main 2' ? (
-                        hasEndStepActions ? (
-                            // Clean Up Button (Auto Mode - Main 2 - Actions Pending)
-                            <button
-                                onClick={onEndTurn}
-                                className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-slate-500/50 bg-slate-800/90 hover:border-slate-400 active:scale-95 transition-all"
-                            >
-                                <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                                    <RotateCcw className="w-8 h-8 text-gray-400" />
-                                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wide leading-tight">Clean Up</span>
-                                </div>
-                            </button>
-                        ) : (
-                            // Calculate Button (Auto Mode - Main 2 - No Actions)
-                            // This serves as the "Finish Turn" button but keeps the unified look
-                            <button
-                                onClick={onEndTurn}
-                                className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-yellow-500/50 bg-slate-800/90 hover:border-yellow-400 active:scale-95 transition-all"
-                            >
-                                <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                                    <Play className="w-8 h-8 text-yellow-400 fill-current" />
-                                    <span className="text-yellow-400 text-xs font-bold uppercase tracking-wide">Calculate</span>
-                                </div>
-                            </button>
-                        )
-                    ) : (
-                        // Calculate Button (Auto Mode - Start & Continue)
-                        // REPLACES "Start Turn" logic for Auto Mode
-                        <button
-                            onClick={onAdvancePhase} // handleAutoCalculate handles start-of-turn cleanup too
-                            className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-yellow-500/50 bg-slate-800/90 hover:border-yellow-400 active:scale-95 transition-all"
-                        >
-                            <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                                <Play className="w-8 h-8 text-yellow-400 fill-current" />
-                                <span className="text-yellow-400 text-xs font-bold uppercase tracking-wide">Calculate</span>
-                            </div>
-                        </button>
-                    )
-                ) : !currentPhase ? (
-                    // START TURN (Manual Mode)
-                    <button
-                        onClick={onStartTurn}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-green-500/50 bg-slate-800/90 hover:border-green-400 active:scale-95 transition-all"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <Play className="w-8 h-8 text-green-400 fill-current" />
-                            <span className="text-green-400 text-xs font-bold uppercase tracking-wide">Start Turn</span>
-                        </div>
-                    </button>
-                ) : (
-                    // SMART PHASE BUTTON (Manual Mode - In Game)
-                    <button
-                        onClick={onAdvancePhase}
-                        className={`flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 transition-all active:scale-95 
-                                ${currentPhase === 'Main 1'
-                                ? 'border-red-500/50 bg-slate-800/90 hover:border-red-400'
-                                : currentPhase === 'Main 2'
-                                    ? 'border-slate-500/50 bg-slate-800/90 hover:border-slate-400'
-                                    : 'border-blue-500/50 bg-slate-800/90 hover:border-blue-400'
-                            }`}
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3 text-center">
-                            {currentPhase === 'Main 1' ? (
-                                <>
-                                    <ArrowRight className="w-8 h-8 text-red-400" />
-                                    <span className="text-red-400 text-[10px] font-bold uppercase tracking-wide leading-tight">Attack!</span>
-                                </>
-                            ) : currentPhase === 'Combat' ? (
-                                <>
-                                    <ArrowRight className="w-8 h-8 text-orange-400" />
-                                    <span className="text-orange-400 text-[10px] font-bold uppercase tracking-wide leading-tight">Declare Attackers</span>
-                                </>
-                            ) : currentPhase === 'Main 2' ? (
-                                <>
-                                    <RotateCcw className="w-8 h-8 text-gray-400" />
-                                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wide leading-tight">End Turn</span>
-                                </>
-                            ) : currentPhase === 'Beginning' ? (
-                                <>
-                                    <ArrowRight className="w-8 h-8 text-green-400" />
-                                    <span className="text-green-400 text-[10px] font-bold uppercase tracking-wide leading-tight">Main Phase 1</span>
-                                </>
-                            ) : (
-                                <>
-                                    <ArrowRight className="w-8 h-8 text-blue-400" />
-                                    <span className="text-blue-400 text-[10px] font-bold uppercase tracking-wide leading-tight">Next Phase</span>
-                                </>
-                            )}
-                        </div>
-                    </button>
-                )}
+                    if (total === 2) {
+                        rotation = index === 0 ? -4 : 4;
+                        zIndex = 10 + index;
+                    } else if (total === 3) {
+                        if (index === 0) rotation = -6;
+                        if (index === 1) {
+                            rotation = 0;
+                            translateY = -10;
+                            zIndex = 30; // Center is on top
+                        }
+                        if (index === 2) {
+                            rotation = 6;
+                            zIndex = 10;
+                        }
+                    }
 
-                {/* SLOT 2: ADD CARD (Normal) or SELECT ALL (Targeting - if enabled) */}
-                {isTargetingMode ? (
-                    showSelectAll ? (
-                        <button
-                            onClick={onSelectAll}
-                            className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-purple-500/50 bg-slate-800/90 hover:border-purple-400 active:scale-95 transition-all"
-                        >
-                            <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                                <CheckCircle className="w-7 h-7 text-purple-400" />
-                                <span className="text-purple-400 text-xs font-bold uppercase tracking-wide">Select All</span>
-                            </div>
-                        </button>
-                    ) : (
-                        <div className="w-[140px] hidden sm:block"></div> // Spacer if no select all
-                    )
-                ) : (
-                    <button
-                        onClick={onAddCard}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-blue-500/50 bg-slate-800/90 hover:border-blue-400 active:scale-95 transition-all"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <Plus className="w-7 h-7 text-blue-400" strokeWidth={2.5} />
-                            <span className="text-blue-400 text-xs font-bold uppercase tracking-wide">Add Card</span>
+                    return (
+                        <div key={btn.id} className="transition-all" style={{ zIndex }}>
+                            <CardButton
+                                {...btn}
+                                rotation={rotation}
+                                translateY={translateY}
+                                isActive={true}
+                            />
                         </div>
-                    </button>
-                )}
-
-                {/* SLOT 3: CANCEL (targeting mode) OR REJECT (Stack) OR END TURN/SelectAll (Normal) */}
-                {isTargetingMode ? (
-                    <button
-                        onClick={onCancelTargeting}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-red-500/50 bg-red-900/40 hover:border-red-400 hover:bg-red-900/60 active:scale-95 transition-all"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <X className="w-7 h-7 text-red-400" />
-                            <span className="text-red-400 text-xs font-bold uppercase tracking-wide">Cancel</span>
-                        </div>
-                    </button>
-                ) : stackCount > 0 ? (
-                    // REJECT STACK ITEM
-                    <button
-                        onClick={onRejectStackItem}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-red-500/50 bg-red-900/40 hover:border-red-400 hover:bg-red-900/60 active:scale-95 transition-all"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <X className="w-7 h-7 text-red-400" />
-                            <span className="text-red-400 text-xs font-bold uppercase tracking-wide">Reject</span>
-                        </div>
-                    </button>
-                ) : (currentPhase && currentPhase !== 'Main 2') ? (
-                    <button
-                        onClick={onEndTurn}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-slate-500/50 bg-slate-800/90 hover:border-red-400/80 hover:bg-slate-800 active:scale-95 transition-all"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <RotateCcw className="w-7 h-7 text-gray-400 group-hover:text-red-300" />
-                            <span className="text-gray-400 group-hover:text-red-300 text-xs font-bold uppercase tracking-wide">End Turn</span>
-                        </div>
-                    </button>
-                ) : (
-                    // EMPTY SLOT - Show Attack Button in Auto Mode
-                    autoMode ? (
-                        <div className="flex-1 max-w-[140px] h-20">
-                            {/* We need a specific action handler for Attack passed in via a prop, OR we assume onAdvancePhase handles it if we pass a special arg? 
-                                Actually, the plan said "Attack" button logic: startTargetingMode('declare-attackers').
-                                BottomControlPanel doesn't directly access `startTargetingMode`. 
-                                We should reuse an existing callback or add a new one?
-                                Slot 1 is already handled. Slot 3 is this one.
-                                Let's assume the parent passes a handler or we rely on the fact that we can call something else.
-                                
-                                Wait, `handleSmartPhaseAdvance` in standard mode triggers 'Attack' when in Main 1.
-                                Here we want a DEDICATED Attack button.
-                                
-                                We need a new prop `onDeclareAttackers` or similar. OR passing strictly `onSelectAll`? No.
-                                Let's add `onDeclareAttackers` to the props destructuring at the top.
-                            */}
-                            <button
-                                onClick={onDeclareAttackers}
-                                className="w-full h-full rounded-lg overflow-hidden shadow-lg border-2 border-red-500/50 bg-slate-800/90 hover:border-red-400 active:scale-95 transition-all"
-                            >
-                                <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                                    <ArrowRight className="w-8 h-8 text-red-400" />
-                                    <span className="text-red-400 text-xs font-bold uppercase tracking-wide">Attack</span>
-                                </div>
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex-1 max-w-[140px]"></div>
-                    )
-                )}
-
-                {/* SLOT 4: MORE - Hidden in Targeting Mode */}
-                {!isTargetingMode && (!currentPhase || currentPhase.includes('Main')) && (
-                    <button
-                        onClick={onOpenMore}
-                        className="flex-1 max-w-[140px] h-20 rounded-lg overflow-hidden shadow-lg border-2 border-slate-500/50 bg-slate-800/90 hover:border-slate-400 active:scale-95 transition-all text-slate-400 hover:text-white"
-                    >
-                        <div className="h-full flex flex-col items-center justify-center gap-1 px-3">
-                            <MoreHorizontal className="w-8 h-8" />
-                        </div>
-                    </button>
-                )}
-
+                    );
+                })}
             </div>
-        </div >
+        </div>
     );
 };
 

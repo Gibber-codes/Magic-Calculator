@@ -5,7 +5,6 @@ import { getScryfallCard, formatScryfallCard, fetchRelatedTokens } from '../util
 import { trackCardUsage, checkAutoSaveCandidate } from '../utils/favorites';
 import { toast } from 'react-hot-toast';
 import { SIGNATURE_DATA } from '../data/signatureCards';
-import { PRESETS } from '../config/presets';
 import cardData from '../data/scryfall_cards.json';
 
 /**
@@ -28,8 +27,6 @@ const useCardActions = ({
     recentCards,
     setRecentCards,
     visibleStacks,
-    loadingPreset,
-    setLoadingPreset,
     setPreviewCard,
     setSearchQuery,
     setSearchResults,
@@ -500,8 +497,9 @@ const useCardActions = ({
         setRecentCards(prev => prev.filter((_, i) => i !== index));
     }, [setRecentCards]);
 
-    // Load Preset Handler
+    // Load Preset Handler - DISABLED
     const handleLoadPreset = useCallback(async (presetName) => {
+        /* 
         if (loadingPreset) return;
         setLoadingPreset(presetName);
 
@@ -535,7 +533,9 @@ const useCardActions = ({
         }
 
         setLoadingPreset(null);
-    }, [loadingPreset, setLoadingPreset, setRecentCards]);
+        */
+        console.log('handleLoadPreset is currently disabled');
+    }, []); // Removed dependencies since logic is commented out
 
     // Activate Ability Handler
     const handleActivateAbility = useCallback((card, abilityDef) => {

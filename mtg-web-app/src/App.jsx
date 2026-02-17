@@ -4,6 +4,8 @@ import { Toaster } from 'react-hot-toast';
 import Game from './pages/Game';
 import LegalNotices from './pages/LegalNotices';
 import TermsOfService from './pages/TermsOfService';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
+
 
 const App = () => {
   return (
@@ -23,7 +25,9 @@ const App = () => {
         <Route path="/privacy" element={<LegalNotices />} />
         <Route path="/terms" element={<TermsOfService />} />
       </Routes>
+      <PWAInstallPrompt />
     </Router>
+
   );
 };
 

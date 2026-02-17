@@ -9,6 +9,7 @@ import { searchScryfall, getScryfallCard, formatScryfallCard } from '../utils/sc
 const useSearch = ({
     // Search state (managed by App.jsx)
     searchQuery,
+    setSearchQuery,
     setSearchResults,
     setIsSearching,
 
@@ -34,6 +35,10 @@ const useSearch = ({
 
     // Handle selecting a search result
     const handleSelectSearchResult = useCallback(async (name) => {
+        // Clear search immediately to snap back to recents
+        setSearchQuery('');
+        setSearchResults([]);
+
         try {
             const fetchedCardData = await getScryfallCard(name);
             const formatted = formatScryfallCard(fetchedCardData);
@@ -41,7 +46,7 @@ const useSearch = ({
         } catch (e) {
             console.error(e);
         }
-    }, [handleAddToRecents]);
+    }, [handleAddToRecents, setSearchQuery, setSearchResults]);
 
     return {
         handleSelectSearchResult

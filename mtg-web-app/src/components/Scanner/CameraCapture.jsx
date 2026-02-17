@@ -1,8 +1,8 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import { Camera, AlertCircle, RefreshCcw } from 'lucide-react';
 
-export default function CameraCapture({ onCapture }) {
+export default function CameraCapture({ onCapture, onAutoScan }) {
     const webcamRef = useRef(null);
     const [error, setError] = useState(null);
     const [facingMode, setFacingMode] = useState('environment');
@@ -71,6 +71,23 @@ export default function CameraCapture({ onCapture }) {
         });
     }, []);
 
+    // Always-On Auto-Scan Interval Loop
+    useEffect(() => {
+        let intervalId;
+        if (onAutoScan) {
+            console.log("Starting Auto-Scan loop...");
+            intervalId = setInterval(() => {
+                const imageSrc = webcamRef.current?.getScreenshot();
+                if (imageSrc) {
+                    onAutoScan(imageSrc);
+                }
+            }, 1000); // Scan every 1 second
+        }
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [onAutoScan]);
+
     const videoConstraints = {
         width: { ideal: 1920 },
         height: { ideal: 1080 },
@@ -78,43 +95,12 @@ export default function CameraCapture({ onCapture }) {
         deviceId: deviceId ? deviceId : undefined
     };
 
-    const capturePhoto = useCallback(() => {
-        const imageSrc = webcamRef.current?.getScreenshot();
-        if (imageSrc) {
-            onCapture(imageSrc);
-        }
-    }, [webcamRef, onCapture]);
-
     const handleUserMediaError = useCallback((err) => {
         console.error('Camera error:', err);
         setError('Camera access denied or not available.');
     }, []);
 
-    const toggleCamera = () => {
-        if (facingMode === 'user') {
-            setFacingMode('environment');
-            const backCameras = devices.filter(device =>
-                device.label.toLowerCase().includes('back') ||
-                device.label.toLowerCase().includes('rear')
-            );
-            if (backCameras.length > 0) setDeviceId(backCameras[0].deviceId);
-        } else {
-            // If already in environment mode, try to cycle to the next back camera
-            const backCameras = devices.filter(device =>
-                device.label.toLowerCase().includes('back') ||
-                device.label.toLowerCase().includes('rear')
-            );
 
-            if (backCameras.length > 1) {
-                const currentIndex = backCameras.findIndex(d => d.deviceId === deviceId);
-                const nextIndex = (currentIndex + 1) % backCameras.length;
-                setDeviceId(backCameras[nextIndex].deviceId);
-            } else {
-                setFacingMode('user');
-                setDeviceId(null);
-            }
-        }
-    };
 
     if (error) {
         return (
@@ -149,42 +135,21 @@ export default function CameraCapture({ onCapture }) {
 
                 {/* Simple Alignment Guide */}
                 <div className="absolute inset-0 pointer-events-none flex flex-col items-center">
-                    {/* Centered OCR guide: Matches ocrEngine.js y: 0.40, height: 0.20 */}
-                    <div className="absolute top-[50%] w-full flex flex-col items-center">
-                        <div className="w-full border-b-2 border-yellow-400 border-dotted opacity-60" />
-                        <p className="mt-1 text-yellow-400 text-[10px] font-bold uppercase tracking-widest opacity-80">
-                            Align Card Name Here
+                    {/* Centered OCR guide: Matches ocrEngine.js y: 0.15, height: 0.20 */}
+                    <div className="absolute top-[25%] w-full flex flex-col items-center">
+                        <div className="w-full border-b-2 border-blue-400 animate-pulse border-dotted opacity-60" />
+                        <p className="mt-1 text-blue-400 text-[10px] font-bold uppercase tracking-widest opacity-80">
+                            Align Name Here
                         </p>
                     </div>
 
                     <p className="absolute bottom-10 text-white/40 text-xs text-center px-4">
-                        Center the card name on the line for best scan
+                        Hold steady - Scanning every 1s
                     </p>
                 </div>
             </div>
 
-            {/* Controls */}
-            <div className="bg-gray-900 p-6 pb-8 flex justify-center items-center gap-12">
-                {/* Spacer to balance layout */}
-                <div className="w-12" />
-
-                {/* Main Capture Button */}
-                <button
-                    onClick={capturePhoto}
-                    className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center shadow-lg active:scale-95 transition-all hover:bg-white/10"
-                >
-                    <div className="w-16 h-16 rounded-full bg-white" />
-                </button>
-
-                {/* Flip Camera */}
-                <button
-                    onClick={toggleCamera}
-                    className="p-4 bg-gray-800 hover:bg-gray-700 rounded-full text-white shadow-lg active:scale-95 transition-all"
-                    title="Flip Camera"
-                >
-                    <RefreshCcw className="w-6 h-6" />
-                </button>
-            </div>
+            {/* Controls removed */}
         </div>
     );
 }
