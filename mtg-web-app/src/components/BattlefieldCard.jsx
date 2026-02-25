@@ -42,7 +42,8 @@ const BattlefieldCard = ({
     onCounterChange,
     onConvertLand,
     isRelative = false,
-    isPendingOnStack = false
+    isPendingOnStack = false,
+    hideBanners = false
 }) => {
     const stats = calculateCardStats(card, allCards, attachments);
     const colors = getCardHexColors(card.colors);
@@ -236,20 +237,24 @@ const BattlefieldCard = ({
             >
                 <div className={`relative flex flex-col items-center rounded-xl transition-all duration-300 w-full ${activeGlow}`}
 
-                    style={{ paddingTop: attachments.length > 0 ? '24px' : 0 }}
+                    style={{ paddingTop: (attachments.length > 0 && !hideBanners) ? '24px' : 0 }}
                 >
-                    <AttachmentBanners
-                        attachments={attachments}
-                        CARD_WIDTH={CARD_WIDTH}
-                        bannerHeight={bannerHeight}
-                        onAction={onAction}
-                        isEligibleAttacker={isEligibleAttacker}
-                    />
-                    <CardHeader
-                        card={card}
-                        CARD_WIDTH={CARD_WIDTH}
-                        bannerHeight={bannerHeight}
-                    />
+                    {!hideBanners && (
+                        <AttachmentBanners
+                            attachments={attachments}
+                            CARD_WIDTH={CARD_WIDTH}
+                            bannerHeight={bannerHeight}
+                            onAction={onAction}
+                            isEligibleAttacker={isEligibleAttacker}
+                        />
+                    )}
+                    {!hideBanners && (
+                        <CardHeader
+                            card={card}
+                            CARD_WIDTH={CARD_WIDTH}
+                            bannerHeight={bannerHeight}
+                        />
+                    )}
                     {/* Render Art with appropriate count badge */}
                     {(() => {
                         // If we have a virtual stack info, use it for the badge
@@ -273,14 +278,16 @@ const BattlefieldCard = ({
                         );
                     })()}
 
-                    <CardFooter
-                        card={card}
-                        cardType={cardType}
-                        totalPower={stats.power}
-                        totalToughness={stats.toughness}
-                        CARD_WIDTH={CARD_WIDTH}
-                        bannerHeight={bannerHeight}
-                    />
+                    {!hideBanners && (
+                        <CardFooter
+                            card={card}
+                            cardType={cardType}
+                            totalPower={stats.power}
+                            totalToughness={stats.toughness}
+                            CARD_WIDTH={CARD_WIDTH}
+                            bannerHeight={bannerHeight}
+                        />
+                    )}
                 </div>
 
                 {/* Tapped Indicator */}

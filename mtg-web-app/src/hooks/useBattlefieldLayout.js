@@ -115,10 +115,10 @@ export const useBattlefieldLayout = ({
             });
         };
 
-        // Visual Order: Creatures (Top) -> Others (Middle) -> Lands (Bottom)
-        layoutRow(creatures, centerY - spread, creatureScrollX);
-        layoutRow(others, centerY, othersScrollX);
-        layoutRow(lands, centerY + 215, landsScrollX);
+        // Visual Order: Creatures (Middle/Top) -> Others (Bottom)
+        layoutRow(creatures, centerY - 50, creatureScrollX);
+        layoutRow(others, centerY + spread, othersScrollX);
+        layoutRow(lands, centerY + spread + 215, landsScrollX);
 
         return positions;
     }, [visibleStacks, cards, activePanel, showSearchOverlay, creatureScrollX, othersScrollX, landsScrollX, verticalOffsetY, windowSize, battlefieldRef]);

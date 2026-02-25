@@ -566,6 +566,7 @@ const Game = () => {
                                 }
                             };
                         }}
+                        targetingMode={targetingMode}
                     />
                 </div>
             </div>
