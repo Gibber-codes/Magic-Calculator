@@ -106,6 +106,67 @@ export const SIGNATURE_DATA = {
         art_crop: 'https://cards.scryfall.io/border_crop/front/2/7/27927100-2587-4e05-9957-eb183d46c1f0.jpg?1695406612',
         image_rotation: 180
     },
+    'Krenko, Tin Street Kingpin': {
+        name: 'Krenko, Tin Street Kingpin',
+        type: 'Creature',
+        type_line: 'Legendary Creature — Goblin',
+        abilities: [
+            {
+                trigger: 'on_attack',
+                effect: 'add_counters',
+                amount: 1,
+                target: 'self',
+                description: 'Whenever Krenko attacks, put a +1/+1 counter on it'
+            },
+            {
+                trigger: 'on_attack',
+                effect: 'create_named_token',
+                tokenName: 'Goblin',
+                amount: 'this.power',
+                target: 'self',
+                description: 'then create a number of 1/1 red Goblin creature tokens equal to Krenko’s power'
+            }
+        ]
+    },
+    'Goblin': {
+        name: 'Goblin',
+        type: 'Token Creature',
+        type_line: 'Token Creature — Goblin',
+        colors: ['R'],
+        power: 1,
+        toughness: 1,
+        art_crop: 'https://cards.scryfall.io/art_crop/front/c/e/ce89c2cc-0d65-4d0f-a3d9-a764d88e635f.jpg?1557575971',
+        image_normal: 'https://cards.scryfall.io/normal/front/c/e/ce89c2cc-0d65-4d0f-a3d9-a764d88e635f.jpg?1557575971'
+    },
+    'Redoubled Stormsinger': {
+        name: 'Redoubled Stormsinger',
+        type: 'Creature',
+        type_line: 'Orc Wizard',
+        abilities: [
+            {
+                trigger: 'on_attack',
+                effect: 'copy_tokens_entered_this_turn',
+                description: 'Whenever Redoubled Stormsinger attacks, for each creature token you control that entered this turn, create a tapped and attacking token that’s a copy of that token. At the beginning of the next end step, sacrifice those tokens.'
+            }
+        ]
+    },
+    'Devastating Onslaught': {
+        name: 'Devastating Onslaught',
+        type: 'Sorcery',
+        type_line: 'Sorcery',
+        abilities: [
+            {
+                trigger: 'activated',
+                cost: 'Cast — {X}{X}{R}',
+                effect: 'create_x_token_copies',
+                target: 'creature',
+                requiresTarget: true,
+                requiresXCost: true,
+                xCostLabel: 'X (number of copies)',
+                description: 'Create X tokens that are copies of target artifact or creature you control. They gain haste. Sacrifice them at the beginning of the next end step.'
+            }
+        ]
+    },
     // Basic Lands - minimal display, no abilities
     'Forest': {
         name: 'Forest',

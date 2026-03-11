@@ -265,6 +265,27 @@ export class GameEngine {
             });
         });
 
+        // SORTING: Ensure triggers resolve in utility order
+        // Higher priority means resolves LATER (bottom of stack)
+        triggers.sort((a, b) => {
+            const getPriority = (t) => {
+                const effect = t.ability?.effect || '';
+                if (effect === 'copy_tokens_entered_this_turn') return 10;
+                if (t.source.name === 'Redoubled Stormsinger') return 10;
+                return 0;
+            };
+
+            const prioA = getPriority(a);
+            const prioB = getPriority(b);
+
+            if (prioA !== prioB) return prioA - prioB;
+
+            // Tie-break: maintain battlefield order (id)
+            const aId = a.source.id ?? 0;
+            const bId = b.source.id ?? 0;
+            return aId - bId;
+        });
+
         return triggers;
     }
 
@@ -766,6 +787,8 @@ export class GameEngine {
             case 'create_deferred_token_copy':
             case 'orthion_copy_single':
             case 'orthion_copy_five':
+            case 'copy_tokens_entered_this_turn':
+            case 'create_x_token_copies':
                 return this._handleTokenEffects(cards, targets, ability, value, knownCards);
 
             case 'cleanup_existing_roles':
@@ -1107,6 +1130,7 @@ export class GameEngine {
         const processSequentialTokens = (createFn, amount) => {
             for (let i = 0; i < amount; i++) {
                 const token = createFn(i);
+                token.enteredThisTurn = true; // Mark as entered this turn
                 newTriggers.push(...this.findTokenEntryTriggers(newCards, [token]));
                 newCards.push(token);
             }
@@ -1154,7 +1178,8 @@ export class GameEngine {
                     counters: {},
                     colors: template.colors || ['W'],
                     abilities: template.abilities || [],
-                    isRole: true
+                    isRole: true,
+                    enteredThisTurn: true
                 }));
 
                 if (template.isRole) {
@@ -1183,7 +1208,17 @@ export class GameEngine {
                 return processSequentialTokens((i) => {
                     let cleanType = (target.type_line || 'Creature').replace(/Legendary\s?/g, '');
                     if (!cleanType.toLowerCase().includes('token')) cleanType = `Token ${cleanType}`;
-                    const tokenCopy = { ...target, id: Date.now() + i + Math.random(), type_line: cleanType, isToken: true, tapped: false, counters: 0, attachedTo: null, zone: 'battlefield' };
+                    const tokenCopy = { 
+                        ...target, 
+                        id: Date.now() + i + Math.random(), 
+                        type_line: cleanType, 
+                        isToken: true, 
+                        tapped: !!ability.tappedAndAttacking, 
+                        attacking: !!ability.tappedAndAttacking, 
+                        counters: 0, 
+                        attachedTo: null, 
+                        zone: 'battlefield' 
+                    };
                     if (tokenCopy.abilities) {
                         tokenCopy.abilities.forEach(a => {
                             if (a.trigger === 'on_enter_battlefield') newTriggers.push(this.resolveEffect({ source: tokenCopy, ability: a }));
@@ -1228,6 +1263,183 @@ export class GameEngine {
             case 'orthion_copy_five':
             case 'create_deferred_token_copy':
                 return this._handleOrthionStyleCopies(newCards, targets, ability, value, newTriggers);
+
+            case 'copy_tokens_entered_this_turn':
+                // Filter for creature TOKENS that entered this turn (not regular creatures like Stormsingers)
+                const tokensToCopy = newCards.filter(c => 
+                    c.isToken && 
+                    c.enteredThisTurn && 
+                    c.zone === 'battlefield' &&
+                    (c.type === 'Creature' || (c.type_line && c.type_line.includes('Creature')))
+                );
+                
+                console.log(`[Stormsinger] Tokens with enteredThisTurn:`, tokensToCopy.length, 
+                    'breakdown:', tokensToCopy.map(t => `${t.name}${t.isVirtualStack ? `(v×${t.tokenCount})` : ''}`).join(', '));
+                
+                if (tokensToCopy.length === 0) return { newCards, triggers: newTriggers };
+
+                // Calculate TRUE total including virtual stack counts
+                let totalCopies = 0;
+                tokensToCopy.forEach(c => {
+                    if (c.isVirtualStack && c.tokenCount) {
+                        totalCopies += Number(c.tokenCount);
+                    } else {
+                        totalCopies += 1;
+                    }
+                });
+
+                const copiedTokenIds = [];
+                let allNewCards = [...newCards];
+                let allNewTriggers = [];
+
+                // OPTIMIZATION: For large numbers, group identical tokens and use virtual stacks
+                if (totalCopies > MAX_PHYSICAL_TOKENS) {
+                    // Group tokens by name, properly accounting for virtual stack sizes
+                    const tokenGroups = new Map();
+                    tokensToCopy.forEach(token => {
+                        const key = token.name || 'Token';
+                        if (!tokenGroups.has(key)) {
+                            tokenGroups.set(key, { template: token, count: 0 });
+                        }
+                        // Virtual stacks represent MANY tokens, count them all
+                        const tokenAmount = (token.isVirtualStack && token.tokenCount) 
+                            ? Number(token.tokenCount) 
+                            : 1;
+                        tokenGroups.get(key).count += tokenAmount;
+                    });
+
+                    // Create a limited number of physical copies + virtual stacks per group
+                    const physicalPerGroup = Math.max(1, Math.floor(MAX_PHYSICAL_TOKENS / tokenGroups.size));
+                    
+                    tokenGroups.forEach(({ template, count }) => {
+                        let cleanType = (template.type_line || 'Creature').replace(/Legendary\s?/g, '');
+                        if (!cleanType.toLowerCase().includes('token')) cleanType = `Token ${cleanType}`;
+
+                        const physicalCount = Math.min(count, physicalPerGroup);
+                        
+                        // Create physical copies
+                        for (let i = 0; i < physicalCount; i++) {
+                            const tokenCopy = {
+                                ...template,
+                                id: Date.now() + Math.random() + i,
+                                type_line: cleanType,
+                                isToken: true,
+                                isVirtualStack: false,
+                                tokenCount: undefined,
+                                virtualStackSize: undefined,
+                                tapped: true,
+                                attacking: true,
+                                counters: 0,
+                                attachedTo: null,
+                                zone: 'battlefield',
+                                haste: true,
+                                enteredThisTurn: true
+                            };
+                            copiedTokenIds.push(tokenCopy.id);
+                            allNewCards.push(tokenCopy);
+                        }
+
+                        // Create virtual stack for overflow
+                        if (count > physicalCount) {
+                            const remaining = count - physicalCount;
+                            const virtualStack = {
+                                ...template,
+                                id: Date.now() + Math.random() + physicalCount,
+                                type_line: cleanType,
+                                isToken: true,
+                                isVirtualStack: true,
+                                tokenCount: BigInt(remaining),
+                                virtualStackSize: BigInt(remaining),
+                                tapped: true,
+                                attacking: true,
+                                counters: 0,
+                                attachedTo: null,
+                                zone: 'battlefield',
+                                haste: true,
+                                enteredThisTurn: true,
+                                displayName: `${template.name} (×${remaining})`
+                            };
+                            copiedTokenIds.push(virtualStack.id);
+                            allNewCards.push(virtualStack);
+                        }
+                    });
+
+                    console.log(`[Stormsinger] Created ${totalCopies} token copies (${Math.min(totalCopies, MAX_PHYSICAL_TOKENS)} physical + virtual stacks)`);
+                } else {
+                    // Standard path for small numbers
+                    tokensToCopy.forEach(token => {
+                        if (token.isVirtualStack) return; // Skip virtual stacks in small-count path
+                        const copyAbility = { ...ability, effect: 'create_token_copy', amount: 1, tappedAndAttacking: true };
+                        const result = this.executeEffect(allNewCards, [token], copyAbility, 1);
+                        
+                        const newlyCreated = result.newCards.filter(c => !allNewCards.some(existing => existing.id === c.id));
+                        newlyCreated.forEach(c => copiedTokenIds.push(c.id));
+                        
+                        allNewCards = result.newCards;
+                        allNewTriggers.push(...(result.triggers || []));
+                    });
+                }
+
+                // Register delayed trigger: sacrifice all copied tokens at end step
+                if (copiedTokenIds.length > 0) {
+                    const sourceName = ability.source?.name || 'Redoubled Stormsinger';
+                    this.registerDelayedTrigger({
+                        phase: 'end_step',
+                        effect: 'sacrifice_cards',
+                        targets: copiedTokenIds,
+                        sourceId: ability.sourceId || 0,
+                        description: `Sacrifice ${totalCopies} token copies (${sourceName})`
+                    });
+                }
+
+                return { newCards: allNewCards, triggers: allNewTriggers };
+
+            case 'create_x_token_copies':
+                // Devastating Onslaught: Create X token copies of target
+                const xTarget = targets[0];
+                if (!xTarget) return { newCards, triggers: newTriggers };
+                
+                const xCount = ability.xValue || value || 1;
+                const xCopiedIds = [];
+                let xNewCards = [...newCards];
+                let xNewTriggers = [];
+
+                for (let i = 0; i < xCount; i++) {
+                    let cleanType = (xTarget.type_line || 'Creature').replace(/Legendary\s?/g, '');
+                    if (!cleanType.toLowerCase().includes('token')) cleanType = `Token ${cleanType}`;
+                    
+                    const tokenCopy = {
+                        ...xTarget,
+                        id: Date.now() + i + Math.random(),
+                        type_line: cleanType,
+                        isToken: true,
+                        tapped: false,
+                        attacking: false,
+                        counters: 0,
+                        attachedTo: null,
+                        zone: 'battlefield',
+                        haste: true,
+                        enteredThisTurn: true
+                    };
+                    
+                    xCopiedIds.push(tokenCopy.id);
+                    xNewCards.push(tokenCopy);
+                    xNewTriggers.push(...this.findTokenEntryTriggers(xNewCards, [tokenCopy]));
+                    xNewTriggers.push(...this.processEntersBattlefield(tokenCopy));
+                }
+
+                // Register delayed sacrifice at next end step
+                if (xCopiedIds.length > 0) {
+                    this.registerDelayedTrigger({
+                        phase: 'end_step',
+                        effect: 'sacrifice_cards',
+                        targets: xCopiedIds,
+                        sourceId: ability.sourceId || 0,
+                        description: `Sacrifice ${xCopiedIds.length} token copies (Devastating Onslaught)`
+                    });
+                }
+
+                return { newCards: xNewCards, triggers: xNewTriggers };
 
             default: return { newCards, triggers: newTriggers };
         }
@@ -1277,7 +1489,8 @@ export class GameEngine {
             const token = {
                 ...template, id: Date.now() + Math.random() + i,
                 type_line: (template.type_line || 'Creature').replace(/Legendary\s?/g, '').replace(/^/, 'Token '),
-                isToken: true, tapped: false, counters: 0, attachedTo: null, zone: 'battlefield', haste: true
+                isToken: true, tapped: false, counters: 0, attachedTo: null, zone: 'battlefield', haste: true,
+                enteredThisTurn: true
             };
             ids.push(token.id);
             newCards.push(token);
@@ -1295,16 +1508,25 @@ export class GameEngine {
         const kCards = Array.isArray(knownCards) ? knownCards : [];
         const source = newCards.find(c => c.id === ability.sourceId) || targets[0] || kCards.find(c => c.relatedTokens?.length > 0);
 
-        let template = localCardData.find(c => this._isMatch(c.name, tokenName)) ||
-            source?.relatedTokens?.find(t => this._isMatch(t.name, tokenName)) ||
-            SIGNATURE_DATA[tokenName] || SIGNATURE_DATA[tokenName.replace(' Role', '')];
+        let template = SIGNATURE_DATA[tokenName] || 
+            SIGNATURE_DATA[tokenName.replace(' Role', '')] ||
+            localCardData.find(c => this._isMatch(c.name, tokenName)) ||
+            source?.relatedTokens?.find(t => this._isMatch(t.name, tokenName));
 
         if (!template) return { newCards, triggers: newTriggers };
+
+        // Merge art from source's relatedTokens if available (live Scryfall data has valid art URLs)
+        const relatedArt = source?.relatedTokens?.find(t => this._isMatch(t.name, tokenName));
+        if (relatedArt) {
+            if (relatedArt.art_crop) template = { ...template, art_crop: relatedArt.art_crop };
+            if (relatedArt.image_normal) template = { ...template, image_normal: relatedArt.image_normal };
+        }
 
         for (let i = 0; i < amount; i++) {
             const token = {
                 ...template, id: Date.now() + Math.random() + i, isToken: true, zone: 'battlefield', counters: 0,
-                type_line: template.type_line || template.type
+                type_line: template.type_line || template.type,
+                enteredThisTurn: true
             };
 
             if (token.type_line?.includes('Role')) {
@@ -1315,7 +1537,7 @@ export class GameEngine {
                     execute: (currentCards, _, manualTargets) => {
                         const t = manualTargets?.[0];
                         if (!t) return { newCards: currentCards, triggers: [] };
-                        const role = { ...token, id: Date.now() + Math.random(), attachedTo: t.id, zone: 'attached' };
+                        const role = { ...token, id: Date.now() + Math.random(), attachedTo: t.id, zone: 'attached', enteredThisTurn: true };
                         const clean = this.performRoleCleanup([...currentCards, role], t.id);
                         return { newCards: clean.newCards, triggers: [...this.findTokenEntryTriggers(currentCards, [role]), ...this.processEntersBattlefield(role)] };
                     }
@@ -1345,10 +1567,21 @@ export class GameEngine {
         let newCards = [...cards];
 
         // Get token template
-        const template = this._getTokenTemplateForVirtualization(targets[0], ability, knownCards, cards);
+        let template = this._getTokenTemplateForVirtualization(targets[0], ability, knownCards, cards);
         if (!template) {
             console.warn('[VirtualStack] No template found for virtualization');
             return { newCards, triggers: [] };
+        }
+
+        // Merge art from source's relatedTokens if available
+        if (ability.tokenName) {
+            const tokenName = typeof ability.tokenName === 'function' ? ability.tokenName() : ability.tokenName;
+            const source = cards.find(c => c.id === ability.sourceId);
+            const relatedArt = source?.relatedTokens?.find(t => this._isMatch(t.name, tokenName));
+            if (relatedArt) {
+                if (relatedArt.art_crop) template = { ...template, art_crop: relatedArt.art_crop };
+                if (relatedArt.image_normal) template = { ...template, image_normal: relatedArt.image_normal };
+            }
         }
 
         // Convert to BigInt if not already
@@ -1366,6 +1599,7 @@ export class GameEngine {
                 tapped: ability.tappedAndAttacking || false,
                 attacking: ability.tappedAndAttacking || false,
                 counters: 0,
+                enteredThisTurn: true
             });
         }
 
@@ -1385,6 +1619,7 @@ export class GameEngine {
                 tapped: ability.tappedAndAttacking || false,
                 attacking: ability.tappedAndAttacking || false,
                 counters: 0,
+                enteredThisTurn: true,
                 // Update display name to show count
                 displayName: `${template.name} (×${formattedTotal})`,
             });
@@ -1418,7 +1653,9 @@ export class GameEngine {
         // Check for named token
         if (ability.tokenName) {
             const tokenName = typeof ability.tokenName === 'function' ? ability.tokenName() : ability.tokenName;
-            const template = SIGNATURE_DATA[tokenName] || localCardData.find(c => this._isMatch(c.name, tokenName));
+            const template = SIGNATURE_DATA[tokenName] || 
+                SIGNATURE_DATA[tokenName.replace(' Role', '')] ||
+                localCardData.find(c => this._isMatch(c.name, tokenName));
             if (template) return template;
         }
 

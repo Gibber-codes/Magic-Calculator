@@ -169,6 +169,7 @@ const useGameState = () => {
 
         if (phase === 'Beginning') {
             untapAll();
+            setCards(prev => prev.map(c => ({ ...c, enteredThisTurn: false })));
         }
 
         // Initialize combat step when entering combat phase
@@ -245,7 +246,8 @@ const useGameState = () => {
                     attacking: false,
                     isBlocked: false,
                     tempPowerBonus: 0,
-                    tempToughnessBonus: 0
+                    tempToughnessBonus: 0,
+                    enteredThisTurn: false
                 };
             });
 

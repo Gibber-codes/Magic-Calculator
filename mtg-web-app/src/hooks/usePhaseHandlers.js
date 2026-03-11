@@ -65,7 +65,8 @@ const usePhaseHandlers = ({
 
             const triggersToAdd = sortedTriggers;
 
-            triggersToAdd.forEach(t => {
+            // Reverse triggers before adding to stack so they resolve in the intended order (LIFO)
+            triggersToAdd.reverse().forEach(t => {
                 const description = t.ability?.description ||
                     `At the beginning of combat: ${t.ability?.effect || 'triggered ability'}`;
                 addToStack(t.source, description, 'at', t);
@@ -277,7 +278,8 @@ const usePhaseHandlers = ({
                 return posB.x - posA.x; // Right-to-Left priority
             });
 
-            sortedTriggers.forEach(t => {
+            // Reverse sorted triggers before adding to stack so they resolve in sorted order (LIFO)
+            [...sortedTriggers].reverse().forEach(t => {
                 const description = t.ability?.description || `${t.source.name} triggered`; // Generic fallbacks
                 addToStack(t.source, description, 'at', t);
             });

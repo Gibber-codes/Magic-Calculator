@@ -48,7 +48,7 @@ const FavoritesTab = ({ onAddCard }) => {
                 </span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pb-20">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pb-32">
                 {favorites.map((card) => (
                     <button
                         key={card.id}

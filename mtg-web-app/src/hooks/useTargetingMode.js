@@ -206,7 +206,8 @@ const useTargetingMode = (gameState) => {
 
                 if (triggers.length > 0) hasTriggers = true;
 
-                triggers.forEach(t => {
+                // Reverse triggers before adding to stack so they resolve in the order they were found (LIFO)
+                [...triggers].reverse().forEach(t => {
                     const description = t.ability.description ||
                         `Whenever ${t.source.name} attacks: ${t.ability.effect}`;
                     addToStack(t.source, description, 'on_attack', t);

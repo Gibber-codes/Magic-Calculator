@@ -8,9 +8,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0', // This allows external connections
     port: 5173,
-    hmr: {
-      clientPort: 5173,
-    },
+    hmr: true,
     watch: {
       usePolling: true,
     },

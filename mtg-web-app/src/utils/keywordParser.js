@@ -232,6 +232,13 @@ export const EFFECT_PATTERNS = [
         parseTokenName: (match) => match[1], // Extract just the subtype (e.g., "Warrior", "Soldier")
         delayedEffect: 'sacrifice_at_end_step'
     },
+    // Create tokens equal to power (Krenko style)
+    {
+        pattern: /create a number of (?:.*?) tokens equal to (?:.*?)'s power/i,
+        effect: 'create_related_token',
+        amount: 'this.power',
+        target: 'self'
+    },
     // Equip / Attach effect
     {
         pattern: /Attach\s+(?:to\s+)?target\s+creature/i, // Match "Attach to target creature" or "Attach target creature"
@@ -461,49 +468,68 @@ export function extractTriggers(oracleText) {
 export function extractEffects(oracleText) {
     if (!oracleText) return [];
 
-    const effects = [];
-    const ranges = []; // Track ranges of found matches to prevent overlap
+    const foundMatches = [];
 
-    for (const { pattern, parseAmount, parseName, parseProperties, parseTarget, parseTokenName, parseTappedAndAttacking, parseBuffType, parseToughnessAmount, ...effectData } of EFFECT_PATTERNS) {
+    for (const patternDef of EFFECT_PATTERNS) {
+        const { pattern, ...effectData } = patternDef;
         const match = oracleText.match(pattern);
+        
         if (match) {
-            const start = match.index;
-            const end = start + match[0].length;
+            foundMatches.push({
+                index: match.index,
+                length: match[0].length,
+                match: match,
+                patternDef: patternDef
+            });
+        }
+    }
 
-            // Check for overlap with existing matches
-            const isOverlapping = ranges.some(r =>
-                (start < r.end) && (r.start < end) // Standard intersection check
-            );
+    // Sort by occurrence in the sentence
+    foundMatches.sort((a, b) => a.index - b.index);
 
-            if (!isOverlapping) {
-                const effect = { ...effectData };
-                if (parseAmount) {
-                    effect.amount = parseAmount(match);
-                }
-                if (parseToughnessAmount) {
-                    effect.toughnessAmount = parseToughnessAmount(match);
-                }
-                if (parseBuffType) {
-                    effect.buffType = parseBuffType(match);
-                }
-                if (parseName) {
-                    effect.tokenName = parseName(match);
-                }
-                if (parseProperties) {
-                    effect.tokenProps = parseProperties(match);
-                }
-                if (parseTarget) {
-                    effect.target = parseTarget(match);
-                }
-                if (parseTokenName) {
-                    effect.tokenName = parseTokenName(match);
-                }
-                if (parseTappedAndAttacking) {
-                    effect.tappedAndAttacking = parseTappedAndAttacking(match);
-                }
-                effects.push(effect);
-                ranges.push({ start, end });
+    const effects = [];
+    const ranges = [];
+
+    for (const m of foundMatches) {
+        const start = m.index;
+        const end = start + m.length;
+
+        // Check for overlap with existing matches
+        const isOverlapping = ranges.some(r =>
+            (start < r.end) && (r.start < end)
+        );
+
+        if (!isOverlapping) {
+            const { pattern, parseAmount, parseName, parseProperties, parseTarget, parseTokenName, parseTappedAndAttacking, parseBuffType, parseToughnessAmount, ...effectData } = m.patternDef;
+            const effect = { ...effectData };
+            const match = m.match;
+
+            if (parseAmount) {
+                effect.amount = parseAmount(match);
             }
+            if (parseToughnessAmount) {
+                effect.toughnessAmount = parseToughnessAmount(match);
+            }
+            if (parseBuffType) {
+                effect.buffType = parseBuffType(match);
+            }
+            if (parseName) {
+                effect.tokenName = parseName(match);
+            }
+            if (parseProperties) {
+                effect.tokenProps = parseProperties(match);
+            }
+            if (parseTarget) {
+                effect.target = parseTarget(match);
+            }
+            if (parseTokenName) {
+                effect.tokenName = parseTokenName(match);
+            }
+            if (parseTappedAndAttacking) {
+                effect.tappedAndAttacking = parseTappedAndAttacking(match);
+            }
+            effects.push(effect);
+            ranges.push({ start, end });
         }
     }
 

@@ -40,6 +40,7 @@ import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
 import ScannerButton from '../components/Scanner/ScannerButton';
 import ScannerModal from '../components/Scanner/ScannerModal';
+import XCostModal from '../components/XCostModal';
 
 import useGameState from '../hooks/useGameState';
 import useTargetingMode from '../hooks/useTargetingMode';
@@ -283,7 +284,10 @@ const Game = () => {
         handleAddToRecents,
         handleDeleteRecent,
         handleLoadPreset,
-        handleActivateAbility
+        handleActivateAbility,
+        pendingXCostSpell,
+        castXSpell,
+        cancelXSpell
     } = useCardActions({
         // Game State
         cards,
@@ -304,6 +308,7 @@ const Game = () => {
         setSearchQuery,
         setSearchResults,
         setShowSearchOverlay,
+        setActivePanel,
 
         // Targeting
         setTargetingMode,
@@ -409,7 +414,7 @@ const Game = () => {
 
     return (
         <div
-            className="flex flex-col h-screen w-full text-white overflow-hidden relative selection-none touch-none battlefield-bg"
+            className="fixed inset-0 flex flex-col text-white overflow-hidden touch-auto battlefield-bg"
             style={{
                 backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)',
                 backgroundSize: '40px 40px',
@@ -744,6 +749,15 @@ const Game = () => {
                     setShowCalculationMenu(false);
                 }}
             />
+
+            {/* X Cost Modal */}
+            {pendingXCostSpell && (
+                <XCostModal
+                    spell={pendingXCostSpell.def}
+                    onConfirm={castXSpell}
+                    onCancel={cancelXSpell}
+                />
+            )}
 
             <AddCardPanel
                 isOpen={activePanel === 'add'}

@@ -189,14 +189,14 @@ const AddCardPanel = ({
                     bg-slate-900/60 backdrop-blur-xl 
                     border-t border-white/10 
                     shadow-2xl z-[80] 
-                    flex flex-col 
-                    transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
+                    flex flex-col touch-auto
+                    transition-[height,top,border-radius] duration-500 cubic-bezier(0.32, 0.72, 0, 1)
                     ${isInputFocused || activeTab === 'favorites' ? 'rounded-b-3xl' : 'rounded-t-3xl'} overflow-hidden
-                    ${isInputFocused || activeTab === 'favorites' ? 'h-screen' : 'h-[35vh]'}
+                    ${isInputFocused || activeTab === 'favorites' ? 'inset-0' : 'left-0 right-0 bottom-0 h-[35vh]'}
                 `}
             >
                 {/* Content Wrapper - Responsive Height */}
-                <div className={`flex flex-col w-full ${isInputFocused || activeTab === 'favorites' ? 'flex-1' : (searchResults.length > 0 ? 'max-h-[60vh] h-[60vh]' : 'max-h-[35vh]')}`}>
+                <div className={`flex flex-col w-full min-h-0 ${isInputFocused || activeTab === 'favorites' ? 'flex-1' : (searchResults.length > 0 ? 'max-h-[60vh] h-[60vh]' : 'max-h-[35vh]')}`}>
 
                     {/* Top Bar: Tabs & Close */}
                     <div className="flex items-center justify-between gap-3 px-4 pt-4 shrink-0">
@@ -282,13 +282,13 @@ const AddCardPanel = ({
                     </div>
 
                     {/* Content Area */}
-                    <div className={`flex-1 overflow-y-auto overflow-x-auto px-6 pt-4 pb-4`}>
+                    <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-4 pb-4 touch-auto scrollbar-fancy">
 
                         {/* SEARCH TAB CONTENT */}
                         {activeTab === 'search' && (
                             <div className="flex flex-col gap-4 min-h-full">
 
-                                <div className={`${(!isSearching && searchResults.length > 0) ? 'grid grid-cols-2 gap-3 pb-20' : 'flex flex-row flex-1 items-center gap-4 min-w-min'}`}>
+                                <div className={`${(!isSearching && searchResults.length > 0) ? 'grid grid-cols-2 gap-3 pb-20' : 'flex flex-row flex-1 items-center gap-4 min-w-min overflow-x-auto touch-auto'}`}>
 
                                     {/* Loading State */}
                                     {isSearching && (
@@ -350,7 +350,12 @@ const AddCardPanel = ({
                                                         onClick={() => {
                                                             if (activeLongPressId !== i) {
                                                                 onAddCard(c);
-                                                                setIsInputFocused(false);
+                                                                const isSpell = c.type_line && (c.type_line.toLowerCase().includes('sorcery') || c.type_line.toLowerCase().includes('instant'));
+                                                                if (isSpell) {
+                                                                    setIsInputFocused(false);
+                                                                    setSearchQuery('');
+                                                                    setPreviewCard(null);
+                                                                }
                                                             }
                                                         }}
                                                     >
@@ -443,9 +448,12 @@ const AddCardPanel = ({
                                                     <button
                                                         onClick={() => {
                                                             onAddCard(previewCard);
+                                                            const isSpell = previewCard.type_line && (previewCard.type_line.toLowerCase().includes('sorcery') || previewCard.type_line.toLowerCase().includes('instant'));
+                                                            if (isSpell) {
+                                                                setSearchQuery('');
+                                                                setIsInputFocused(false);
+                                                            }
                                                             setPreviewCard(null);
-                                                            setSearchQuery('');
-                                                            setIsInputFocused(false);
                                                         }}
                                                         className="flex-1 py-4 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl shadow-lg shadow-blue-900/30 transition-all active:scale-95"
                                                     >
@@ -493,8 +501,8 @@ const AddCardPanel = ({
                         {/* FAVORITES TAB CONTENT */}
                         {activeTab === 'favorites' && (
                             <FavoritesTab onAddCard={(card) => {
-                                onAddCard(card);
-                                toast.success(`Added ${card.name}`);
+                                // Add to the horizontal 'Recent Cards' list but STAY in Favorites
+                                onAddToRecents(card);
                             }} />
                         )}
 
@@ -505,7 +513,7 @@ const AddCardPanel = ({
             {/* Search Result Preview Overlay */}
             {previewingSearchCard && (
                 <div
-                    className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-in fade-in duration-200"
+                    className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-in fade-in duration-200"
                     onClick={(e) => {
                         e.stopPropagation();
                         setPreviewingSearchCard(null);

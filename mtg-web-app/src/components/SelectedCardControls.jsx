@@ -136,6 +136,10 @@ const SelectedCardControls = ({
         });
     }
 
+    // State for X cost input
+    const [xCostValue, setXCostValue] = useState(1);
+    const [showXInput, setShowXInput] = useState(null); // idx of ability showing X input
+
     return (
         <div className="w-full rounded-b-xl overflow-hidden pointer-events-auto" onClick={e => e.stopPropagation()}>
             <div className="p-3 bg-black/50 backdrop-blur-md">
@@ -144,26 +148,82 @@ const SelectedCardControls = ({
                 {activatedAbilities.length > 0 && (
                     <div className="space-y-2 mb-4">
                         {activatedAbilities.map((ability, idx) => (
-                            <button
-                                key={idx}
-                                onClick={() => {
-                                    if (onActivateAbility) {
-                                        onActivateAbility(card, ability);
-                                        // Close the menu if the ability requires targeting
-                                        if (ability.requiresTarget && onDeselect) {
-                                            onDeselect();
-                                        }
-                                    }
-                                }}
-                                className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 rounded-lg px-3 py-2 text-left transition-all active:scale-98 group"
-                            >
-                                <div className="flex items-start gap-2">
-                                    <Zap className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5 group-hover:text-indigo-300" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-indigo-300 text-xs font-semibold truncate">{ability.cost}</div>
+                            <div key={idx}>
+                                {/* X Cost Input Mode */}
+                                {ability.requiresXCost && showXInput === idx ? (
+                                    <div className="bg-purple-900/30 border border-purple-500/40 rounded-lg p-3 space-y-3 animate-in fade-in duration-200">
+                                        <div className="text-purple-300 text-xs font-semibold">
+                                            {ability.xCostLabel || 'Choose X value'}
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                onClick={() => setXCostValue(v => Math.max(1, v - 1))}
+                                                className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all"
+                                            >
+                                                <Minus className="w-5 h-5" />
+                                            </button>
+                                            <div className="flex-1 h-10 bg-slate-900 rounded-lg flex items-center justify-center">
+                                                <span className="text-purple-300 text-2xl font-bold">{xCostValue}</span>
+                                            </div>
+                                            <button
+                                                onClick={() => setXCostValue(v => v + 1)}
+                                                className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-white active:scale-95 transition-all"
+                                            >
+                                                <Plus className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                        <div className="text-slate-400 text-[10px] text-center">
+                                            Total mana: {xCostValue * 2 + 1} ({xCostValue}+{xCostValue}+1R)
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowXInput(null)}
+                                                className="flex-1 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold transition-all active:scale-95"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (onActivateAbility) {
+                                                        onActivateAbility(card, { ...ability, xValue: xCostValue });
+                                                        setShowXInput(null);
+                                                        if (onDeselect) onDeselect();
+                                                    }
+                                                }}
+                                                className="flex-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold transition-all active:scale-95 flex items-center justify-center gap-2"
+                                            >
+                                                <Sparkles className="w-4 h-4" />
+                                                Cast (X={xCostValue})
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            </button>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            if (ability.requiresXCost) {
+                                                setShowXInput(idx);
+                                                setXCostValue(1);
+                                            } else if (onActivateAbility) {
+                                                onActivateAbility(card, ability);
+                                                if (ability.requiresTarget && onDeselect) {
+                                                    onDeselect();
+                                                }
+                                            }
+                                        }}
+                                        className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 rounded-lg px-3 py-2 text-left transition-all active:scale-98 group"
+                                    >
+                                        <div className="flex items-start gap-2">
+                                            <Zap className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5 group-hover:text-indigo-300" />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-indigo-300 text-xs font-semibold truncate">{ability.cost}</div>
+                                                {ability.description && (
+                                                    <div className="text-slate-400 text-[10px] mt-0.5 line-clamp-2">{ability.description}</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </button>
+                                )}
+                            </div>
                         ))}
                     </div>
                 )}

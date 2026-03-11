@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { parseOracleText, extractEffects } from '../utils/keywordParser';
 import { createBattlefieldCard, isPlaceholderLand, BASIC_LAND_COLORS } from '../utils/cardUtils';
 import { getScryfallCard, formatScryfallCard, fetchRelatedTokens } from '../utils/scryfallService';
@@ -31,11 +31,60 @@ const useCardActions = ({
     setSearchQuery,
     setSearchResults,
     setShowSearchOverlay,
+    setActivePanel,
 
     // Targeting
     setTargetingMode,
     startTargetingMode
 }) => {
+
+    // State for pending X cost spell (shown in modal)
+    const [pendingXCostSpell, setPendingXCostSpell] = useState(null);
+
+    // Internal: cast a sorcery/instant onto the stack
+    const _castSpell = useCallback((def, ability, xValue) => {
+        const spellAbility = {
+            ...ability,
+            trigger: 'activated',
+            xValue: xValue,
+            amount: xValue || ability.amount,
+            description: xValue
+                ? `${ability.description} (X=${xValue})`
+                : ability.description
+        };
+
+        const virtualSource = {
+            ...def,
+            id: Date.now() + Math.random(),
+            zone: 'stack',
+        };
+
+        if (gameEngineRef.current) {
+            const triggerObj = gameEngineRef.current.resolveEffect({
+                source: virtualSource,
+                ability: spellAbility
+            });
+
+            if (triggerObj) {
+                addToStack(virtualSource, `Cast: ${spellAbility.description}`, 'spell', triggerObj);
+            }
+        }
+
+        logAction(`Cast ${def.name}${xValue ? ` (X=${xValue})` : ''}`);
+    }, [gameEngineRef, addToStack, logAction]);
+
+    // Called from XCostModal when user confirms X value
+    const castXSpell = useCallback((xValue) => {
+        if (!pendingXCostSpell) return;
+        const { def, ability } = pendingXCostSpell;
+        _castSpell(def, ability, Math.max(1, xValue));
+        setPendingXCostSpell(null);
+    }, [pendingXCostSpell, _castSpell]);
+
+    // Called from XCostModal when user cancels
+    const cancelXSpell = useCallback(() => {
+        setPendingXCostSpell(null);
+    }, []);
 
     // Land Conversion Handler
     const handleLandConversion = useCallback((landType, count) => {
@@ -384,6 +433,28 @@ const useCardActions = ({
                     return;
                 }
 
+                // Sorceries & Instants: go directly to the stack, never to the battlefield
+                const isSorceryOrInstant = def.type_line && 
+                    (def.type_line.toLowerCase().includes('sorcery') || def.type_line.toLowerCase().includes('instant'));
+                
+                // Check for abilities from the def itself OR from SIGNATURE_DATA
+                const sigData = SIGNATURE_DATA[def.name];
+                const spellAbilities = def.abilities || sigData?.abilities || [];
+
+                if (isSorceryOrInstant && spellAbilities.length > 0) {
+                    const ability = spellAbilities[0];
+
+                    // If the spell has an X cost, show modal instead of window.prompt
+                    if (ability.requiresXCost) {
+                        setPendingXCostSpell({ def, ability });
+                        return;
+                    }
+
+                    // Non-X spells cast immediately
+                    _castSpell(def, ability);
+                    return;
+                }
+
                 const newCard = createBattlefieldCard(def, {}, { cards: currentCards, gameEngineRef });
                 currentCards = [...currentCards, newCard];
                 addedCards.push(newCard);
@@ -453,10 +524,16 @@ const useCardActions = ({
             });
 
             const referenceCard = addedCards[0];
-            if (def.all_parts || def.scryfall_id) {
+            // Fetch related tokens — favorites cards may lack all_parts/scryfall_id,
+            // so also trigger fetch for any card with abilities (token creators like Krenko)
+            const sigData = SIGNATURE_DATA[def.name];
+            const hasAbilities = (def.abilities && def.abilities.length > 0) || (sigData && sigData.abilities);
+            const shouldFetchTokens = def.all_parts || def.scryfall_id || hasAbilities || def.name;
+            
+            if (shouldFetchTokens) {
                 const tokenFetchPromise = def.all_parts
                     ? fetchRelatedTokens(def)
-                    : getScryfallCard(def.name).then(fetchRelatedTokens);
+                    : getScryfallCard(def.name).then(data => data ? fetchRelatedTokens(data) : []);
 
                 tokenFetchPromise.then(tokens => {
                     if (tokens && tokens.length > 0) {
@@ -565,6 +642,8 @@ const useCardActions = ({
                     trigger: 'activated',
                     effect: abilityDef.effect,
                     target: abilityDef.target,
+                    amount: abilityDef.xValue || abilityDef.amount,
+                    xValue: abilityDef.xValue,
                     description: abilityDef.description || abilityDef.effect
                 }
             });
@@ -673,7 +752,10 @@ const useCardActions = ({
         handleAddToRecents,
         handleDeleteRecent,
         handleLoadPreset,
-        handleActivateAbility
+        handleActivateAbility,
+        pendingXCostSpell,
+        castXSpell,
+        cancelXSpell
     };
 };
 

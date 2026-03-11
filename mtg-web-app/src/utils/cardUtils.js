@@ -106,6 +106,7 @@ export const createBattlefieldCard = (cardDef, extra = {}, context = {}) => {
         entersWithCounters: entersWithCounters, // Add entersWithCounters to the return object
         activeFaceIndex,
         card_faces: mergedDef.card_faces, // Ensure faces are passed through
+        enteredThisTurn: true,
         ...extra,
     };
 };

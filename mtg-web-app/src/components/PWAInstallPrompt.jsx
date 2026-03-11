@@ -29,13 +29,13 @@ const PWAInstallPrompt = () => {
         const handleBeforeInstallPrompt = (e) => {
             e.preventDefault();
             setDeferredPrompt(e);
-            checkAndShowPrompt();
+            checkAndShowPrompt(e);
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
         // 4. Persistence Check
-        const checkAndShowPrompt = () => {
+        const checkAndShowPrompt = (promptEvent) => {
             const lastDismissed = localStorage.getItem('pwa_prompt_dismissed');
             const now = Date.now();
 
@@ -44,7 +44,7 @@ const PWAInstallPrompt = () => {
                 // For iOS, we show it on mount after a small delay
                 if (isIos) {
                     setTimeout(() => setShowPrompt(true), 3000);
-                } else if (isAndroid && deferredPrompt) {
+                } else if (isAndroid && promptEvent) {
                     // For Android, we show it once the event has fired
                     setShowPrompt(true);
                 }
@@ -59,7 +59,7 @@ const PWAInstallPrompt = () => {
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
         };
-    }, [deferredPrompt]);
+    }, []);
 
     const handleDismiss = () => {
         setShowPrompt(false);

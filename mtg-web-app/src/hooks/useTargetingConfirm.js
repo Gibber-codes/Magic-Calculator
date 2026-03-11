@@ -30,10 +30,15 @@ const useTargetingConfirm = ({
         const result = resolveStackAbility(ability, cards, startTargetingMode);
 
         if (result && result.needsTargeting) {
-            const sourceCard = cards.find(c => c.id === ability.sourceId);
-            if (!sourceCard) return;
+            // For spells (sorceries/instants), the source won't be on the battlefield
+            // Fall back to the stored source from the trigger object
+            const sourceCard = cards.find(c => c.id === ability.sourceId) 
+                || ability.triggerObj?.source 
+                || { id: ability.sourceId, name: ability.sourceName };
 
-            const abilityDef = ability.triggerObj.ability;
+            const abilityDef = ability.triggerObj?.ability || ability.ability;
+            if (!abilityDef) return;
+
             const targetSpec = abilityDef.target || 'creature';
 
             let targetType = 'permanent';
