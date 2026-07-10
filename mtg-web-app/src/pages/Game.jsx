@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import {
     X, Plus, Minus, Copy, Trash2, RotateCcw,
     History, Zap, Skull, Mountain, Hexagon, Sparkles, Ghost, User, Ban, Sword, ArrowLeft, ArrowRight, Play, CheckCircle, Search, ShieldOff,
@@ -39,7 +39,10 @@ import CombatSummaryPanel from '../components/CombatSummaryPanel';
 import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
 import ScannerButton from '../components/Scanner/ScannerButton';
-import ScannerModal from '../components/Scanner/ScannerModal';
+
+// Lazy-loaded: pulls react-webcam + scanner UI out of the initial bundle.
+// tesseract.js / fuse.js are already dynamically imported inside the modal.
+const ScannerModal = lazy(() => import('../components/Scanner/ScannerModal'));
 import XCostModal from '../components/XCostModal';
 
 import useGameState from '../hooks/useGameState';
@@ -790,12 +793,22 @@ const Game = () => {
                 onClose={() => setShowWelcome(false)}
             />
 
-            {/* Scanner Components */}
-            <ScannerModal
-                isOpen={isScannerOpen}
-                onClose={handleCloseScanner}
-                onCardsConfirmed={handleCardsConfirmed}
-            />
+            {/* Scanner Components — lazy-loaded, only mounted while open */}
+            {isScannerOpen && (
+                <Suspense
+                    fallback={
+                        <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center">
+                            <p className="text-white text-lg animate-pulse">Loading scanner…</p>
+                        </div>
+                    }
+                >
+                    <ScannerModal
+                        isOpen={isScannerOpen}
+                        onClose={handleCloseScanner}
+                        onCardsConfirmed={handleCardsConfirmed}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 };
