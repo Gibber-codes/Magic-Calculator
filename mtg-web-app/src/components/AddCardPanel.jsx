@@ -41,6 +41,9 @@ const AddCardPanel = ({
     // Limit Modal State
     const [showLimitModal, setShowLimitModal] = useState(false);
 
+    // Bumped whenever favorites change in localStorage, to force heart icons to re-read isFavorite()
+    const [favoritesTick, setFavoritesTick] = useState(0);
+
     // Expand when search activates or results appear
     useEffect(() => {
         if (isSearching || searchResults.length > 0 || previewCard) {
@@ -162,8 +165,8 @@ const AddCardPanel = ({
                 setShowLimitModal(true);
             }
         }
-        // Force update to refresh heart icons immediately
-        setMultiAddCount(prev => prev);
+        // Force re-render to refresh heart icons immediately (isFavorite() re-reads localStorage)
+        setFavoritesTick(prev => prev + 1);
     };
 
     if (!isOpen) return null;

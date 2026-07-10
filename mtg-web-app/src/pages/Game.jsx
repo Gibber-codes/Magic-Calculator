@@ -92,7 +92,7 @@ const Game = () => {
         handleZoneSelection, handleTargetSelection,
         handleMultiSelect: baseHandleMultiSelect,
         handleToggleSelectAll,
-        updateStackSelection, handleConfirmAttackers
+        updateStackSelection, setSliderStackKey, handleConfirmAttackers
     } = targeting;
 
     // --- Local UI State ---
@@ -413,6 +413,10 @@ const Game = () => {
             // If no panel is open, clicking background deselects card
             setSelectedCard(null);
         }
+
+        if (targetingMode.sliderStackKey) {
+            setSliderStackKey(null);
+        }
     };
 
     return (
@@ -556,10 +560,36 @@ const Game = () => {
 
                                 selectedCount: targetSelectedCount,
 
+                                isStackSliderOpen: !!group && targetingMode.sliderStackKey === group.key,
+                                onToggleStackSlider: () => {
+                                    if (targetingMode.sliderStackKey === group?.key) {
+                                        setSliderStackKey(null);
+                                    } else {
+                                        if (targetSelectedCount === 0) {
+                                            updateStackSelection(stackCards, stackCards.length);
+                                        }
+                                        setSliderStackKey(group?.key ?? null);
+                                    }
+                                },
+
                                 onMouseDown: (e) => {
                                     if (targetingMode.active) {
                                         e.stopPropagation();
                                         if (isStackEligible) {
+                                            // During Declare Attackers, tapping a multi-card stack opens the
+                                            // count slider directly (defaults to selecting the whole stack)
+                                            // instead of immediately toggling all-or-nothing — this is the
+                                            // discoverable entry point for partial attacker selection on touch.
+                                            if (targetingMode.action === 'declare-attackers' && stackCards.length > 1) {
+                                                if (targetingMode.sliderStackKey !== group?.key) {
+                                                    if (targetSelectedCount === 0) {
+                                                        updateStackSelection(stackCards, stackCards.length);
+                                                    }
+                                                    setSliderStackKey(group?.key ?? null);
+                                                }
+                                                return;
+                                            }
+
                                             // If stacked, prefer the eligible card (likely NOT the source)
                                             // If multiple eligible, just pick the first one matching logic
                                             const targetToSelect = eligibleCard || card;

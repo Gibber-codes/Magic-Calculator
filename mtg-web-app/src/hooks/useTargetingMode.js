@@ -25,13 +25,18 @@ const useTargetingMode = (gameState) => {
         action: null,
         mode: 'single', // 'single' | 'multiple'
         selectedIds: [],
-        data: null // Generic data payload (e.g. ability definition)
+        data: null, // Generic data payload (e.g. ability definition)
+        sliderStackKey: null // Key of the stack currently showing the attacker-count slider
     });
 
     // --- Actions ---
 
     const cancelTargeting = useCallback(() => {
-        setTargetingMode({ active: false, sourceId: null, action: null, mode: 'single', selectedIds: [], data: null });
+        setTargetingMode({ active: false, sourceId: null, action: null, mode: 'single', selectedIds: [], data: null, sliderStackKey: null });
+    }, []);
+
+    const setSliderStackKey = useCallback((key) => {
+        setTargetingMode(prev => ({ ...prev, sliderStackKey: key }));
     }, []);
 
     const startTargetingMode = useCallback((options) => {
@@ -133,7 +138,7 @@ const useTargetingMode = (gameState) => {
                 const newIds = someExist
                     ? prev.selectedIds.filter(id => !stackIds.includes(id))
                     : [...prev.selectedIds, ...stackIds];
-                return { ...prev, selectedIds: newIds };
+                return { ...prev, selectedIds: newIds, sliderStackKey: null };
             });
         }
     }, [targetingMode]);
@@ -236,6 +241,7 @@ const useTargetingMode = (gameState) => {
         handleMultiSelect,
         handleToggleSelectAll,
         updateStackSelection,
+        setSliderStackKey,
         handleConfirmAttackers
     };
 };

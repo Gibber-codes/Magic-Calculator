@@ -74,7 +74,7 @@ export const CardHeader = ({ card, CARD_WIDTH, bannerHeight }) => {
 };
 
 
-export const CardArt = ({ card, CARD_WIDTH, artHeight, isModified, plusOne, countersObj, isStack, arrivedCount }) => {
+export const CardArt = ({ card, CARD_WIDTH, artHeight, isModified, plusOne, countersObj, isStack, arrivedCount, canOpenSlider, selectedCount, onToggleStackSlider }) => {
     return (
         <div className="z-30 relative">
             <ArtWindow width={CARD_WIDTH} height={artHeight}>
@@ -124,9 +124,23 @@ export const CardArt = ({ card, CARD_WIDTH, artHeight, isModified, plusOne, coun
 
             {/* Stack Count (Only show if NOT virtual stack w/ its own badge) */}
             {isStack && !card.isVirtualStack && (
-                <div className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${arrivedCount > 0 ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-600 text-white'}`}>
-                    <span className="text-xs font-bold">x{arrivedCount}</span>
-                </div>
+                canOpenSlider && selectedCount > 0 && selectedCount < arrivedCount ? (
+                    <div
+                        onClick={(e) => { e.stopPropagation(); onToggleStackSlider(); }}
+                        className="absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 bg-red-600 border-red-400 text-white cursor-pointer"
+                        title="Adjust attacker count"
+                    >
+                        <span className="text-xs font-bold">{selectedCount}/{arrivedCount}</span>
+                    </div>
+                ) : (
+                    <div
+                        onClick={canOpenSlider ? (e) => { e.stopPropagation(); onToggleStackSlider(); } : undefined}
+                        className={`absolute top-2 right-2 rounded-full h-6 px-2 flex items-center justify-center shadow-lg border-2 z-20 ${arrivedCount > 0 ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-600 text-white'} ${canOpenSlider ? 'cursor-pointer' : ''}`}
+                        title={canOpenSlider ? 'Adjust attacker count' : undefined}
+                    >
+                        <span className="text-xs font-bold">x{arrivedCount}</span>
+                    </div>
+                )
             )}
 
         </div>

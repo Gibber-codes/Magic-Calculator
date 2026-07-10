@@ -1,0 +1,171 @@
+# TESTING.md
+
+Manual regression checklist for ComboCalc. Run relevant sections before merging engine changes, and run the full sheet before shipping to production. Every checkbox should reference a real card/interaction the tester can perform — no vague "check that combat works."
+
+> **How to use with Claude Code:** ask Claude to walk through the sections its change touches and report pass/fail. For engine changes, always include §2, §3, §4 minimum.
+
+---
+
+## 1. Smoke test (~2 min)
+
+- [ ] `npm run dev` starts without errors, HTTPS cert warning accepted
+- [ ] App loads at `https://localhost:5173` — welcome screen visible
+- [ ] Footer shows WotC disclaimer with correct wording
+- [ ] Search "Lightning Bolt" from AddCardPanel — card appears, image loads with visible artist/copyright text
+- [ ] Add a creature (e.g., "Serra Angel") to battlefield — renders correctly
+- [ ] Click through Beginning → Main → Combat → Main 2 → End → next turn — no console errors
+- [ ] `npm run lint` passes
+
+---
+
+## 2. Phase & combat flow
+
+Test with 2 vanilla creatures (e.g., "Grizzly Bears", "Serra Angel") on battlefield.
+
+- [ ] **Untap step** untaps all tapped creatures
+- [ ] **Beginning of Combat** — creatures still untapped, no auto-attack
+- [ ] **Declare Attackers** — tap a creature; it shows as attacking
+- [ ] **Declare Blockers** — targeting mode active; selecting an attacker marks it as blocked
+- [ ] **Combat Damage** — action log shows unblocked damage total in `formatBigNumber` format
+- [ ] **End of Combat** — attacking/blocked flags cleared on turn transition
+- [ ] **Skip phase** buttons work (chevron controls)
+- [ ] **Auto-calculate** runs Beginning → Main → Combat → Main 2 and stops (does not roll into End step)
+- [ ] Undo reverts phase state, not just card state
+- [ ] Cleanup step: temporary P/T buffs expire
+
+---
+
+## 3. Triggered abilities & the stack
+
+- [ ] **ETB trigger**: Play a card with an ETB (e.g., "Elvish Visionary" style). Trigger appears on LIFO stack.
+- [ ] **Attack trigger / Battle cry**: Attack with a creature that has Battle cry. Other attacking creatures show +1/+0 in stat display.
+- [ ] **Landfall**: Play a land. Any landfall triggers (e.g., "Scute Swarm", any card in `SIGNATURE_DATA` with `on_land_enter_battlefield`) appear on stack.
+- [ ] **Token-entry trigger** (Wildwood Mentor–style): Create a token. Reactive triggers from other permanents fire.
+- [ ] **Stack ordering**: Multiple simultaneous triggers appear sorted by battlefield position (right-to-left priority, resolves LIFO).
+- [ ] **Stack resolution**: Resolve all — each trigger executes; `stackCount` and card stats update between resolutions.
+- [ ] **Delayed triggers** ("at the beginning of the next end step"): Register during main phase, fire at end step, then removed (one-shot).
+- [ ] **Signature card path**: A card in `SIGNATURE_DATA` uses its manual ability definition, NOT the parser output.
+
+---
+
+## 4. Replacement effects & BigInt math
+
+This is the critical combo-math section — the whole reason the app exists.
+
+- [ ] **Doubling Season + counters**: Add Doubling Season. Add a card that would put +1/+1 counters (e.g., an ETB counter card). Counters are doubled.
+- [ ] **Doubling Season + tokens**: Add Doubling Season. Create tokens via an ability. Token count is doubled.
+- [ ] **Mondrak, Glory Dominus** (passive voice token doubler): Verify token doubling triggers.
+- [ ] **Vorinclex** (passive voice counter doubler): Verify counter doubling triggers.
+- [ ] **Two doublers**: Doubling Season + Mondrak both on battlefield → tokens ×4 (2×2).
+- [ ] **Three doublers**: Tokens ×8. Verify no UI freeze.
+- [ ] **BigInt threshold crossing**: With ≥10 token doublers or repeated activations, verify `formatBigNumber` renders exponential notation (`1.2e15`-style) instead of freezing.
+- [ ] **Physical token cap**: After 20+ tokens, virtual-stack representation kicks in (no 100 individual card objects in DOM).
+- [ ] **Unblocked damage with virtual stack**: 1000 attacking 2/2s deal 2000 damage total (BigInt-accurate).
+
+---
+
+## 5. Card interactions
+
+- [ ] **Add card** via search, favorites, recents — all three tabs work
+- [ ] **Favorite toggle** on preview card persists across page reload
+- [ ] **Remove card** from battlefield
+- [ ] **Tap / untap** manually
+- [ ] **+1/+1 counter** applied to a stack of N creatures affects the correct count via slider
+- [ ] **-1/-1 counter** does not go below zero
+- [ ] **Permanent P/T buff** persists through phases
+- [ ] **Temporary P/T buff** ("until end of turn") expires at cleanup
+- [ ] **Equipment attach** to a creature — bonus reflected in `calculateCardStats`
+- [ ] **Aura attach** to a creature — bonus reflected
+- [ ] **Land conversion** (basic land type change) works
+- [ ] **X-cost modal**: Cast a card with X in mana cost; modal appears, X value applies
+
+---
+
+## 6. Scanner (BETA — expected failures documented)
+
+Test on mobile device with real MTG cards, good lighting.
+
+- [ ] Scanner button visible, opens modal
+- [ ] Camera permission prompt appears on first use
+- [ ] **Back camera** activates on mobile (not selfie)
+- [ ] Video feed fills viewfinder
+- [ ] Capture button responsive
+- [ ] OCR completes within 5–10 seconds
+- [ ] **Auto-scan stability**: card must be steady for 2 consecutive matches before auto-confirm (per `AUTO_CONFIRM_THRESHOLD`)
+- [ ] Confirmation panel allows edit/remove per card
+- [ ] Confirmed cards land on battlefield with correct name, power/toughness
+- [ ] Session history bar shows recent scans
+- [ ] Modal close terminates OCR worker (verify with DevTools memory tab — no leak after 10 scans)
+
+**Known failures (should degrade gracefully, not crash):**
+- [ ] Foil card → low accuracy, no crash
+- [ ] Old card frame → low accuracy, no crash
+- [ ] Foreign-language card → no match found, user can manually edit
+- [ ] Poor lighting → no match, retry works
+
+---
+
+## 7. UI & mobile
+
+- [ ] Touch interactions work on mobile Safari + Android Chrome
+- [ ] LIFO stack collapses/expands
+- [ ] Undo/redo buttons update history correctly (no orphan states)
+- [ ] Action log scrolls, most recent at bottom
+- [ ] Phase tracker highlights current phase
+- [ ] BottomControlPanel does not overlap with battlefield cards
+- [ ] PWA install prompt appears on eligible devices
+- [ ] Rotating device does not lose game state
+
+---
+
+## 8. Legal & compliance (pre-launch only)
+
+- [ ] Footer disclaimer text matches `App_legal_compliance_guide.md` verbatim
+- [ ] Terms of Service page accessible and renders
+- [ ] Legal Notices (Privacy) page accessible and renders
+- [ ] Card images display artist name and copyright (Scryfall requirement)
+- [ ] Card images not cropped, distorted, or watermarked
+- [ ] No paywall/subscription anywhere in UI
+- [ ] Cookie consent banner appears before any analytics/ad script loads
+- [ ] "Reject All" cookie button visually equal to "Accept All"
+- [ ] AdSense placeholder does not violate 150px buffer from interactive controls
+- [ ] `ADSENSE_CLIENT_ID` and `ADSENSE_SLOT_ID` in `constants.js` are real (not `XXXXXXXXXX`)
+- [ ] `AdBanner.jsx` `isProduction` respects an environment variable, not hardcoded
+
+---
+
+## 9. Performance sanity
+
+- [ ] Empty battlefield: page interactive within 2s
+- [ ] 20 creatures on battlefield: still responsive, no jank on phase advance
+- [ ] Extreme combo (Doubling Season × 3 + repeated token creation): no browser hang, exponential notation displays
+- [ ] Scanner modal open/close 10 times: no memory leak (check DevTools)
+- [ ] Scryfall API calls respect 50–100ms delay (check Network tab timings)
+
+---
+
+## 10. Cross-browser
+
+Run smoke test (§1) on:
+
+- [ ] Chrome desktop
+- [ ] Safari desktop
+- [ ] Firefox desktop
+- [ ] iOS Safari (mobile)
+- [ ] Android Chrome (mobile)
+
+---
+
+## Regression protocol by change type
+
+| Change area | Required sections |
+|---|---|
+| `gameEngine.js` | §1, §2, §3, §4, §9 |
+| `keywordParser.js` / `SIGNATURE_DATA` | §1, §3, §4 |
+| `combatUtils.js` | §1, §2, §4 |
+| `useGameState.js` / `usePhaseHandlers.js` | §1, §2, §3 |
+| Any hook in `hooks/` | §1, §5, §7 |
+| Scanner code | §1, §6 |
+| Legal / Footer / ad components | §1, §8 |
+| Styling / layout | §1, §7, §10 |
+| Dependency update | Full sheet |

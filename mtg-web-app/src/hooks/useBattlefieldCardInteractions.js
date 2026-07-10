@@ -1,42 +1,39 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 export const useBattlefieldCardInteractions = ({
     card,
     isSelected,
     onMouseDown,
-    onAction,
-    onStackSelectionChange,
     stackCards,
-    count,
     isEligibleAttacker,
     isDeclaredAttacker,
     isTargeting,
-    isTouch
+    isTouch,
+    onToggleStackSlider
 }) => {
     const [isHovered, setIsHovered] = useState(false);
     const [showOverlay, setShowOverlay] = useState(false);
-    const [deleteCount, setDeleteCount] = useState(count);
 
     const longPressTimerRef = useRef(null);
     const isLongPressingRef = useRef(false);
 
-    // Sync deleteCount with count
-    useEffect(() => {
-        if (count > 0) {
-            setDeleteCount(count);
-        }
-    }, [count]);
-
     const handlePointerDown = useCallback((e) => {
-        if (!isSelected) return;
         if (e.button === 2) return;
+
+        const canOpenSlider = (isEligibleAttacker || isDeclaredAttacker) && stackCards?.length > 1 && onToggleStackSlider;
+
+        if (!isSelected && !canOpenSlider) return;
 
         isLongPressingRef.current = false;
         longPressTimerRef.current = setTimeout(() => {
             isLongPressingRef.current = true;
-            setShowOverlay(true);
+            if (canOpenSlider) {
+                onToggleStackSlider();
+            } else {
+                setShowOverlay(true);
+            }
         }, 500);
-    }, [isSelected]);
+    }, [isSelected, isEligibleAttacker, isDeclaredAttacker, stackCards, onToggleStackSlider]);
 
     const handlePointerUp = useCallback(() => {
         if (longPressTimerRef.current) {
@@ -53,31 +50,6 @@ export const useBattlefieldCardInteractions = ({
             clearTimeout(longPressTimerRef.current);
         }
     }, []);
-
-    const handleStackChange = useCallback((e, newCount) => {
-        e.stopPropagation();
-        const safeCount = Math.max(1, Math.min(count, newCount));
-
-        if (onStackSelectionChange && stackCards && (isEligibleAttacker || isDeclaredAttacker)) {
-            onStackSelectionChange(stackCards, safeCount);
-        } else {
-            setDeleteCount(safeCount);
-        }
-    }, [count, onStackSelectionChange, stackCards, isEligibleAttacker, isDeclaredAttacker]);
-
-    const cycleSelection = useCallback((e, displayCount) => {
-        e.stopPropagation();
-        let nextCount;
-        if (displayCount === 1) {
-            nextCount = Math.ceil(count / 2);
-            if (nextCount === 1) nextCount = count;
-        } else if (displayCount === Math.ceil(count / 2) && count > 2) {
-            nextCount = count;
-        } else {
-            nextCount = 1;
-        }
-        handleStackChange(e, nextCount);
-    }, [count, handleStackChange]);
 
     const handleClick = useCallback((e) => {
         if (isTouch && !isLongPressingRef.current) {
@@ -97,13 +69,10 @@ export const useBattlefieldCardInteractions = ({
     return {
         isHovered,
         showOverlay,
-        deleteCount,
         isLongPressing: isLongPressingRef,
         handlePointerDown,
         handlePointerUp,
         handlePointerMove,
-        handleStackChange,
-        cycleSelection,
         handleClick,
         handleMouseEnter,
         handleMouseLeave

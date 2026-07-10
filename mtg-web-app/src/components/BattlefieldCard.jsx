@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { RotateCcw, Shield } from 'lucide-react';
+import { RotateCcw, Shield, Check } from 'lucide-react';
 import { isLand, isCreature, calculateCardStats, calculateEffectiveTotal, isMinimalDisplayLand, getCardHexColors } from '../utils/cardUtils';
 import { formatBigNumber } from '../utils/formatters';
 import { useIsTouchDevice } from '../hooks/useTouchInteractions';
@@ -43,7 +43,9 @@ const BattlefieldCard = ({
     onConvertLand,
     isRelative = false,
     isPendingOnStack = false,
-    hideBanners = false
+    hideBanners = false,
+    isStackSliderOpen = false,
+    onToggleStackSlider
 }) => {
     const stats = calculateCardStats(card, allCards, attachments);
     const colors = getCardHexColors(card.colors);
@@ -56,7 +58,6 @@ const BattlefieldCard = ({
     const {
         isHovered,
         showOverlay,
-        deleteCount,
         handlePointerDown,
         handlePointerUp,
         handlePointerMove,
@@ -64,8 +65,9 @@ const BattlefieldCard = ({
         handleMouseEnter,
         handleMouseLeave
     } = useBattlefieldCardInteractions({
-        card, isSelected, onMouseDown, onAction, onStackSelectionChange,
-        stackCards, count, isEligibleAttacker, isDeclaredAttacker, isTargeting, isTouch
+        card, isSelected, onMouseDown,
+        stackCards, isEligibleAttacker, isDeclaredAttacker, isTargeting, isTouch,
+        onToggleStackSlider
     });
 
     const countersObj = typeof card.counters === 'object' ? (card.counters || {}) : { '+1/+1': card.counters || 0 };
@@ -76,8 +78,6 @@ const BattlefieldCard = ({
     if (card.isToken && !cardType.toLowerCase().includes('token')) {
         cardType = `Token ${cardType} `;
     }
-
-    const displayCount = isEligibleAttacker || isDeclaredAttacker ? selectedCount : deleteCount;
 
     // --- Animation Logic ---
     const [isMounted, setIsMounted] = useState(false);
@@ -154,6 +154,8 @@ const BattlefieldCard = ({
 
 
     const isVirtualStack = stackCards.some(c => c.isVirtualStack) || (effectiveTotal > 1000n && card.isToken);
+
+    const canOpenSlider = (isEligibleAttacker || isDeclaredAttacker) && isStack && !isVirtualStack;
 
     // Minimal Land View
     if (isMinimalDisplayLand(card)) {
@@ -274,6 +276,9 @@ const BattlefieldCard = ({
                                 countersObj={countersObj}
                                 isStack={isStack}
                                 arrivedCount={arrivedCount}
+                                canOpenSlider={canOpenSlider}
+                                selectedCount={selectedCount}
+                                onToggleStackSlider={onToggleStackSlider}
                             />
                         );
                     })()}
@@ -301,6 +306,32 @@ const BattlefieldCard = ({
                 {card.isBlocked && (
                     <div className="absolute -top-2 -right-2 z-50 bg-red-600/90 rounded-full p-1.5 shadow-lg border border-white/20 animate-in zoom-in duration-200" title="Blocked">
                         <Shield size={14} className="text-white fill-red-400" />
+                    </div>
+                )}
+
+                {/* Attacker Count Slider Overlay */}
+                {isStackSliderOpen && (
+                    <div
+                        className="absolute inset-0 z-[70] bg-black/80 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center gap-2 p-3 animate-in fade-in zoom-in-95 duration-200"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <span className="text-white text-[10px] font-bold uppercase tracking-wide">Attackers</span>
+                        <span className="text-white text-2xl font-bold font-mono">{selectedCount} / {count}</span>
+                        <input
+                            type="range"
+                            min="0"
+                            max={stackCards.length}
+                            value={selectedCount}
+                            onChange={(e) => onStackSelectionChange(stackCards, parseInt(e.target.value, 10))}
+                            className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-red-500"
+                        />
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onToggleStackSlider(); }}
+                            className="mt-1 px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1"
+                        >
+                            <Check size={14} /> Done
+                        </button>
                     </div>
                 )}
             </motion.div >
