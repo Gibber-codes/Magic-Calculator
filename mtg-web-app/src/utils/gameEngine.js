@@ -6,6 +6,7 @@ import { calculateCardStats, getTypeFromTypeLine } from './cardUtils';
 import localCardData from '../data/scryfall_cards.json';
 import { SIGNATURE_DATA } from '../data/signatureCards';
 import { formatBigNumber } from './formatters';
+import { normalizePhase, PHASE_TRIGGER_MAP } from './phaseUtils';
 
 // Performance optimization: limit physical token objects to prevent memory issues
 const MAX_PHYSICAL_TOKENS = 20;
@@ -34,7 +35,7 @@ export class GameEngine {
      * so multiple Ouroboroids stack correctly.
      */
     processPhaseChange(phase, playerTurn = true) {
-        this.currentPhase = phase;
+        this.currentPhase = normalizePhase(phase);
 
         // 1. Standard Phase Triggers
         const standardTriggers = this.findTriggersForPhase(phase, playerTurn);
@@ -46,6 +47,18 @@ export class GameEngine {
         const allTriggers = [...standardTriggers, ...delayed];
         // flatMap handles both single triggers and arrays of triggers from token creation
         return allTriggers.flatMap(trigger => this.resolveEffect(trigger));
+    }
+
+    /**
+     * End-of-turn teardown: resolve remaining delayed end-step triggers ONLY.
+     * Standard end-step triggers deliberately do NOT fire here — they fire
+     * when the End phase is entered via processPhaseChange, and firing them
+     * again on turn end would double-trigger for players who stepped through
+     * the End phase manually before ending the turn.
+     */
+    processEndOfTurn() {
+        const delayed = this.processDelayedTriggers('end');
+        return delayed.flatMap(trigger => this.resolveEffect(trigger));
     }
 
     /**
@@ -61,15 +74,7 @@ export class GameEngine {
      * Removes them from the storage (they are one-shot)
      */
     processDelayedTriggers(phase) {
-        const triggerMap = {
-            beginning: 'beginning_step',
-            combat: 'beginning_of_combat',
-            main: 'main_phase',
-            'Main 2': 'main_phase',
-            end: 'end_step',
-            'End': 'end_step', // Support capital E from phase names
-        };
-        const currentTriggerType = triggerMap[phase];
+        const currentTriggerType = PHASE_TRIGGER_MAP[normalizePhase(phase)];
         if (!currentTriggerType) return [];
 
         const matching = [];
@@ -104,15 +109,7 @@ export class GameEngine {
      */
     findTriggersForPhase(phase, playerTurn) {
         const triggers = [];
-        const triggerMap = {
-            beginning: 'beginning_step',
-            combat: 'beginning_of_combat',
-            main: 'main_phase',
-            'Main 2': 'main_phase',
-            end: 'end_step',
-        };
-
-        const triggerType = triggerMap[phase];
+        const triggerType = PHASE_TRIGGER_MAP[normalizePhase(phase)];
         if (!triggerType) return triggers;
 
         this.cards.forEach(card => {
@@ -158,15 +155,7 @@ export class GameEngine {
      */
     checkPendingTriggers(phase) {
         // 1. Check Delayed Triggers
-        const triggerMap = {
-            beginning: 'beginning_step',
-            combat: 'beginning_of_combat',
-            main: 'main_phase',
-            'Main 2': 'main_phase',
-            end: 'end_step',
-            'End': 'end_step',
-        };
-        const currentTriggerType = triggerMap[phase];
+        const currentTriggerType = PHASE_TRIGGER_MAP[normalizePhase(phase)];
         if (!currentTriggerType) return false;
 
         const hasDelayed = this.delayedTriggers.some(dt => dt.phase === currentTriggerType);

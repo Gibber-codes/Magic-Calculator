@@ -117,9 +117,9 @@ MTG combos routinely produce numbers that overflow `Number.MAX_SAFE_INTEGER`. Th
 - Analytics and ad scripts must NOT load before user consent.
 - A cookie consent banner is required but not yet integrated (see launch-readiness backlog).
 
-### 6. Phase name casing is inconsistent
+### 6. Phase names: canonical lowercase in the engine, title-case in the UI
 
-The engine accepts both `'main'` and `'Main 2'`, `'end'` and `'End'`. There's a `triggerMap` in `processDelayedTriggers` that handles both. When adding new phase handling, mirror this compatibility.
+`utils/phaseUtils.js` owns phase identity: canonical phases are lowercase (`'beginning' | 'main1' | 'combat' | 'main2' | 'end'`), `normalizePhase(input)` converts any spelling at the engine boundary, and the single shared `PHASE_TRIGGER_MAP` replaces the old per-method trigger maps. UI state still uses title-case (`'Main 2'` etc. in `PHASE_ORDER`) as a display concern. Two intentional behaviors are pinned by tests: **main-phase triggers fire only at precombat main, not Main 2**, and **`endTurn` resolves delayed end-step triggers only** (via `engine.processEndOfTurn()`), never standard end-step triggers — both prevent double-firing. New phase-accepting engine code should call `normalizePhase` at its boundary.
 
 ### 7. Signature card fallback in ETB
 
@@ -146,10 +146,10 @@ Vite is configured with `@vitejs/plugin-basic-ssl` so the dev server runs on HTT
 ## Known tech debt (proceed carefully)
 
 1. **`usePhaseHandlers.handleAutoCalculate`** — marked `// SIMPLIFIED APPROACH` in comments. Runs phases sequentially but doesn't cleanly thread the card-state mutations between phases. A proper fix is a new `engine.simulateFullTurn(cards)` method.
-2. **Phase casing inconsistency** — see gotcha #6. Long-term: normalize to lowercase everywhere or add a strict enum.
+2. ~~Phase casing inconsistency~~ — resolved via `phaseUtils.js` (see gotcha #6). UI components still compare title-case strings directly; migrating them to `PHASES` constants is optional polish. Note: `BottomControlPanel.jsx` compares `currentPhase === 'Main 1'`, which is never a real phase value (`'Main'` is) — dormant UI bug, untouched.
 3. **`AdBanner.jsx` has `isProduction = false` hardcoded** — replace with an actual env check before shipping.
 4. **`ADSENSE_CLIENT_ID` and `ADSENSE_SLOT_ID` in `constants.js` are placeholders.**
-5. **No test suite.** Adding one is on the roadmap.
+5. ~~No test suite~~ — Vitest seed suite exists (see Commands); coverage is still thin outside `combatUtils`/`keywordParser`/`gameEngine.applyModifiers`/`phaseUtils`.
 6. **Scanner is in progress** — `combocalc-scanner-implementation.md` is the design doc. Auto-scan concurrency lock (`isAutoScanBusy` ref) is a fresh addition, monitor for edge cases.
 
 ---

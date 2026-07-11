@@ -39,3 +39,51 @@ describe('GameEngine.applyModifiers', () => {
         expect(result).toBe(4096);
     });
 });
+
+describe('GameEngine phase trigger casing (Tier 1D normalization)', () => {
+    const endStepCard = {
+        id: 1,
+        name: 'End Stepper',
+        zone: 'battlefield',
+        abilities: [{ trigger: 'end_step', effect: 'add_counters', amount: 1, target: 'self' }],
+    };
+    const mainPhaseCard = {
+        id: 2,
+        name: 'Main Phaser',
+        zone: 'battlefield',
+        abilities: [{ trigger: 'main_phase', effect: 'add_counters', amount: 1, target: 'self' }],
+    };
+
+    it('accepts any casing for phase names', () => {
+        const engine = new GameEngine([endStepCard]);
+        expect(engine.checkPendingTriggers('end')).toBe(true);
+        expect(engine.checkPendingTriggers('End')).toBe(true);
+        expect(engine.processPhaseChange('END')).toHaveLength(1);
+    });
+
+    it('fires main-phase triggers at precombat main but NOT at main 2 (fires once per turn)', () => {
+        const engine = new GameEngine([mainPhaseCard]);
+        expect(engine.processPhaseChange('Main')).toHaveLength(1);
+        expect(engine.processPhaseChange('Main 2')).toHaveLength(0);
+        expect(engine.processPhaseChange('main 2')).toHaveLength(0);
+    });
+
+    it('processEndOfTurn resolves delayed end-step triggers once, and never standard ones', () => {
+        const engine = new GameEngine([endStepCard]);
+        engine.registerDelayedTrigger({
+            phase: 'end_step',
+            effect: 'sacrifice_cards',
+            targets: [99],
+            sourceId: 1,
+            description: 'Sacrifice a token',
+        });
+
+        const first = engine.processEndOfTurn();
+        // Only the delayed trigger — endStepCard's standard trigger must not fire here
+        expect(first).toHaveLength(1);
+        expect(first[0].ability.effect).toBe('sacrifice_cards');
+
+        // Delayed triggers are one-shot
+        expect(engine.processEndOfTurn()).toHaveLength(0);
+    });
+});

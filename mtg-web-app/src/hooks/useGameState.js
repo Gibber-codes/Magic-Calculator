@@ -227,10 +227,12 @@ const useGameState = () => {
     const endTurn = useCallback(() => {
         logAction("Turn Ended");
 
-        // Process End phase - this will trigger delayed effects like Orthion's token sacrifices
+        // Resolve delayed end-step effects (e.g. Orthion's token sacrifices).
+        // Deliberately NOT processPhaseChange('end'): standard end-step triggers
+        // already fired if the player stepped through the End phase.
         let endTriggers = [];
         if (gameEngineRef.current) {
-            endTriggers = gameEngineRef.current.processPhaseChange('End', true);
+            endTriggers = gameEngineRef.current.processEndOfTurn();
         }
 
         // Clear phase state
