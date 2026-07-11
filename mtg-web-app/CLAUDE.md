@@ -22,9 +22,12 @@ npm run dev       # Vite dev server (HTTPS via @vitejs/plugin-basic-ssl — need
 npm run build     # production build to /dist
 npm run preview   # preview the production build
 npm run lint      # ESLint check — run before commits
+npm test          # Vitest, single run — run before commits
+npm run test:watch  # Vitest in watch mode
+npm run test:ui   # Vitest browser UI
 ```
 
-There is currently **no test suite**. When adding tests, propose Vitest (matches the Vite stack) and start with `combatUtils`, `gameEngine`, and `keywordParser` — those are pure logic modules with high value per test.
+Tests use **Vitest** and live next to their module as `src/**/*.test.js` (e.g. `utils/combatUtils.test.js`), importing `describe`/`it`/`expect` explicitly from `vitest` (no globals). Seed coverage exists for `combatUtils.calculateUnblockedDamage` (BigInt cases), `keywordParser.extractTriggers`, and `gameEngine.applyModifiers` (doubler/BigInt-threshold paths). When touching those modules, extend the tests — TESTING.md remains the manual regression checklist for everything the unit tests don't cover.
 
 ---
 
