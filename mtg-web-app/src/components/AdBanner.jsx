@@ -1,12 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { ADSENSE_CLIENT_ID, ADSENSE_SLOT_ID } from '../config/constants';
+import React, { useEffect } from 'react';
+import { ADSENSE_CLIENT_ID, ADSENSE_SLOT_ID, ADSENSE_CONFIGURED } from '../config/constants';
+
+// Real ads require a production build AND real (non-placeholder) IDs in constants.js —
+// placeholder IDs must never be pushed to AdSense.
+const isProduction = import.meta.env.PROD && ADSENSE_CONFIGURED;
 
 const AdBanner = () => {
-    // For development/testing, we can toggle this to see the placeholder vs real ad
-    // In a real scenario, you might check process.env.NODE_ENV === 'production'
-    const isProduction = false; // Set to true to attempt loading real ads
-    const [adLoaded, setAdLoaded] = useState(false);
-
     useEffect(() => {
         if (isProduction) {
             try {
@@ -14,12 +13,11 @@ const AdBanner = () => {
                 // This assumes the AdSense script is loaded in index.html <head>
                 // <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXX" crossOrigin="anonymous"></script>
                 (window.adsbygoogle = window.adsbygoogle || []).push({});
-                setAdLoaded(true);
             } catch (err) {
                 console.error("AdSense error:", err);
             }
         }
-    }, [isProduction]);
+    }, []);
 
     return (
         <div className="w-full bg-slate-950 border-b border-slate-800 flex flex-col items-center justify-center relative z-40 select-none">
