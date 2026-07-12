@@ -58,6 +58,7 @@ import useTargetingConfirm from '../hooks/useTargetingConfirm';
 import useSearch from '../hooks/useSearch';
 import { useBattlefieldLayout } from '../hooks/useBattlefieldLayout';
 import { useScanner } from '../hooks/useScanner';
+import useZoneView from '../hooks/useZoneView';
 
 // Constants imported from config/constants.js
 // PRESETS imported from config/presets.js
@@ -100,6 +101,15 @@ const Game = () => {
         handleToggleSelectAll,
         updateStackSelection, setSliderStackKey, handleConfirmAttackers
     } = targeting;
+
+    // --- Zone View (stack auto-force + pin) ---
+    const { pinned: zonePinned, toast: zoneToast, handleBlockedSwitch } = useZoneView({
+        abilityStack,
+        cards,
+        activeZone,
+        setActiveZone,
+        targetingActive: targetingMode.active
+    });
 
     // --- Local UI State ---
     const [selectedCard, setSelectedCard] = useState(null);
@@ -543,6 +553,8 @@ const Game = () => {
                         activeZone={activeZone}
                         onZoneChange={setActiveZone}
                         zoneCounts={zoneCounts}
+                        pinned={zonePinned}
+                        onBlockedSwitch={handleBlockedSwitch}
                         onCardAction={handleCardAction}
                         onStackSelectionChange={updateStackSelection}
                         allCards={cards}
@@ -713,6 +725,13 @@ const Game = () => {
             </div>
 
 
+
+            {/* Zone pin toast ("Resolve stack triggers first.") */}
+            {zoneToast && (
+                <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-lg bg-slate-900/95 border border-amber-500/50 text-amber-300 text-sm font-semibold shadow-xl animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
+                    {zoneToast}
+                </div>
+            )}
 
             {/* Phase Tracker - Floating above Controls */}
             <PhaseTracker
