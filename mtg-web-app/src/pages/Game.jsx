@@ -36,6 +36,8 @@ import SelectionMenu from '../components/SelectionMenu';
 import BottomControlPanel from '../components/BottomControlPanel';
 import MoreOptionsPanel from '../components/MoreOptionsPanel';
 import CombatSummaryPanel from '../components/CombatSummaryPanel';
+import RightDock from '../components/RightDock';
+import DockCardDetail from '../components/DockCardDetail';
 import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
 import ScannerButton from '../components/Scanner/ScannerButton';
@@ -120,7 +122,8 @@ const Game = () => {
     const [verticalOffsetY, setVerticalOffsetY] = useState(0);
     // Track window size to force re-calc of layout on resize (fixes stale visual positions)
     const [windowSize, setWindowSize] = useState({ width: typeof window !== 'undefined' ? window.innerWidth : 0, height: typeof window !== 'undefined' ? window.innerHeight : 0 });
-    const [isPortrait, setIsPortrait] = useState(typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false);
+    // Landscape two-column layout (battlefield + dock). Portrait keeps the legacy layout.
+    const isLandscape = windowSize.width > windowSize.height && windowSize.width >= 640;
     const BOTTOM_BAR_HEIGHT = 0; // Floating UI now
     const TOP_BAR_HEIGHT = 0;   // Floating UI now
 
@@ -149,7 +152,6 @@ const Game = () => {
 
     useEffect(() => {
         const handleResize = () => {
-            setIsPortrait(window.innerHeight > window.innerWidth);
             setWindowSize({ width: window.innerWidth, height: window.innerHeight });
         };
         window.addEventListener('resize', handleResize);
@@ -400,6 +402,30 @@ const Game = () => {
 
     const battlefieldCards = sortBattlefieldCards(unfilteredBattlefieldCards, cards);
 
+    // Shared between SelectionMenu (portrait) and DockCardDetail (landscape)
+    const selectedStackCards = selectedCard
+        ? (visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard])
+        : [];
+
+    const handleSelectedCounterChange = (action, cardsToModify) => {
+        if (!gameEngineRef.current) return;
+        let updatedCards = [...cards];
+        cardsToModify.forEach(cardToModify => {
+            const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
+            updatedCards = result.newCards;
+        });
+        saveHistoryState(updatedCards);
+        if (selectedCard) {
+            const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
+            if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
+        }
+    };
+
+    const handleActivateAbilityLogged = (card, ability) => {
+        logAction(`Activated: ${ability.cost}`);
+        handleActivateAbility(card, ability);
+    };
+
     const handleBgClick = (e) => {
         // Only close panels if the click was directly on the background container
         // If target !== currentTarget, it means the click was on a child element
@@ -490,9 +516,9 @@ const Game = () => {
                 onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
             />
 
-            {/* Main Content Area - Split View */}
+            {/* Main Content Area - battlefield + contextual dock in landscape */}
             <div
-                className="flex-1 flex flex-col pt-16 pb-0 overflow-hidden"
+                className={`flex-1 flex ${isLandscape ? 'flex-row' : 'flex-col'} pt-16 pb-0 overflow-hidden`}
                 onClick={handleBgClick}
             >
                 <div className="flex-1 relative min-h-0" ref={battlefieldRef}>
@@ -611,6 +637,25 @@ const Game = () => {
                         targetingMode={targetingMode}
                     />
                 </div>
+
+                {/* Right Dock (landscape only) */}
+                {isLandscape && (
+                    <RightDock>
+                        {selectedCard && (
+                            <DockCardDetail
+                                selectedCard={selectedCard}
+                                stackCount={calculateEffectiveTotal(selectedStackCards)}
+                                stackCards={selectedStackCards}
+                                allCards={cards}
+                                onAction={handleCardAction}
+                                onDeselect={() => setSelectedCard(null)}
+                                onActivateAbility={handleActivateAbilityLogged}
+                                onConvertLand={handleLandConversion}
+                                onCounterChange={handleSelectedCounterChange}
+                            />
+                        )}
+                    </RightDock>
+                )}
             </div>
 
 
@@ -673,33 +718,19 @@ const Game = () => {
 
             {/* New Bottom Control Panel, Selection Menu, or Attacker Confirmation */}
             {/* Hide controls if Add Panel is open, to let it replace the bottom area */}
-            {activePanel === 'add' ? null : selectedCard ? (
+            {/* In landscape, selection lives in the dock — the overlay menu is portrait-only */}
+            {activePanel === 'add' ? null : (selectedCard && !isLandscape) ? (
                 <SelectionMenu
                     selectedCard={selectedCard}
-                    stackCount={calculateEffectiveTotal(visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard])}
-                    stackCards={visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard]}
+                    stackCount={calculateEffectiveTotal(selectedStackCards)}
+                    stackCards={selectedStackCards}
                     allCards={cards}
 
                     onAction={handleCardAction}
                     onDeselect={() => setSelectedCard(null)}
-                    onActivateAbility={(card, ability) => {
-                        logAction(`Activated: ${ability.cost}`);
-                        handleActivateAbility(card, ability);
-                    }}
+                    onActivateAbility={handleActivateAbilityLogged}
                     onConvertLand={handleLandConversion}
-                    onCounterChange={(action, cardsToModify, count) => {
-                        if (!gameEngineRef.current) return;
-                        let updatedCards = [...cards];
-                        cardsToModify.forEach(cardToModify => {
-                            const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
-                            updatedCards = result.newCards;
-                        });
-                        saveHistoryState(updatedCards);
-                        if (selectedCard) {
-                            const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
-                            if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
-                        }
-                    }}
+                    onCounterChange={handleSelectedCounterChange}
                 />
             ) : (
                 <BottomControlPanel

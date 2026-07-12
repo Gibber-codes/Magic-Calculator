@@ -120,6 +120,9 @@ export function formatScryfallCard(scryfallCard) {
         toughness: t,
         art_crop: primaryFace.image_uris?.art_crop || scryfallCard.image_uris?.art_crop || '',
         image_normal: scryfallCard.image_uris?.normal || primaryFace.image_uris?.normal || '',
+        // Scryfall image guidelines: when showing art_crop, the artist credit
+        // must appear elsewhere in the UI (rendered by the dock detail view).
+        artist: scryfallCard.artist || primaryFace.artist || '',
         scryfall_id: scryfallCard.id,
         all_parts: scryfallCard.all_parts // Preserve for token fetching
     };
