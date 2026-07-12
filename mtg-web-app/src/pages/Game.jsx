@@ -41,6 +41,7 @@ import DockCardDetail from '../components/DockCardDetail';
 import DockTargetingPanel from '../components/DockTargetingPanel';
 import StackStrip from '../components/StackStrip';
 import DockStackList from '../components/DockStackList';
+import BottomBar from '../components/BottomBar';
 import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
 import ScannerButton from '../components/Scanner/ScannerButton';
@@ -81,7 +82,7 @@ const Game = () => {
         history, actionLog,
         currentPhase, setCurrentPhase,
         currentCombatStep, setCurrentCombatStep,
-        activeZone, setActiveZone, zoneCounts,
+        activeZone, setActiveZone, zoneCounts, turnNumber,
         abilityStack, setAbilityStack, isStackCollapsed, setIsStackCollapsed,
         gameEngineRef,
         logAction, saveHistoryState, undo, redo, future,
@@ -139,6 +140,9 @@ const Game = () => {
     const [windowSize, setWindowSize] = useState({ width: typeof window !== 'undefined' ? window.innerWidth : 0, height: typeof window !== 'undefined' ? window.innerHeight : 0 });
     // Landscape two-column layout (battlefield + dock). Portrait keeps the legacy layout.
     const isLandscape = windowSize.width > windowSize.height && windowSize.width >= 640;
+    // Very narrow landscape (e.g. iPhone SE, 667×375): the dock becomes a
+    // slide-over above the battlefield instead of claiming column width.
+    const isCompactLandscape = isLandscape && windowSize.width < 740;
     const BOTTOM_BAR_HEIGHT = 0; // Floating UI now
     const TOP_BAR_HEIGHT = 0;   // Floating UI now
 
@@ -448,6 +452,23 @@ const Game = () => {
         handleActivateAbility(card, ability);
     };
 
+    // --- Landscape chrome helpers ---
+    const PHASE_DISPLAY_NAMES = { 'Beginning': 'Beginning', 'Main': 'Main 1', 'Combat': 'Combat', 'Main 2': 'Main 2', 'End': 'End' };
+    const phaseLabel = currentPhase
+        ? (currentPhase === 'Combat' && currentCombatStep ? currentCombatStep : PHASE_DISPLAY_NAMES[currentPhase] || currentPhase)
+        : null;
+
+    // Top-bar chevron: granular skip (combat steps inside Combat, phases otherwise)
+    const handleChevronAdvance = () => {
+        if (currentPhase === 'Combat') advanceCombatStep();
+        else advancePhase();
+    };
+
+    const dockHasContent = targetingMode.active
+        || (isStackExpanded && abilityStack.length > 0)
+        || !!selectedCard
+        || currentCombatStep === 'Combat Damage';
+
     const handleBgClick = (e) => {
         // Only close panels if the click was directly on the background container
         // If target !== currentTarget, it means the click was on a child element
@@ -480,50 +501,78 @@ const Game = () => {
             {/* Top Bar: Navigation & Menu */}
             <div className="absolute top-0 left-0 w-full px-4 py-3 z-50 flex justify-between items-center pointer-events-none" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
 
-                {/* Left: Menu Button */}
-                <button
-                    onClick={() => setShowCalculationMenu(true)}
-                    className="pointer-events-auto w-10 h-10 flex items-center justify-center rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-600/50 text-gray-300 active:scale-95 transition-all shadow-lg backdrop-blur-sm relative"
-                >
-                    <Menu className="w-5 h-5" />
-                    {hasUnreadUpdate && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900 shadow-sm animate-pulse" />
+                {/* Left: Menu Button (+ turn/phase readout in landscape) */}
+                <div className="pointer-events-auto flex items-center gap-3">
+                    <button
+                        onClick={() => setShowCalculationMenu(true)}
+                        className="w-10 h-10 flex items-center justify-center rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-600/50 text-gray-300 active:scale-95 transition-all shadow-lg backdrop-blur-sm relative"
+                    >
+                        <Menu className="w-5 h-5" />
+                        {hasUnreadUpdate && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900 shadow-sm animate-pulse" />
+                        )}
+                    </button>
+                    {isLandscape && (
+                        <div className="text-sm font-bold text-gray-100 select-none whitespace-nowrap drop-shadow-md">
+                            Turn {turnNumber}
+                            {phaseLabel && <span className="text-gray-400 font-semibold"> · {phaseLabel}</span>}
+                        </div>
                     )}
-                </button>
+                </div>
 
-                {/* Center: Title */}
-                <h1 className="text-white font-bold text-lg drop-shadow-md select-none pointer-events-auto">
+                {/* Center: Title (compact in landscape — gameplay real estate wins) */}
+                <h1 className={`font-bold drop-shadow-md select-none pointer-events-auto ${isLandscape ? 'text-sm text-gray-300' : 'text-lg text-white'}`}>
                     Magic Calculator
                 </h1>
 
-                {/* Right: History Navigation (Undo/Redo) */}
-                <div className="pointer-events-auto flex gap-2">
-                    {/* Back / Undo */}
-                    <button
-                        onClick={undo}
-                        disabled={history.length === 0}
-                        className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
+                {/* Right: phase chevrons (landscape) / undo-redo (portrait) */}
+                {isLandscape ? (
+                    <div className="pointer-events-auto flex gap-2">
+                        {/* Phases only advance — the back chevron stays disabled (use Undo below) */}
+                        <button
+                            disabled
+                            className="w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm bg-slate-900/50 text-gray-600 cursor-not-allowed"
+                            aria-label="Previous phase (unavailable)"
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={handleChevronAdvance}
+                            className="w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95 transition-all"
+                            aria-label="Next phase"
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                ) : (
+                    <div className="pointer-events-auto flex gap-2">
+                        {/* Back / Undo */}
+                        <button
+                            onClick={undo}
+                            disabled={history.length === 0}
+                            className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
               ${history.length > 0
-                                ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
-                                : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
-                            }`}
-                    >
-                        <ChevronLeft className="w-5 h-5" />
-                    </button>
+                                    ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
+                                    : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
+                                }`}
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
 
-                    {/* Forward / Redo */}
-                    <button
-                        onClick={redo}
-                        disabled={!future || future.length === 0}
-                        className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
+                        {/* Forward / Redo */}
+                        <button
+                            onClick={redo}
+                            disabled={!future || future.length === 0}
+                            className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
               ${future && future.length > 0
-                                ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
-                                : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
-                            }`}
-                    >
-                        <ChevronRight className="w-5 h-5" />
-                    </button>
-                </div>
+                                    ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
+                                    : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
+                                }`}
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Triggered Ability Stack (Overlay) — portrait only; landscape uses the
@@ -543,7 +592,7 @@ const Game = () => {
 
             {/* Main Content Area - battlefield + contextual dock in landscape */}
             <div
-                className={`flex-1 flex ${isLandscape ? 'flex-row' : 'flex-col'} pt-16 pb-0 overflow-hidden`}
+                className={`flex-1 flex ${isLandscape ? 'flex-row' : 'flex-col'} pt-16 pb-0 overflow-hidden relative`}
                 onClick={handleBgClick}
             >
                 <div className="flex-1 relative min-h-0 flex flex-col" ref={battlefieldRef}>
@@ -680,9 +729,12 @@ const Game = () => {
                     )}
                 </div>
 
-                {/* Right Dock (landscape only). Priority: targeting > stack > selection > combat summary */}
-                {isLandscape && (
-                    <RightDock title={targetingMode.active ? 'Choose targets' : (isStackExpanded && abilityStack.length > 0) ? 'Trigger stack' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
+                {/* Right Dock (landscape only). Priority: targeting > stack > selection > combat summary.
+                    On compact viewports it renders as a slide-over, and only when it has content. */}
+                {isLandscape && (!isCompactLandscape || dockHasContent) && (
+                    <RightDock
+                        overlay={isCompactLandscape}
+                        title={targetingMode.active ? 'Choose targets' : (isStackExpanded && abilityStack.length > 0) ? 'Trigger stack' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
                         {targetingMode.active ? (
                             <DockTargetingPanel
                                 targetingMode={targetingMode}
@@ -723,6 +775,30 @@ const Game = () => {
                     </RightDock>
                 )}
             </div>
+
+            {/* Thin persistent bottom bar (landscape) — replaces the fanned card buttons */}
+            {isLandscape && activePanel !== 'add' && (
+                <BottomBar
+                    onUndo={undo}
+                    canUndo={history.length > 0}
+                    onAddCard={() => setActivePanel('add')}
+                    onNextPhase={() => {
+                        if (!currentPhase) handleStartTurn();
+                        else handleSmartPhaseAdvance();
+                    }}
+                    nextPhaseLabel={!currentPhase ? 'Start turn' : currentPhase === 'Main 2' ? 'End turn' : 'Next phase'}
+                    onAutoCalculate={() => {
+                        if (currentPhase === 'Main 2') {
+                            endTurn();
+                            setHasEndStepActions(false);
+                        } else {
+                            handleAutoCalculate();
+                        }
+                    }}
+                    onOpenMore={() => setActivePanel(activePanel === 'more' ? null : 'more')}
+                    disablePhaseActions={targetingMode.active}
+                />
+            )}
 
 
 
@@ -791,9 +867,9 @@ const Game = () => {
 
             {/* New Bottom Control Panel, Selection Menu, or Attacker Confirmation */}
             {/* Hide controls if Add Panel is open, to let it replace the bottom area */}
-            {/* In landscape, selection and targeting live in the dock — overlay menu and
-                targeting buttons are portrait-only */}
-            {activePanel === 'add' ? null : (isLandscape && targetingMode.active) ? null : (selectedCard && !isLandscape) ? (
+            {/* Portrait-only bottom area: the fanned control panel and the SelectionMenu
+                overlay. Landscape uses the thin BottomBar + dock instead. */}
+            {activePanel === 'add' || isLandscape ? null : selectedCard ? (
                 <SelectionMenu
                     selectedCard={selectedCard}
                     stackCount={calculateEffectiveTotal(selectedStackCards)}
