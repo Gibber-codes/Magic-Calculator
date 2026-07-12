@@ -39,6 +39,8 @@ import CombatSummaryPanel from '../components/CombatSummaryPanel';
 import RightDock from '../components/RightDock';
 import DockCardDetail from '../components/DockCardDetail';
 import DockTargetingPanel from '../components/DockTargetingPanel';
+import StackStrip from '../components/StackStrip';
+import DockStackList from '../components/DockStackList';
 import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
 import ScannerButton from '../components/Scanner/ScannerButton';
@@ -112,6 +114,8 @@ const Game = () => {
     const [previewCard, setPreviewCard] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [showCalculationMenu, setShowCalculationMenu] = useState(false);
+    // Landscape: whether the trigger stack is expanded into the dock
+    const [isStackExpanded, setIsStackExpanded] = useState(false);
     const [autoMode, setAutoMode] = useState(true); // Auto Calculation Mode State (Default: True)
     const [hasEndStepActions, setHasEndStepActions] = useState(false); // Track if cleanup is needed
 
@@ -254,6 +258,13 @@ const Game = () => {
             }
         };
     }, [abilityStack, targetingMode.active]);
+
+    // Effect: collapse the dock stack view when the stack empties
+    useEffect(() => {
+        if (abilityStack.length === 0 && isStackExpanded) {
+            setIsStackExpanded(false);
+        }
+    }, [abilityStack.length, isStackExpanded]);
 
     // Effect: Auto-advance from Declare Attackers to Declare Blockers when stack clears
     useEffect(() => {
@@ -505,24 +516,28 @@ const Game = () => {
                 </div>
             </div>
 
-            {/* Triggered Ability Stack (Overlay) - Always visible */}
-            <LIFOStack
-                items={abilityStack}
-                onResolve={handleResolveWithTargeting}
-                onRemove={removeFromStack}
-                onResolveAll={resolveAllStack}
-                onClear={clearStack}
-                onReorder={setAbilityStack}
-                isCollapsed={isStackCollapsed}
-                onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
-            />
+            {/* Triggered Ability Stack (Overlay) — portrait only; landscape uses the
+                inline StackStrip + dock expansion */}
+            {!isLandscape && (
+                <LIFOStack
+                    items={abilityStack}
+                    onResolve={handleResolveWithTargeting}
+                    onRemove={removeFromStack}
+                    onResolveAll={resolveAllStack}
+                    onClear={clearStack}
+                    onReorder={setAbilityStack}
+                    isCollapsed={isStackCollapsed}
+                    onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
+                />
+            )}
 
             {/* Main Content Area - battlefield + contextual dock in landscape */}
             <div
                 className={`flex-1 flex ${isLandscape ? 'flex-row' : 'flex-col'} pt-16 pb-0 overflow-hidden`}
                 onClick={handleBgClick}
             >
-                <div className="flex-1 relative min-h-0" ref={battlefieldRef}>
+                <div className="flex-1 relative min-h-0 flex flex-col" ref={battlefieldRef}>
+                    <div className="flex-1 min-h-0">
                     <BattlefieldList
                         cards={battlefieldCards}
                         activeZone={activeZone}
@@ -637,11 +652,25 @@ const Game = () => {
                         }}
                         targetingMode={targetingMode}
                     />
+                    </div>
+
+                    {/* Inline trigger-stack strip (landscape) — absent when the stack is empty */}
+                    {isLandscape && (
+                        <StackStrip
+                            items={abilityStack}
+                            isExpanded={isStackExpanded}
+                            onToggleExpand={() => setIsStackExpanded(prev => !prev)}
+                            onResolveTop={() => {
+                                const topItem = abilityStack[abilityStack.length - 1];
+                                if (topItem) handleResolveWithTargeting(topItem);
+                            }}
+                        />
+                    )}
                 </div>
 
-                {/* Right Dock (landscape only). Priority: targeting > selection > combat summary */}
+                {/* Right Dock (landscape only). Priority: targeting > stack > selection > combat summary */}
                 {isLandscape && (
-                    <RightDock title={targetingMode.active ? 'Choose targets' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
+                    <RightDock title={targetingMode.active ? 'Choose targets' : (isStackExpanded && abilityStack.length > 0) ? 'Trigger stack' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
                         {targetingMode.active ? (
                             <DockTargetingPanel
                                 targetingMode={targetingMode}
@@ -650,6 +679,14 @@ const Game = () => {
                                 onCancel={cancelTargeting}
                                 onSelectAll={handleToggleSelectAll}
                                 isConfirmDisabled={targetingMode.selectedIds.length === 0 && !['declare-attackers', 'declare-blockers'].includes(targetingMode.action)}
+                            />
+                        ) : (isStackExpanded && abilityStack.length > 0) ? (
+                            <DockStackList
+                                items={abilityStack}
+                                onResolve={handleResolveWithTargeting}
+                                onRemove={removeFromStack}
+                                onResolveAll={() => resolveAllStack(recentCards)}
+                                onClear={clearStack}
                             />
                         ) : selectedCard ? (
                             <DockCardDetail
