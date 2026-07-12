@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { calculateCardStats } from '../utils/cardUtils';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from 'react';
+import { calculateCardStats, calculateEffectiveTotal, getCardZone, isMinimalDisplayLand } from '../utils/cardUtils';
 import { playTokenFlight } from '../utils/animations';
 import GameEngine from '../utils/gameEngine';
 
@@ -46,6 +46,21 @@ const useGameState = () => {
     // --- Phase State ---
     const [currentPhase, setCurrentPhase] = useState(null);
     const [currentCombatStep, setCurrentCombatStep] = useState(null);
+    const [turnNumber, setTurnNumber] = useState(1);
+
+    // --- Battlefield View State ---
+    // Which zone tab is visible: 'creatures' | 'others'. Only the active zone renders.
+    const [activeZone, setActiveZone] = useState('creatures');
+
+    // Live counts per zone tab. Includes virtual token stacks (Scute Swarm ×10
+    // counts as 10), so these are BigInt — display via formatBigNumber only.
+    const zoneCounts = useMemo(() => {
+        const visible = cards.filter(c => c.zone === 'battlefield' && !c.attachedTo && !isMinimalDisplayLand(c));
+        return {
+            creatures: calculateEffectiveTotal(visible.filter(c => getCardZone(c) === 'creatures')),
+            others: calculateEffectiveTotal(visible.filter(c => getCardZone(c) === 'others'))
+        };
+    }, [cards]);
 
     // --- Ability Stack State ---
     const [abilityStack, setAbilityStack] = useState([]);
@@ -226,6 +241,7 @@ const useGameState = () => {
 
     const endTurn = useCallback(() => {
         logAction("Turn Ended");
+        setTurnNumber(prev => prev + 1);
 
         // Resolve delayed end-step effects (e.g. Orthion's token sacrifices).
         // Deliberately NOT processPhaseChange('end'): standard end-step triggers
@@ -766,6 +782,10 @@ const useGameState = () => {
         setCurrentPhase,
         currentCombatStep,
         setCurrentCombatStep,
+        turnNumber,
+        activeZone,
+        setActiveZone,
+        zoneCounts,
         abilityStack,
         setAbilityStack,
         isStackCollapsed,

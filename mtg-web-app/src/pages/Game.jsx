@@ -75,6 +75,7 @@ const Game = () => {
         history, actionLog,
         currentPhase, setCurrentPhase,
         currentCombatStep, setCurrentCombatStep,
+        activeZone, setActiveZone, zoneCounts,
         abilityStack, setAbilityStack, isStackCollapsed, setIsStackCollapsed,
         gameEngineRef,
         logAction, saveHistoryState, undo, redo, future,
@@ -497,6 +498,9 @@ const Game = () => {
                 <div className="flex-1 relative min-h-0" ref={battlefieldRef}>
                     <BattlefieldList
                         cards={battlefieldCards}
+                        activeZone={activeZone}
+                        onZoneChange={setActiveZone}
+                        zoneCounts={zoneCounts}
                         onCardAction={handleCardAction}
                         onStackSelectionChange={updateStackSelection}
                         allCards={cards}

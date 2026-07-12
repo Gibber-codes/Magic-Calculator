@@ -23,6 +23,13 @@ export const calculateEffectiveTotal = (stackCards = []) => {
     }, 0n);
 };
 
+/**
+ * Battlefield view zone for a card: creatures get their own tab,
+ * everything else (enchantments, artifacts, etc.) lands in 'others'.
+ * Shared by the zone tabs, zone counts, and the stack auto-force rule.
+ */
+export const getCardZone = (card) => (isCreature(card) ? 'creatures' : 'others');
+
 
 export const createBattlefieldCard = (cardDef, extra = {}, context = {}) => {
     const { cards = [], gameEngineRef = null } = context;
