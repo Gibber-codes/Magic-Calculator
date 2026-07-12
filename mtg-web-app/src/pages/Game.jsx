@@ -38,6 +38,7 @@ import MoreOptionsPanel from '../components/MoreOptionsPanel';
 import CombatSummaryPanel from '../components/CombatSummaryPanel';
 import RightDock from '../components/RightDock';
 import DockCardDetail from '../components/DockCardDetail';
+import DockTargetingPanel from '../components/DockTargetingPanel';
 import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
 import ScannerButton from '../components/Scanner/ScannerButton';
@@ -638,10 +639,19 @@ const Game = () => {
                     />
                 </div>
 
-                {/* Right Dock (landscape only) */}
+                {/* Right Dock (landscape only). Priority: targeting > selection > combat summary */}
                 {isLandscape && (
-                    <RightDock>
-                        {selectedCard && (
+                    <RightDock title={targetingMode.active ? 'Choose targets' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
+                        {targetingMode.active ? (
+                            <DockTargetingPanel
+                                targetingMode={targetingMode}
+                                cards={cards}
+                                onConfirm={handleConfirmTargetingAction}
+                                onCancel={cancelTargeting}
+                                onSelectAll={handleToggleSelectAll}
+                                isConfirmDisabled={targetingMode.selectedIds.length === 0 && !['declare-attackers', 'declare-blockers'].includes(targetingMode.action)}
+                            />
+                        ) : selectedCard ? (
                             <DockCardDetail
                                 selectedCard={selectedCard}
                                 stackCount={calculateEffectiveTotal(selectedStackCards)}
@@ -653,7 +663,14 @@ const Game = () => {
                                 onConvertLand={handleLandConversion}
                                 onCounterChange={handleSelectedCounterChange}
                             />
-                        )}
+                        ) : currentCombatStep === 'Combat Damage' ? (
+                            <CombatSummaryPanel
+                                cards={cards}
+                                isVisible={true}
+                                variant="dock"
+                                onClose={() => advanceCombatStep()}
+                            />
+                        ) : null}
                     </RightDock>
                 )}
             </div>
@@ -675,8 +692,8 @@ const Game = () => {
                 onConfirmAttackers={handleConfirmAttackers}
             />
 
-            {/* Declare Attackers Title - Floating above Control Panel */}
-            {targetingMode.active && targetingMode.action === 'declare-attackers' && (
+            {/* Declare Attackers Title - Floating above Control Panel (portrait only; dock handles landscape) */}
+            {!isLandscape && targetingMode.active && targetingMode.action === 'declare-attackers' && (
                 <div className="fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200" style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}>
                     <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-6 py-3 rounded-lg border border-red-500/50 shadow-2xl">
                         <Sword className="w-7 h-7 text-red-500" />
@@ -690,8 +707,8 @@ const Game = () => {
                 </div>
             )}
 
-            {/* Declare Blockers Title - Floating above Control Panel */}
-            {targetingMode.active && targetingMode.action === 'declare-blockers' && (
+            {/* Declare Blockers Title - Floating above Control Panel (portrait only; dock handles landscape) */}
+            {!isLandscape && targetingMode.active && targetingMode.action === 'declare-blockers' && (
                 <div className="fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200" style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}>
                     <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-6 py-3 rounded-lg border border-blue-500/50 shadow-2xl">
                         <ShieldOff className="w-7 h-7 text-blue-500" />
@@ -709,17 +726,18 @@ const Game = () => {
                 </div>
             )}
 
-            {/* Combat Summary Panel - Shown during Combat Damage step */}
+            {/* Combat Summary Panel - floating in portrait; the dock hosts it in landscape */}
             <CombatSummaryPanel
                 cards={cards}
-                isVisible={currentCombatStep === 'Combat Damage'}
+                isVisible={currentCombatStep === 'Combat Damage' && !isLandscape}
                 onClose={() => advanceCombatStep()}
             />
 
             {/* New Bottom Control Panel, Selection Menu, or Attacker Confirmation */}
             {/* Hide controls if Add Panel is open, to let it replace the bottom area */}
-            {/* In landscape, selection lives in the dock — the overlay menu is portrait-only */}
-            {activePanel === 'add' ? null : (selectedCard && !isLandscape) ? (
+            {/* In landscape, selection and targeting live in the dock — overlay menu and
+                targeting buttons are portrait-only */}
+            {activePanel === 'add' ? null : (isLandscape && targetingMode.active) ? null : (selectedCard && !isLandscape) ? (
                 <SelectionMenu
                     selectedCard={selectedCard}
                     stackCount={calculateEffectiveTotal(selectedStackCards)}

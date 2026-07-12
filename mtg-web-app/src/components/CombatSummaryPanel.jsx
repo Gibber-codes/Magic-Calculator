@@ -7,7 +7,7 @@ import { formatBigNumber } from '../utils/formatters';
  * Combat Summary Panel
  * Displays a breakdown of unblocked attackers and total damage during Combat Damage step.
  */
-const CombatSummaryPanel = ({ cards, isVisible, onClose }) => {
+const CombatSummaryPanel = ({ cards, isVisible, onClose, variant = 'floating' }) => {
     if (!isVisible) return null;
 
     // Filter for unblocked attackers
@@ -44,12 +44,18 @@ const CombatSummaryPanel = ({ cards, isVisible, onClose }) => {
     const totalDamageBig = attackerDetails.reduce((sum, a) => sum + a.totalPower, 0n);
     const totalDamage = formatBigNumber(totalDamageBig);
 
+    // 'dock' renders in-flow inside the landscape RightDock; 'floating' keeps
+    // the legacy centered overlay for portrait.
+    const isDock = variant === 'dock';
+
     return (
         <div
-            className="fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-300"
-            style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}
+            className={isDock
+                ? 'w-full animate-in fade-in duration-300'
+                : 'fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-300'}
+            style={isDock ? undefined : { bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}
         >
-            <div className="bg-slate-900/95 backdrop-blur-md rounded-xl border border-red-500/50 shadow-2xl overflow-hidden min-w-[280px] max-w-[400px]">
+            <div className={`bg-slate-900/95 backdrop-blur-md rounded-xl border border-red-500/50 shadow-2xl overflow-hidden ${isDock ? 'w-full' : 'min-w-[280px] max-w-[400px]'}`}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 bg-red-900/30 border-b border-red-500/30">
                     <div className="flex items-center gap-2">
