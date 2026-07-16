@@ -4,6 +4,8 @@
 
 **Required reading before proposing changes:** `CLAUDE.md` (architecture, conventions, gotchas) and `TESTING.md` (regression checklist).
 
+> **Status (2026-07-11):** Tier 1 (A–D) is **complete**. The landscape redesign (`LANDSCAPE_LAYOUT_BRIEF.md`) has since shipped and took priority over Tier 2/3; see per-item notes below for what it changed.
+
 ---
 
 ## Your job
@@ -61,7 +63,7 @@ Scope: the pattern where an ability object is built with 12+ identical fields ap
 Why: current shape makes it dangerous to add a new trigger field — you must remember to update every construction site.
 Risk: low-to-medium. Verify TESTING.md §3.
 
-**F. Split `useGameState` into focused hooks.**
+**F. Split `useGameState` into focused hooks.** *(Landscape note: `useGameState` grew `turnNumber`, `activeZone`, and `zoneCounts`; the zone pin rule already lives in its own `useZoneView` hook. Factor that into any proposed split.)*
 Scope: propose (don't implement yet) a split into `useCardsAndHistory`, `usePhaseState`, `useStackState`, `useActionLog`. Keep a thin `useGameState` composer for backward compatibility with `Game.jsx`.
 Why: `useGameState` currently owns cards, history, future, actionLog, phase, combat step, stack, and the engine ref. Six separate concerns.
 Risk: medium-high. Do NOT implement until human approves the shape. Verify TESTING.md §2, §3, §5.
@@ -81,6 +83,7 @@ Risk: high. Propose the engine method signature first.
 **I. Component decomposition of `Game.jsx`.**
 Scope: if `Game.jsx` is a large orchestrator, propose a split (e.g. `<BattlefieldView>`, `<TurnControls>`, `<StackOverlay>`) — do NOT touch until the human confirms the split makes sense in their mental model.
 Risk: high. Cosmetic churn if done wrong.
+*(Landscape note: partially advanced — the dock family (`RightDock`, `DockCardDetail`, `DockTargetingPanel`, `DockStackList`, `StackStrip`, `BottomBar`) extracted much of the landscape chrome. `Game.jsx` still orchestrates both layouts and grew some branching; a future split should separate portrait/landscape chrome rather than re-extract the dock.)*
 
 **J. TypeScript migration.**
 Do not start. Bring it up as a formal proposal with cost/benefit if you think it's warranted, and let the human decide. Current codebase uses JSDoc which is sufficient for many purposes.

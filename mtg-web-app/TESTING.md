@@ -156,6 +156,53 @@ Run smoke test (§1) on:
 
 ---
 
+## 11. Landscape layout
+
+Landscape = width > height and ≥640px wide. Test on a real phone in landscape (or DevTools device emulation at 844×390).
+
+### Two-column layout & dock
+
+- [ ] Rotating to landscape shows battlefield + right dock with no content overflow
+- [ ] With nothing selected, dock shows the "Tap a card to see details" empty state
+- [ ] Selecting a card populates the dock detail (name, art, oracle text, actions); battlefield remains fully visible — **no floating overlay ever appears over the battlefield in landscape**
+- [ ] Dock art crop shows the artist credit / ™ & © Wizards of the Coast line (Scryfall requirement)
+- [ ] Targeting mode (e.g. activate Orthion's ability, or Declare Attackers): Confirm/SELECT and CANCEL appear **only in the dock**, floating Declare Attackers/Blockers banners do not appear
+- [ ] Combat Damage step with no card selected: combat summary renders inside the dock
+
+### Zone tabs
+
+- [ ] Two tabs (Creatures / Others) with live counts above the card row
+- [ ] Counts include virtual token stacks: create Scute Swarm ×10, Creatures count reads 10
+- [ ] Only the active zone's cards are in the DOM (inspect: inactive zone unmounted)
+- [ ] Tapping a tab switches views; vertical swipe on the card area also switches
+- [ ] Lands still excluded from both tabs (managed via the More panel)
+
+### Trigger stack (strip + pin)
+
+- [ ] With an empty stack, no strip is shown (space reclaimed)
+- [ ] Add a card with an ETB trigger (e.g. Elvish Visionary): thin strip appears below the card row with count + trigger name + Resolve →
+- [ ] Trigger from a creature source forces Creatures view; pin icon + "held by stack" hint appear
+- [ ] Trigger from an enchantment source (e.g. Doubling Season token trigger) forces Others view
+- [ ] Tapping the other tab while pinned shakes the tab and shows the "Resolve stack triggers first." toast
+- [ ] Tapping the strip expands the full stack in the dock; top item has Resolve/Reject, multi-item stacks get Resolve All / Clear
+- [ ] Resolving the stack unpins but stays on the current view (no snap-back)
+
+### Chrome
+
+- [ ] Top bar: hamburger + "Turn N · Main 1" readout left, small title center, phase chevrons right — no overflow
+- [ ] Right chevron advances phase (combat steps inside Combat); left chevron is disabled
+- [ ] Bottom bar (Undo · Add · Next phase · Auto · More) is always visible, one-handed-thumb reachable; Next phase/Auto disable during targeting
+- [ ] Turn counter increments after End turn
+
+### Fallbacks
+
+- [ ] Compact landscape (<740px wide, e.g. iPhone SE 667×375): no dock when empty; selecting a card opens a slide-over dock below the top bar
+- [ ] Portrait mode unchanged: fanned card buttons, SelectionMenu overlay, LIFOStack overlay all still work (no regression for portrait users)
+- [ ] Rotating mid-game preserves game state (cards, stack, phase)
+- [ ] Ad placement: n/a while AdBanner is unmounted; if ads are enabled, verify 150px buffer from dock and bottom bar before shipping
+
+---
+
 ## Regression protocol by change type
 
 | Change area | Required sections |
@@ -167,5 +214,6 @@ Run smoke test (§1) on:
 | Any hook in `hooks/` | §1, §5, §7 |
 | Scanner code | §1, §6 |
 | Legal / Footer / ad components | §1, §8 |
-| Styling / layout | §1, §7, §10 |
+| Styling / layout | §1, §7, §10, §11 |
+| Landscape/dock components (`RightDock`, `Dock*`, `ZoneTabs`, `StackStrip`, `BottomBar`, `useZoneView`) | §1, §5, §7, §11 |
 | Dependency update | Full sheet |

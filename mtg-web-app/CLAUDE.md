@@ -10,6 +10,8 @@ Guidance for Claude Code when working in this repository. Read this before makin
 
 The app is a **free web tool** monetized with display ads. It **must remain free** to stay compliant with the WotC Fan Content Policy — never add paywalls, subscriptions, or gated features.
 
+**Primary target: landscape mobile.** Players prop their phone in landscape during games. Landscape (width > height, ≥640px) gets the two-column battlefield + dock layout; portrait keeps the legacy single-column layout with overlay menus. When adding UI, decide explicitly which layout(s) it belongs to.
+
 **Tech stack:** React 19 · Vite 7 · Tailwind CSS 3.4 · ESLint 9 · deployed to Netlify. Card data from Scryfall (local JSON + live API). Framer Motion for animations. Tesseract.js + Fuse.js for the OCR card scanner.
 
 ---
@@ -37,7 +39,8 @@ The app is a single-page React app with routing between the main game view and l
 
 ### State ownership
 
-- **`hooks/useGameState.js`** owns the core state: `cards`, `history`, `future`, `actionLog`, `currentPhase`, `currentCombatStep`, `abilityStack`, and a `gameEngineRef`. It also owns the phase sequence (`FULL_TURN_SEQUENCE`, `PHASE_ORDER`, `COMBAT_STEPS`). Treat these constants as canonical.
+- **`hooks/useGameState.js`** owns the core state: `cards`, `history`, `future`, `actionLog`, `currentPhase`, `currentCombatStep`, `turnNumber`, `abilityStack`, a `gameEngineRef`, plus the battlefield view state: `activeZone` (`'creatures' | 'others'`) and derived `zoneCounts` (**BigInt** — virtual token stacks count as N; display only via `formatBigNumber`). It also owns the phase sequence (`FULL_TURN_SEQUENCE`, `PHASE_ORDER`, `COMBAT_STEPS`). Treat these constants as canonical.
+- **`hooks/useZoneView.js`** owns the stack → zone auto-force rule: while triggers are on the stack, the view is forced to the top item's source-card zone and the tabs are pinned (blocked switches shake + toast); the rule suspends during targeting mode so targets stay reachable; when the stack clears it unpins **without** snapping back. `getCardZone(card)` in `cardUtils.js` is the shared zone predicate.
 - **`hooks/usePhaseHandlers.js`** wraps phase advancement, combat step progression, and the "auto-calculate full turn" logic. This file has a known simplified path in `handleAutoCalculate` — see "Known tech debt" below.
 - **`hooks/useTargetingMode.js`**, **`useTargetingConfirm.js`** — targeting UI state (single, multiple, declare-blockers modes).
 - **`hooks/useCardActions.js`**, **`useBattlefieldCardInteractions.js`**, **`useTouchInteractions.js`** — user input on cards.
@@ -65,9 +68,11 @@ When adding a new problematic card, prefer adding it to `signatureCards.js` over
 
 ### Component structure
 
-- **`pages/Game.jsx`** — the main game view composition. Orchestrates hooks, dispatches actions to the engine, renders the battlefield.
-- **`components/BattlefieldList.jsx` + `BattlefieldCard.jsx` + `BattlefieldCardVisuals.jsx` + `RedesignedCardFrame.jsx`** — battlefield rendering.
-- **`components/LIFOStack.jsx`** — the triggered-ability stack UI. Always visible as an overlay.
+- **`pages/Game.jsx`** — the main game view composition. Orchestrates hooks, dispatches actions to the engine, renders the battlefield. Computes `isLandscape` / `isCompactLandscape` from window size and branches the chrome accordingly.
+- **`components/BattlefieldList.jsx` + `BattlefieldCard.jsx` + `BattlefieldCardVisuals.jsx` + `RedesignedCardFrame.jsx`** — battlefield rendering. `BattlefieldList` renders **only the active zone** (tabs via `ZoneTabs.jsx`); the inactive zone is unmounted on purpose — don't "fix" that.
+- **Landscape dock family:** `RightDock.jsx` (container; `overlay` variant is the <740px slide-over fallback), `DockCardDetail.jsx` (selection detail — includes the required artist/© credit), `DockTargetingPanel.jsx` (SELECT/CANCEL confirmation), `DockStackList.jsx` (expanded trigger stack), `StackStrip.jsx` (thin inline stack bar, unmounted when empty), `BottomBar.jsx` (thin persistent bar: Undo · Add · Next phase · Auto · More). **No modal overlays over the battlefield in landscape** — anything needing confirmation goes in the dock.
+- **`components/LIFOStack.jsx`** — the triggered-ability stack overlay. **Portrait only**; landscape uses `StackStrip` + `DockStackList`.
+- **`components/SelectionMenu.jsx`** — the full-screen card-detail overlay. **Portrait only**; landscape uses `DockCardDetail`.
 - **`components/PhaseTracker.jsx`** — the phase/combat-step progress display.
 - **`components/AddCardPanel.jsx`** — search + favorites + recents tabs for adding cards.
 - **`components/CalculationMenu.jsx`, `CombatSummaryPanel.jsx`, `BottomControlPanel.jsx`, `MoreOptionsPanel.jsx`** — action panels.

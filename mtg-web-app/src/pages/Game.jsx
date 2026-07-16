@@ -36,6 +36,12 @@ import SelectionMenu from '../components/SelectionMenu';
 import BottomControlPanel from '../components/BottomControlPanel';
 import MoreOptionsPanel from '../components/MoreOptionsPanel';
 import CombatSummaryPanel from '../components/CombatSummaryPanel';
+import RightDock from '../components/RightDock';
+import DockCardDetail from '../components/DockCardDetail';
+import DockTargetingPanel from '../components/DockTargetingPanel';
+import StackStrip from '../components/StackStrip';
+import DockStackList from '../components/DockStackList';
+import BottomBar from '../components/BottomBar';
 import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
 import ScannerButton from '../components/Scanner/ScannerButton';
@@ -53,6 +59,7 @@ import useTargetingConfirm from '../hooks/useTargetingConfirm';
 import useSearch from '../hooks/useSearch';
 import { useBattlefieldLayout } from '../hooks/useBattlefieldLayout';
 import { useScanner } from '../hooks/useScanner';
+import useZoneView from '../hooks/useZoneView';
 
 // Constants imported from config/constants.js
 // PRESETS imported from config/presets.js
@@ -75,6 +82,7 @@ const Game = () => {
         history, actionLog,
         currentPhase, setCurrentPhase,
         currentCombatStep, setCurrentCombatStep,
+        activeZone, setActiveZone, zoneCounts, turnNumber,
         abilityStack, setAbilityStack, isStackCollapsed, setIsStackCollapsed,
         gameEngineRef,
         logAction, saveHistoryState, undo, redo, future,
@@ -95,6 +103,15 @@ const Game = () => {
         updateStackSelection, setSliderStackKey, handleConfirmAttackers
     } = targeting;
 
+    // --- Zone View (stack auto-force + pin) ---
+    const { pinned: zonePinned, toast: zoneToast, handleBlockedSwitch } = useZoneView({
+        abilityStack,
+        cards,
+        activeZone,
+        setActiveZone,
+        targetingActive: targetingMode.active
+    });
+
     // --- Local UI State ---
     const [selectedCard, setSelectedCard] = useState(null);
     const [recentCards, setRecentCards] = useState([]);
@@ -108,6 +125,8 @@ const Game = () => {
     const [previewCard, setPreviewCard] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [showCalculationMenu, setShowCalculationMenu] = useState(false);
+    // Landscape: whether the trigger stack is expanded into the dock
+    const [isStackExpanded, setIsStackExpanded] = useState(false);
     const [autoMode, setAutoMode] = useState(true); // Auto Calculation Mode State (Default: True)
     const [hasEndStepActions, setHasEndStepActions] = useState(false); // Track if cleanup is needed
 
@@ -119,7 +138,11 @@ const Game = () => {
     const [verticalOffsetY, setVerticalOffsetY] = useState(0);
     // Track window size to force re-calc of layout on resize (fixes stale visual positions)
     const [windowSize, setWindowSize] = useState({ width: typeof window !== 'undefined' ? window.innerWidth : 0, height: typeof window !== 'undefined' ? window.innerHeight : 0 });
-    const [isPortrait, setIsPortrait] = useState(typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false);
+    // Landscape two-column layout (battlefield + dock). Portrait keeps the legacy layout.
+    const isLandscape = windowSize.width > windowSize.height && windowSize.width >= 640;
+    // Very narrow landscape (e.g. iPhone SE, 667×375): the dock becomes a
+    // slide-over above the battlefield instead of claiming column width.
+    const isCompactLandscape = isLandscape && windowSize.width < 740;
     const BOTTOM_BAR_HEIGHT = 0; // Floating UI now
     const TOP_BAR_HEIGHT = 0;   // Floating UI now
 
@@ -148,7 +171,6 @@ const Game = () => {
 
     useEffect(() => {
         const handleResize = () => {
-            setIsPortrait(window.innerHeight > window.innerWidth);
             setWindowSize({ width: window.innerWidth, height: window.innerHeight });
         };
         window.addEventListener('resize', handleResize);
@@ -250,6 +272,13 @@ const Game = () => {
             }
         };
     }, [abilityStack, targetingMode.active]);
+
+    // Effect: collapse the dock stack view when the stack empties
+    useEffect(() => {
+        if (abilityStack.length === 0 && isStackExpanded) {
+            setIsStackExpanded(false);
+        }
+    }, [abilityStack.length, isStackExpanded]);
 
     // Effect: Auto-advance from Declare Attackers to Declare Blockers when stack clears
     useEffect(() => {
@@ -399,6 +428,47 @@ const Game = () => {
 
     const battlefieldCards = sortBattlefieldCards(unfilteredBattlefieldCards, cards);
 
+    // Shared between SelectionMenu (portrait) and DockCardDetail (landscape)
+    const selectedStackCards = selectedCard
+        ? (visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard])
+        : [];
+
+    const handleSelectedCounterChange = (action, cardsToModify) => {
+        if (!gameEngineRef.current) return;
+        let updatedCards = [...cards];
+        cardsToModify.forEach(cardToModify => {
+            const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
+            updatedCards = result.newCards;
+        });
+        saveHistoryState(updatedCards);
+        if (selectedCard) {
+            const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
+            if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
+        }
+    };
+
+    const handleActivateAbilityLogged = (card, ability) => {
+        logAction(`Activated: ${ability.cost}`);
+        handleActivateAbility(card, ability);
+    };
+
+    // --- Landscape chrome helpers ---
+    const PHASE_DISPLAY_NAMES = { 'Beginning': 'Beginning', 'Main': 'Main 1', 'Combat': 'Combat', 'Main 2': 'Main 2', 'End': 'End' };
+    const phaseLabel = currentPhase
+        ? (currentPhase === 'Combat' && currentCombatStep ? currentCombatStep : PHASE_DISPLAY_NAMES[currentPhase] || currentPhase)
+        : null;
+
+    // Top-bar chevron: granular skip (combat steps inside Combat, phases otherwise)
+    const handleChevronAdvance = () => {
+        if (currentPhase === 'Combat') advanceCombatStep();
+        else advancePhase();
+    };
+
+    const dockHasContent = targetingMode.active
+        || (isStackExpanded && abilityStack.length > 0)
+        || !!selectedCard
+        || currentCombatStep === 'Combat Damage';
+
     const handleBgClick = (e) => {
         // Only close panels if the click was directly on the background container
         // If target !== currentTarget, it means the click was on a child element
@@ -431,72 +501,109 @@ const Game = () => {
             {/* Top Bar: Navigation & Menu */}
             <div className="absolute top-0 left-0 w-full px-4 py-3 z-50 flex justify-between items-center pointer-events-none" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
 
-                {/* Left: Menu Button */}
-                <button
-                    onClick={() => setShowCalculationMenu(true)}
-                    className="pointer-events-auto w-10 h-10 flex items-center justify-center rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-600/50 text-gray-300 active:scale-95 transition-all shadow-lg backdrop-blur-sm relative"
-                >
-                    <Menu className="w-5 h-5" />
-                    {hasUnreadUpdate && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900 shadow-sm animate-pulse" />
+                {/* Left: Menu Button (+ turn/phase readout in landscape) */}
+                <div className="pointer-events-auto flex items-center gap-3">
+                    <button
+                        onClick={() => setShowCalculationMenu(true)}
+                        className="w-10 h-10 flex items-center justify-center rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-600/50 text-gray-300 active:scale-95 transition-all shadow-lg backdrop-blur-sm relative"
+                    >
+                        <Menu className="w-5 h-5" />
+                        {hasUnreadUpdate && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900 shadow-sm animate-pulse" />
+                        )}
+                    </button>
+                    {isLandscape && (
+                        <div className="text-sm font-bold text-gray-100 select-none whitespace-nowrap drop-shadow-md">
+                            Turn {turnNumber}
+                            {phaseLabel && <span className="text-gray-400 font-semibold"> · {phaseLabel}</span>}
+                        </div>
                     )}
-                </button>
+                </div>
 
-                {/* Center: Title */}
-                <h1 className="text-white font-bold text-lg drop-shadow-md select-none pointer-events-auto">
+                {/* Center: Title (compact in landscape — gameplay real estate wins) */}
+                <h1 className={`font-bold drop-shadow-md select-none pointer-events-auto ${isLandscape ? 'text-sm text-gray-300' : 'text-lg text-white'}`}>
                     Magic Calculator
                 </h1>
 
-                {/* Right: History Navigation (Undo/Redo) */}
-                <div className="pointer-events-auto flex gap-2">
-                    {/* Back / Undo */}
-                    <button
-                        onClick={undo}
-                        disabled={history.length === 0}
-                        className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
+                {/* Right: phase chevrons (landscape) / undo-redo (portrait) */}
+                {isLandscape ? (
+                    <div className="pointer-events-auto flex gap-2">
+                        {/* Phases only advance — the back chevron stays disabled (use Undo below) */}
+                        <button
+                            disabled
+                            className="w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm bg-slate-900/50 text-gray-600 cursor-not-allowed"
+                            aria-label="Previous phase (unavailable)"
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={handleChevronAdvance}
+                            className="w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95 transition-all"
+                            aria-label="Next phase"
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                ) : (
+                    <div className="pointer-events-auto flex gap-2">
+                        {/* Back / Undo */}
+                        <button
+                            onClick={undo}
+                            disabled={history.length === 0}
+                            className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
               ${history.length > 0
-                                ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
-                                : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
-                            }`}
-                    >
-                        <ChevronLeft className="w-5 h-5" />
-                    </button>
+                                    ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
+                                    : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
+                                }`}
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
 
-                    {/* Forward / Redo */}
-                    <button
-                        onClick={redo}
-                        disabled={!future || future.length === 0}
-                        className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
+                        {/* Forward / Redo */}
+                        <button
+                            onClick={redo}
+                            disabled={!future || future.length === 0}
+                            className={`w-10 h-10 flex items-center justify-center rounded-lg border border-slate-600/50 shadow-lg backdrop-blur-sm transition-all
               ${future && future.length > 0
-                                ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
-                                : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
-                            }`}
-                    >
-                        <ChevronRight className="w-5 h-5" />
-                    </button>
-                </div>
+                                    ? 'bg-slate-800/80 hover:bg-slate-700 text-gray-300 active:scale-95'
+                                    : 'bg-slate-900/50 text-gray-600 cursor-not-allowed'
+                                }`}
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
             </div>
 
-            {/* Triggered Ability Stack (Overlay) - Always visible */}
-            <LIFOStack
-                items={abilityStack}
-                onResolve={handleResolveWithTargeting}
-                onRemove={removeFromStack}
-                onResolveAll={resolveAllStack}
-                onClear={clearStack}
-                onReorder={setAbilityStack}
-                isCollapsed={isStackCollapsed}
-                onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
-            />
+            {/* Triggered Ability Stack (Overlay) — portrait only; landscape uses the
+                inline StackStrip + dock expansion */}
+            {!isLandscape && (
+                <LIFOStack
+                    items={abilityStack}
+                    onResolve={handleResolveWithTargeting}
+                    onRemove={removeFromStack}
+                    onResolveAll={resolveAllStack}
+                    onClear={clearStack}
+                    onReorder={setAbilityStack}
+                    isCollapsed={isStackCollapsed}
+                    onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
+                />
+            )}
 
-            {/* Main Content Area - Split View */}
+            {/* Main Content Area - battlefield + contextual dock in landscape */}
             <div
-                className="flex-1 flex flex-col pt-16 pb-0 overflow-hidden"
+                className={`flex-1 flex ${isLandscape ? 'flex-row' : 'flex-col'} pt-16 pb-0 overflow-hidden relative`}
                 onClick={handleBgClick}
             >
-                <div className="flex-1 relative min-h-0" ref={battlefieldRef}>
+                <div className="flex-1 relative min-h-0 flex flex-col" ref={battlefieldRef}>
+                    <div className="flex-1 min-h-0">
                     <BattlefieldList
                         cards={battlefieldCards}
+                        activeZone={activeZone}
+                        onZoneChange={setActiveZone}
+                        zoneCounts={zoneCounts}
+                        pinned={zonePinned}
+                        onBlockedSwitch={handleBlockedSwitch}
                         onCardAction={handleCardAction}
                         onStackSelectionChange={updateStackSelection}
                         allCards={cards}
@@ -606,10 +713,101 @@ const Game = () => {
                         }}
                         targetingMode={targetingMode}
                     />
+                    </div>
+
+                    {/* Inline trigger-stack strip (landscape) — absent when the stack is empty */}
+                    {isLandscape && (
+                        <StackStrip
+                            items={abilityStack}
+                            isExpanded={isStackExpanded}
+                            onToggleExpand={() => setIsStackExpanded(prev => !prev)}
+                            onResolveTop={() => {
+                                const topItem = abilityStack[abilityStack.length - 1];
+                                if (topItem) handleResolveWithTargeting(topItem);
+                            }}
+                        />
+                    )}
                 </div>
+
+                {/* Right Dock (landscape only). Priority: targeting > stack > selection > combat summary.
+                    On compact viewports it renders as a slide-over, and only when it has content. */}
+                {isLandscape && (!isCompactLandscape || dockHasContent) && (
+                    <RightDock
+                        overlay={isCompactLandscape}
+                        title={targetingMode.active ? 'Choose targets' : (isStackExpanded && abilityStack.length > 0) ? 'Trigger stack' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
+                        {targetingMode.active ? (
+                            <DockTargetingPanel
+                                targetingMode={targetingMode}
+                                cards={cards}
+                                onConfirm={handleConfirmTargetingAction}
+                                onCancel={cancelTargeting}
+                                onSelectAll={handleToggleSelectAll}
+                                isConfirmDisabled={targetingMode.selectedIds.length === 0 && !['declare-attackers', 'declare-blockers'].includes(targetingMode.action)}
+                            />
+                        ) : (isStackExpanded && abilityStack.length > 0) ? (
+                            <DockStackList
+                                items={abilityStack}
+                                onResolve={handleResolveWithTargeting}
+                                onRemove={removeFromStack}
+                                onResolveAll={() => resolveAllStack(recentCards)}
+                                onClear={clearStack}
+                            />
+                        ) : selectedCard ? (
+                            <DockCardDetail
+                                selectedCard={selectedCard}
+                                stackCount={calculateEffectiveTotal(selectedStackCards)}
+                                stackCards={selectedStackCards}
+                                allCards={cards}
+                                onAction={handleCardAction}
+                                onDeselect={() => setSelectedCard(null)}
+                                onActivateAbility={handleActivateAbilityLogged}
+                                onConvertLand={handleLandConversion}
+                                onCounterChange={handleSelectedCounterChange}
+                            />
+                        ) : currentCombatStep === 'Combat Damage' ? (
+                            <CombatSummaryPanel
+                                cards={cards}
+                                isVisible={true}
+                                variant="dock"
+                                onClose={() => advanceCombatStep()}
+                            />
+                        ) : null}
+                    </RightDock>
+                )}
             </div>
 
+            {/* Thin persistent bottom bar (landscape) — replaces the fanned card buttons */}
+            {isLandscape && activePanel !== 'add' && (
+                <BottomBar
+                    onUndo={undo}
+                    canUndo={history.length > 0}
+                    onAddCard={() => setActivePanel('add')}
+                    onNextPhase={() => {
+                        if (!currentPhase) handleStartTurn();
+                        else handleSmartPhaseAdvance();
+                    }}
+                    nextPhaseLabel={!currentPhase ? 'Start turn' : currentPhase === 'Main 2' ? 'End turn' : 'Next phase'}
+                    onAutoCalculate={() => {
+                        if (currentPhase === 'Main 2') {
+                            endTurn();
+                            setHasEndStepActions(false);
+                        } else {
+                            handleAutoCalculate();
+                        }
+                    }}
+                    onOpenMore={() => setActivePanel(activePanel === 'more' ? null : 'more')}
+                    disablePhaseActions={targetingMode.active}
+                />
+            )}
 
+
+
+            {/* Zone pin toast ("Resolve stack triggers first.") */}
+            {zoneToast && (
+                <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-lg bg-slate-900/95 border border-amber-500/50 text-amber-300 text-sm font-semibold shadow-xl animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
+                    {zoneToast}
+                </div>
+            )}
 
             {/* Phase Tracker - Floating above Controls */}
             <PhaseTracker
@@ -626,8 +824,8 @@ const Game = () => {
                 onConfirmAttackers={handleConfirmAttackers}
             />
 
-            {/* Declare Attackers Title - Floating above Control Panel */}
-            {targetingMode.active && targetingMode.action === 'declare-attackers' && (
+            {/* Declare Attackers Title - Floating above Control Panel (portrait only; dock handles landscape) */}
+            {!isLandscape && targetingMode.active && targetingMode.action === 'declare-attackers' && (
                 <div className="fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200" style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}>
                     <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-6 py-3 rounded-lg border border-red-500/50 shadow-2xl">
                         <Sword className="w-7 h-7 text-red-500" />
@@ -641,8 +839,8 @@ const Game = () => {
                 </div>
             )}
 
-            {/* Declare Blockers Title - Floating above Control Panel */}
-            {targetingMode.active && targetingMode.action === 'declare-blockers' && (
+            {/* Declare Blockers Title - Floating above Control Panel (portrait only; dock handles landscape) */}
+            {!isLandscape && targetingMode.active && targetingMode.action === 'declare-blockers' && (
                 <div className="fixed left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom duration-200" style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom))' }}>
                     <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-6 py-3 rounded-lg border border-blue-500/50 shadow-2xl">
                         <ShieldOff className="w-7 h-7 text-blue-500" />
@@ -660,42 +858,29 @@ const Game = () => {
                 </div>
             )}
 
-            {/* Combat Summary Panel - Shown during Combat Damage step */}
+            {/* Combat Summary Panel - floating in portrait; the dock hosts it in landscape */}
             <CombatSummaryPanel
                 cards={cards}
-                isVisible={currentCombatStep === 'Combat Damage'}
+                isVisible={currentCombatStep === 'Combat Damage' && !isLandscape}
                 onClose={() => advanceCombatStep()}
             />
 
             {/* New Bottom Control Panel, Selection Menu, or Attacker Confirmation */}
             {/* Hide controls if Add Panel is open, to let it replace the bottom area */}
-            {activePanel === 'add' ? null : selectedCard ? (
+            {/* Portrait-only bottom area: the fanned control panel and the SelectionMenu
+                overlay. Landscape uses the thin BottomBar + dock instead. */}
+            {activePanel === 'add' || isLandscape ? null : selectedCard ? (
                 <SelectionMenu
                     selectedCard={selectedCard}
-                    stackCount={calculateEffectiveTotal(visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard])}
-                    stackCards={visibleStacks.find(g => g.cards.some(c => c.id === selectedCard.id))?.cards || [selectedCard]}
+                    stackCount={calculateEffectiveTotal(selectedStackCards)}
+                    stackCards={selectedStackCards}
                     allCards={cards}
 
                     onAction={handleCardAction}
                     onDeselect={() => setSelectedCard(null)}
-                    onActivateAbility={(card, ability) => {
-                        logAction(`Activated: ${ability.cost}`);
-                        handleActivateAbility(card, ability);
-                    }}
+                    onActivateAbility={handleActivateAbilityLogged}
                     onConvertLand={handleLandConversion}
-                    onCounterChange={(action, cardsToModify, count) => {
-                        if (!gameEngineRef.current) return;
-                        let updatedCards = [...cards];
-                        cardsToModify.forEach(cardToModify => {
-                            const result = gameEngineRef.current.processAction(action, cardToModify, updatedCards, recentCards);
-                            updatedCards = result.newCards;
-                        });
-                        saveHistoryState(updatedCards);
-                        if (selectedCard) {
-                            const updatedSelectedCard = updatedCards.find(c => c.id === selectedCard.id);
-                            if (updatedSelectedCard) setSelectedCard(updatedSelectedCard);
-                        }
-                    }}
+                    onCounterChange={handleSelectedCounterChange}
                 />
             ) : (
                 <BottomControlPanel
