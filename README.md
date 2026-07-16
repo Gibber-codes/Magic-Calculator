@@ -13,4 +13,3 @@ npm run dev
 #### Tech Stack
 - **Frontend**: React + Vite + TailwindCSS
 - **Data**: Scryfall API
-negger
