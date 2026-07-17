@@ -20,8 +20,9 @@ const BarButton = ({ onClick, disabled = false, icon: Icon, label, accent = fals
 /**
  * Thin persistent bottom bar for landscape: Undo · Add · Next phase (accented)
  * · Auto · More. Rendered in-flow at the bottom of the root column — no
- * gestures, no hiding. Phase actions disable while targeting mode owns the
- * flow (confirm/cancel live in the dock).
+ * gestures. While targeting mode owns the flow (disablePhaseActions), the
+ * phase/Auto/More buttons HIDE (not just disable) so the floating targeting
+ * box can drop into their space; Undo and Add stay on the left.
  */
 const BottomBar = ({
     onUndo,
@@ -35,14 +36,18 @@ const BottomBar = ({
 }) => {
     return (
         <div
-            className="shrink-0 border-t border-slate-700/60 bg-slate-900/90 backdrop-blur-md flex items-center justify-around px-2 z-50"
+            className={`shrink-0 border-t border-slate-700/60 bg-slate-900/90 backdrop-blur-md flex items-center px-2 z-50 ${disablePhaseActions ? 'justify-start gap-2' : 'justify-around'}`}
             style={{ paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '3.5rem' }}
         >
             <BarButton onClick={onUndo} disabled={!canUndo} icon={Undo2} label="Undo" />
             <BarButton onClick={onAddCard} icon={Plus} label="Add" />
-            <BarButton onClick={onNextPhase} disabled={disablePhaseActions} icon={ChevronRight} label={nextPhaseLabel} accent />
-            <BarButton onClick={onAutoCalculate} disabled={disablePhaseActions} icon={Play} label="Auto" />
-            <BarButton onClick={onOpenMore} icon={MoreHorizontal} label="More" />
+            {!disablePhaseActions && (
+                <>
+                    <BarButton onClick={onNextPhase} icon={ChevronRight} label={nextPhaseLabel} accent />
+                    <BarButton onClick={onAutoCalculate} icon={Play} label="Auto" />
+                    <BarButton onClick={onOpenMore} icon={MoreHorizontal} label="More" />
+                </>
+            )}
         </div>
     );
 };

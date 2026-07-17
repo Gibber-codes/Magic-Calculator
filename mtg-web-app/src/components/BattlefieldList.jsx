@@ -112,9 +112,9 @@ const BattlefieldList = ({
     if (dualZone) {
         return (
             <div className="w-full h-full flex flex-col overflow-hidden">
-                {/* Creatures — full-size, centered */}
+                {/* Creatures — full-size, anchored top-left of the board */}
                 <div
-                    className="flex-1 min-h-0 overflow-x-auto scrollbar-hide w-full flex flex-col justify-center"
+                    className="flex-1 min-h-0 overflow-x-auto scrollbar-hide w-full flex flex-col justify-start"
                     style={{ touchAction: 'pan-x' }}
                 >
                     {zoneCards.length === 0 && otherCards.length === 0 ? (
@@ -122,7 +122,7 @@ const BattlefieldList = ({
                             Battlefield is empty
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-1 p-2 min-w-max items-start mx-auto">
+                        <div className="flex flex-col gap-1 p-2 min-w-max items-start">
                             {renderRow(topRow)}
                             {renderRow(secondRow)}
                         </div>

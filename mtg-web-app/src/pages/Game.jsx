@@ -517,11 +517,17 @@ const Game = () => {
                     )}
                 </div>
 
-                {/* Center: Title (portrait only — landscape gives the space to gameplay) */}
+                {/* Center: Title (portrait only — landscape gives the space to gameplay).
+                    During landscape targeting the center slot shows the mode label instead. */}
                 {!isLandscape && (
                     <h1 className="font-bold drop-shadow-md select-none pointer-events-auto text-lg text-white">
                         Magic Calculator
                     </h1>
+                )}
+                {isLandscape && targetingMode.active && (
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 select-none pointer-events-none">
+                        Choose targets
+                    </span>
                 )}
 
                 {/* Right: phase chevrons (landscape) / undo-redo (portrait).
@@ -729,25 +735,35 @@ const Game = () => {
                         the old inline StackStrip is retired. */}
                 </div>
 
-                {/* Right Dock (landscape only). Priority: targeting > selection > combat summary.
-                    (The trigger stack lives in the floating LIFOStack, not the dock.)
+                {/* Targeting confirmation (landscape): compact floating box at the
+                    bottom-right, dropped into the bottom bar's space (its phase buttons
+                    hide during targeting) to keep the creature row clear. */}
+                {isLandscape && targetingMode.active && (
+                    <div
+                        data-dock="true"
+                        className="fixed right-4 bottom-2 z-[70] w-[360px] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-700/60 bg-slate-900/95 backdrop-blur-md shadow-2xl p-3 animate-in slide-in-from-bottom-2 duration-200"
+                    >
+                        <DockTargetingPanel
+                            targetingMode={targetingMode}
+                            cards={cards}
+                            onConfirm={handleConfirmTargetingAction}
+                            onCancel={cancelTargeting}
+                            onSelectAll={handleToggleSelectAll}
+                            isConfirmDisabled={targetingMode.selectedIds.length === 0 && !['declare-attackers', 'declare-blockers'].includes(targetingMode.action)}
+                        />
+                    </div>
+                )}
+
+                {/* Right Dock (landscape only). Priority: selection > combat summary.
+                    (The trigger stack and targeting confirmation float bottom-right instead.)
                     Always a right-side floating overlay (never a column) so the battlefield stays
                     full-width; rendered only when it has content. */}
-                {isLandscape && dockHasContent && (
+                {isLandscape && dockHasContent && !targetingMode.active && (
                     <RightDock
                         overlay={true}
                         bare={dockIsBare}
-                        title={targetingMode.active ? 'Choose targets' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
-                        {targetingMode.active ? (
-                            <DockTargetingPanel
-                                targetingMode={targetingMode}
-                                cards={cards}
-                                onConfirm={handleConfirmTargetingAction}
-                                onCancel={cancelTargeting}
-                                onSelectAll={handleToggleSelectAll}
-                                isConfirmDisabled={targetingMode.selectedIds.length === 0 && !['declare-attackers', 'declare-blockers'].includes(targetingMode.action)}
-                            />
-                        ) : selectedCard ? (
+                        title={currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
+                        {selectedCard ? (
                             <DockCardDetail
                                 selectedCard={selectedCard}
                                 stackCount={calculateEffectiveTotal(selectedStackCards)}

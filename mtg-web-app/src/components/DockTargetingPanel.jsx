@@ -1,20 +1,14 @@
 import React from 'react';
 import { Check, X, CheckCircle } from 'lucide-react';
 import { getModeConfig } from '../utils/modeConfig';
-import { formatBigNumber } from '../utils/formatters';
 import { calculateEffectiveTotal } from '../utils/cardUtils';
 
-const COLOR_THEMES = {
-    red: { header: 'text-red-400', badge: 'bg-red-900/40 text-red-300' },
-    blue: { header: 'text-blue-400', badge: 'bg-blue-900/40 text-blue-300' },
-    purple: { header: 'text-purple-400', badge: 'bg-purple-900/40 text-purple-300' },
-    slate: { header: 'text-gray-400', badge: 'bg-slate-800 text-gray-300' }
-};
-
 /**
- * Targeting confirmation panel for the landscape dock. Replaces the floating
- * Declare Attackers/Blockers banners and the BottomControlPanel confirm/cancel
- * buttons — the battlefield stays fully visible while choosing targets.
+ * Targeting confirmation panel for the landscape floating box. Replaces the
+ * floating Declare Attackers/Blockers banners and the BottomControlPanel
+ * confirm/cancel buttons — the battlefield stays fully visible while choosing
+ * targets. Mode context ("Choose targets", the phase name) lives in the app
+ * header, so the panel is just source context + actions.
  */
 const DockTargetingPanel = ({
     targetingMode,
@@ -27,8 +21,6 @@ const DockTargetingPanel = ({
     if (!targetingMode?.active) return null;
 
     const config = getModeConfig(targetingMode.action);
-    const theme = COLOR_THEMES[config.color] || COLOR_THEMES.purple;
-    const Icon = config.icon;
 
     const sourceCard = targetingMode.sourceId
         ? cards.find(c => c.id === targetingMode.sourceId)
@@ -46,17 +38,6 @@ const DockTargetingPanel = ({
 
     return (
         <div className="flex flex-col gap-3 animate-in fade-in duration-150">
-            {/* Mode header */}
-            <div className="flex items-center gap-2">
-                <Icon className={`w-5 h-5 ${theme.header}`} />
-                <span className="text-white font-bold text-sm flex-1">{config.title}</span>
-                {selectedCount > 0n && (
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${theme.badge}`}>
-                        {formatBigNumber(selectedCount)} selected
-                    </span>
-                )}
-            </div>
-
             {/* Source card context */}
             {sourceCard && (
                 <div className="flex items-start gap-2.5 bg-slate-800/60 border border-slate-700/60 rounded-lg p-2.5">
