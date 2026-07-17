@@ -1,0 +1,12 @@
+{
+  "name": "mtg-calculator-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix mtg-web-app",
+    "build": "npm run build --prefix mtg-web-app",
+    "preview": "npm run preview --prefix mtg-web-app",
+    "lint": "npm run lint --prefix mtg-web-app",
+    "test": "npm test --prefix mtg-web-app",
+    "install:app": "npm install --prefix mtg-web-app"
+  }
+}

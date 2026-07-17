@@ -12,7 +12,7 @@ The app is a **free web tool** monetized with display ads. It **must remain free
 
 **Primary target: landscape mobile.** Players prop their phone in landscape during games. Landscape (width > height, ≥640px) gets the two-column battlefield + dock layout; portrait keeps the legacy single-column layout with overlay menus. When adding UI, decide explicitly which layout(s) it belongs to.
 
-**Tech stack:** React 19 · Vite 7 · Tailwind CSS 3.4 · ESLint 9 · deployed to Netlify. Card data from Scryfall (local JSON + live API). Framer Motion for animations. Tesseract.js + Fuse.js for the OCR card scanner.
+**Tech stack:** React 19 · Vite 7 · Tailwind CSS 3.4 · ESLint 9 · deployed to Netlify. Card data from Scryfall (local JSON + live API). Framer Motion for animations. Tesseract.js + Fuse.js for the OCR card scanner. Also in use: `react-router-dom` (routing), `react-hot-toast` (toasts, e.g. the zone-pin shake), `react-webcam` (scanner camera capture), and `clsx` / `tailwind-merge` for class composition.
 
 ---
 
@@ -46,6 +46,7 @@ The app is a single-page React app with routing between the main game view and l
 - **`hooks/useCardActions.js`**, **`useBattlefieldCardInteractions.js`**, **`useTouchInteractions.js`** — user input on cards.
 - **`hooks/useScanner.js`** — OCR scanner state (in progress).
 - **`hooks/useSearch.js`** — Scryfall search UX.
+- **`hooks/useBattlefieldLayout.js`** — computes visual card stacking and 2D battlefield positions (using `CARD_WIDTH`/`CARD_GAP` and the `isCreature`/`isMinimalDisplayLand` predicates). Pure layout math, no game state.
 
 ### The game engine
 
@@ -76,8 +77,9 @@ When adding a new problematic card, prefer adding it to `signatureCards.js` over
 - **`components/PhaseTracker.jsx`** — the phase/combat-step progress display.
 - **`components/AddCardPanel.jsx`** — search + favorites + recents tabs for adding cards.
 - **`components/CalculationMenu.jsx`, `CombatSummaryPanel.jsx`, `BottomControlPanel.jsx`, `MoreOptionsPanel.jsx`** — action panels.
-- **`components/Scanner/`** — `ScannerModal`, `ScannerButton`, `CameraCapture`, `ConfirmationPanel`, `ScannedHistoryBar` (OCR feature, in progress). `ScannerModal` is lazy-loaded via `React.lazy` in `Game.jsx` and only mounted while open — keep scanner-only dependencies out of static imports reachable from `Game.jsx`, or they'll re-enter the main bundle. Closing the modal unmounts it, which terminates the OCR worker; it re-initializes on reopen.
-- **`components/TermsOfService.jsx`, `LegalNotices.jsx`, `Footer.jsx`** — legal pages. Their text is **not decorative** — see legal section below.
+- **`components/Scanner/`** — `ScannerModal`, `ScannerButton`, `CameraCapture`, `ConfirmationPanel`, `ScannedHistoryBar`, `DebugConsole` (OCR feature, in progress). `ScannerModal` is lazy-loaded via `React.lazy` in `Game.jsx` and only mounted while open — keep scanner-only dependencies out of static imports reachable from `Game.jsx`, or they'll re-enter the main bundle. Closing the modal unmounts it, which terminates the OCR worker; it re-initializes on reopen.
+- **Other components:** `WelcomeScreen.jsx` (first-run screen), `PWAInstallPrompt.jsx` (install prompt), `XCostModal.jsx` (X spell cost entry), `HistoryPanel.jsx` + `UndoRedoButtons.jsx` (action log / undo-redo UI), `SelectedCardControls.jsx`, `ZoneIndicators.jsx`, `FavoritesTab.jsx`, `HeartIcon.jsx`, `AdBanner.jsx` (see AdSense gotcha below).
+- **`pages/TermsOfService.jsx`, `pages/LegalNotices.jsx`, `components/Footer.jsx`** — legal pages (the two full pages live in `pages/`, the footer in `components/`). Their text is **not decorative** — see legal section below.
 
 ### Data flow for card actions
 
@@ -115,7 +117,7 @@ MTG combos routinely produce numbers that overflow `Number.MAX_SAFE_INTEGER`. Th
 
 - Minimum **150px distance** between ads and interactive game elements — enforce this in layout changes.
 - No pop-ups, no pop-unders, no ads on first page load in the game view.
-- Currently `AdBanner.jsx` renders a placeholder; production requires real `ADSENSE_CLIENT_ID` and `ADSENSE_SLOT_ID` in `constants.js`.
+- `AdBanner.jsx` renders a placeholder until `import.meta.env.PROD && ADSENSE_CONFIGURED` is true; going live requires real `ADSENSE_CLIENT_ID` and `ADSENSE_SLOT_ID` in `constants.js` (the `ADSENSE_CONFIGURED` flag flips automatically once the placeholder IDs are replaced).
 
 ### 5. Privacy / GDPR
 
@@ -141,7 +143,7 @@ Vite is configured with `@vitejs/plugin-basic-ssl` so the dev server runs on HTT
 - **Functional components + hooks.** No class components.
 - **Tailwind for styling.** No CSS modules. Global styles only in `index.css`, `App.css`, `mobile.css`.
 - **Icons: `lucide-react`.** Don't add another icon library.
-- **File layout:** `components/`, `hooks/`, `utils/`, `utils/scanner/`, `data/`, `config/`.
+- **File layout:** `src/` holds `components/`, `hooks/`, `utils/`, `utils/scanner/`, `data/`, `config/`, `pages/` (routed pages: `Game.jsx`, `TermsOfService.jsx`, `LegalNotices.jsx`), and `styles/`. Build/asset scripts live in `scripts/` (`resize-icons.js`, `setup_icons.js`, `compress-banners.js`).
 - **State:** prefer custom hooks over prop drilling for anything used in more than 2 components.
 - **useCallback + useMemo** where dependencies matter for the engine ref or trigger sorting — the engine expects a stable card array reference within a render.
 - **console.log:** existing debug logs (e.g. `[ETB]` prefix) are useful during scanner and engine work. Keep them behind a debug flag or remove before shipping — don't leave new ones in shipped code.
@@ -152,8 +154,8 @@ Vite is configured with `@vitejs/plugin-basic-ssl` so the dev server runs on HTT
 
 1. **`usePhaseHandlers.handleAutoCalculate`** — marked `// SIMPLIFIED APPROACH` in comments. Runs phases sequentially but doesn't cleanly thread the card-state mutations between phases. A proper fix is a new `engine.simulateFullTurn(cards)` method.
 2. ~~Phase casing inconsistency~~ — resolved via `phaseUtils.js` (see gotcha #6). UI components still compare title-case strings directly; migrating them to `PHASES` constants is optional polish. Note: `BottomControlPanel.jsx` compares `currentPhase === 'Main 1'`, which is never a real phase value (`'Main'` is) — dormant UI bug, untouched.
-3. **`AdBanner.jsx` has `isProduction = false` hardcoded** — replace with an actual env check before shipping.
-4. **`ADSENSE_CLIENT_ID` and `ADSENSE_SLOT_ID` in `constants.js` are placeholders.**
+3. ~~`AdBanner.jsx` has `isProduction = false` hardcoded~~ — resolved. It now gates on `import.meta.env.PROD && ADSENSE_CONFIGURED`, so real ads load only in production builds *and* only once real AdSense IDs are set (see #4).
+4. **`ADSENSE_CLIENT_ID` and `ADSENSE_SLOT_ID` in `constants.js` are placeholders** (`ca-pub-XXXXXXXXXX` / `YYYYYYYY`). The exported `ADSENSE_CONFIGURED` flag stays `false` until both are replaced with real IDs, which is what keeps `AdBanner` from rendering live ad markup.
 5. ~~No test suite~~ — Vitest seed suite exists (see Commands); coverage is still thin outside `combatUtils`/`keywordParser`/`gameEngine.applyModifiers`/`phaseUtils`.
 6. **Scanner is in progress** — `combocalc-scanner-implementation.md` is the design doc. Auto-scan concurrency lock (`isAutoScanBusy` ref) is a fresh addition, monitor for edge cases.
 
@@ -173,4 +175,6 @@ Vite is configured with `@vitejs/plugin-basic-ssl` so the dev server runs on HTT
 
 ## Deployment
 
-Netlify, configured via `netlify.toml`. Preview builds run on PR; production builds run on `main`. Icons are managed via `resize-icons.js` and `setup_icons.js`; banner assets via `compress-banners.js` (uses `sharp`).
+Netlify, configured via `netlify.toml` — note this lives at the **repo root** (one level above this `mtg-web-app/` app directory), alongside the top-level `package.json`. Preview builds run on PR; production builds run on `main`. Icons are managed via `scripts/resize-icons.js` and `scripts/setup_icons.js`; banner assets via `scripts/compress-banners.js` (uses `sharp`).
+
+**Repo layout note:** this `CLAUDE.md` and the app live in `mtg-web-app/`, but several referenced docs sit at the **repo root**: `App_legal_compliance_guide.md`, `combocalc-scanner-implementation.md`, and `LANDSCAPE_LAYOUT_BRIEF.md`. Reference them as `../App_legal_compliance_guide.md` etc. from here.
