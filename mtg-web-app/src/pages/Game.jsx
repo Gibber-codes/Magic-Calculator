@@ -140,9 +140,8 @@ const Game = () => {
     const [windowSize, setWindowSize] = useState({ width: typeof window !== 'undefined' ? window.innerWidth : 0, height: typeof window !== 'undefined' ? window.innerHeight : 0 });
     // Landscape two-column layout (battlefield + dock). Portrait keeps the legacy layout.
     const isLandscape = windowSize.width > windowSize.height && windowSize.width >= 640;
-    // Very narrow landscape (e.g. iPhone SE, 667×375): the dock becomes a
-    // slide-over above the battlefield instead of claiming column width.
-    const isCompactLandscape = isLandscape && windowSize.width < 740;
+    // The landscape dock is always a right-side floating overlay (never a column),
+    // so the battlefield stays full-width; it appears only when it has content.
     const BOTTOM_BAR_HEIGHT = 0; // Floating UI now
     const TOP_BAR_HEIGHT = 0;   // Floating UI now
 
@@ -730,10 +729,12 @@ const Game = () => {
                 </div>
 
                 {/* Right Dock (landscape only). Priority: targeting > stack > selection > combat summary.
-                    On compact viewports it renders as a slide-over, and only when it has content. */}
-                {isLandscape && (!isCompactLandscape || dockHasContent) && (
+                    Always a right-side floating overlay (never a column) so the battlefield stays
+                    full-width; rendered only when it has content. */}
+                {isLandscape && dockHasContent && (
                     <RightDock
-                        overlay={isCompactLandscape}
+                        overlay={true}
+                        bare={!targetingMode.active && !(isStackExpanded && abilityStack.length > 0) && !!selectedCard}
                         title={targetingMode.active ? 'Choose targets' : (isStackExpanded && abilityStack.length > 0) ? 'Trigger stack' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
                         {targetingMode.active ? (
                             <DockTargetingPanel
