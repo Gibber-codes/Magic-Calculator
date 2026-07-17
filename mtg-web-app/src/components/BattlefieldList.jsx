@@ -5,10 +5,15 @@ import { getCardZone } from '../utils/cardUtils';
 import ZoneTabs from './ZoneTabs';
 
 /**
- * Battlefield card area with zone tabs.
- * Only the active zone ('creatures' | 'others') is rendered in the DOM — the
- * inactive zone's cards are unmounted entirely (perf win on huge battlefields).
- * Tap a tab or swipe vertically on the card area to switch zones.
+ * Battlefield card area.
+ *
+ * Portrait (default): zone tabs — only the active zone ('creatures' | 'others')
+ * is rendered in the DOM; the inactive zone's cards are unmounted entirely
+ * (perf win on huge battlefields). Tap a tab or swipe vertically to switch.
+ *
+ * Landscape (`dualZone`): no tabs — both zones are visible at once. Creatures
+ * render full-size and centered; others render scaled-down in a bottom-left
+ * cluster. Zone pinning/swiping doesn't apply since nothing is hidden.
  */
 const BattlefieldList = ({
     cards,
@@ -18,18 +23,25 @@ const BattlefieldList = ({
     zoneCounts,
     pinned = false,
     onBlockedSwitch,
+    dualZone = false,
     ...props
 }) => {
     const { targetingMode = {}, ...restProps } = props;
     // allCards is accepted but not forwarded to BattlefieldCard (matches prior behavior).
     delete restProps.allCards;
 
-    const zoneCards = cards.filter(g => getCardZone(g.leader) === activeZone);
+    const zoneCards = dualZone
+        ? cards.filter(g => getCardZone(g.leader) === 'creatures')
+        : cards.filter(g => getCardZone(g.leader) === activeZone);
+    const otherCards = dualZone
+        ? cards.filter(g => getCardZone(g.leader) === 'others')
+        : [];
 
     // Auto-switch view when targeting starts and the eligible cards are all in
     // the hidden zone (e.g. equip target selection while viewing Others).
+    // Moot in dualZone mode — both zones are always visible.
     useEffect(() => {
-        if (!targetingMode.active) return;
+        if (dualZone || !targetingMode.active) return;
         const eligible = cards.filter(g => {
             const cardProps = restProps.getCardProps ? restProps.getCardProps(g.leader) : {};
             return cardProps.isValidTarget || cardProps.isEligibleAttacker;
@@ -43,10 +55,12 @@ const BattlefieldList = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [targetingMode.active]);
 
-    // Creatures split into two rows when the row would get long
+    // Portrait: creatures split into two rows when the row would get long.
+    // Landscape (dualZone): always a single horizontally-scrollable row —
+    // vertical space is scarce and the others cluster sits below.
     let topRow = zoneCards;
     let secondRow = [];
-    if (activeZone === 'creatures' && zoneCards.length > 4) {
+    if (!dualZone && activeZone === 'creatures' && zoneCards.length > 4) {
         const mid = Math.ceil(zoneCards.length / 2);
         topRow = zoneCards.slice(0, mid);
         secondRow = zoneCards.slice(mid);
@@ -94,6 +108,43 @@ const BattlefieldList = ({
             </div>
         );
     };
+
+    if (dualZone) {
+        return (
+            <div className="w-full h-full flex flex-col overflow-hidden">
+                {/* Creatures — full-size, centered */}
+                <div
+                    className="flex-1 min-h-0 overflow-x-auto scrollbar-hide w-full flex flex-col justify-center"
+                    style={{ touchAction: 'pan-x' }}
+                >
+                    {zoneCards.length === 0 && otherCards.length === 0 ? (
+                        <div className="text-gray-500 text-center italic opacity-50 m-auto select-none">
+                            Battlefield is empty
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-1 p-2 min-w-max items-start mx-auto">
+                            {renderRow(topRow)}
+                            {renderRow(secondRow)}
+                        </div>
+                    )}
+                </div>
+
+                {/* Others — scaled-down cluster, bottom-left */}
+                {otherCards.length > 0 && (
+                    <div
+                        className="shrink-0 overflow-x-auto scrollbar-hide px-3 pb-2"
+                        style={{ touchAction: 'pan-x' }}
+                    >
+                        {/* zoom shrinks layout size too (unlike transform: scale), so the
+                            row claims only its scaled height. */}
+                        <div style={{ zoom: 0.6 }}>
+                            {renderRow(otherCards)}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="w-full h-full flex flex-col gap-2 overflow-hidden">

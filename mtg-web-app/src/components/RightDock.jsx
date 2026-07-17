@@ -11,8 +11,11 @@ import { Hand } from 'lucide-react';
  * its own surface and glow over the battlefield, portrait-style.
  */
 const RightDock = ({ title = 'Selected', children, overlay = false, bare = false }) => {
+    // Bare overlays reach the top of the screen — the transparent header floats
+    // over the battlefield, so the card panel shows through it. Chromed panels
+    // stay below the header (top-16) to keep their opaque edge clear of it.
     const position = overlay
-        ? 'absolute top-16 bottom-0 right-0 z-40 w-[300px] max-w-[85vw] animate-in slide-in-from-right duration-200'
+        ? `absolute ${bare ? 'top-0' : 'top-16'} bottom-0 right-0 z-40 w-[300px] max-w-[85vw] animate-in slide-in-from-right duration-200`
         : 'h-full w-[32%] min-w-[280px] max-w-[360px] shrink-0';
 
     // Chrome: the opaque panel look, or nothing (bare). Bare must NOT clip, so
@@ -24,7 +27,11 @@ const RightDock = ({ title = 'Selected', children, overlay = false, bare = false
             : 'border-l border-slate-700/60 bg-slate-900/80 backdrop-blur-md overflow-hidden';
 
     return (
-        <div className={`${position} ${chrome} flex flex-col`}>
+        // data-dock marks this as a protected surface for the battlefield's
+        // click-anywhere-to-deselect rule. Bare docks are chromeless, so only
+        // their content (e.g. DockCardDetail's card unit) marks itself — clicks
+        // on the transparent area around it count as background.
+        <div data-dock={bare ? undefined : true} className={`${position} ${chrome} flex flex-col`}>
             {!bare && (
                 <div className="px-4 pt-2 pb-1 shrink-0">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 select-none">

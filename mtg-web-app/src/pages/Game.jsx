@@ -39,8 +39,6 @@ import CombatSummaryPanel from '../components/CombatSummaryPanel';
 import RightDock from '../components/RightDock';
 import DockCardDetail from '../components/DockCardDetail';
 import DockTargetingPanel from '../components/DockTargetingPanel';
-import StackStrip from '../components/StackStrip';
-import DockStackList from '../components/DockStackList';
 import BottomBar from '../components/BottomBar';
 import WelcomeScreen from '../components/WelcomeScreen';
 import AdBanner from '../components/AdBanner';
@@ -125,8 +123,6 @@ const Game = () => {
     const [previewCard, setPreviewCard] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [showCalculationMenu, setShowCalculationMenu] = useState(false);
-    // Landscape: whether the trigger stack is expanded into the dock
-    const [isStackExpanded, setIsStackExpanded] = useState(false);
     const [autoMode, setAutoMode] = useState(true); // Auto Calculation Mode State (Default: True)
     const [hasEndStepActions, setHasEndStepActions] = useState(false); // Track if cleanup is needed
 
@@ -271,13 +267,6 @@ const Game = () => {
             }
         };
     }, [abilityStack, targetingMode.active]);
-
-    // Effect: collapse the dock stack view when the stack empties
-    useEffect(() => {
-        if (abilityStack.length === 0 && isStackExpanded) {
-            setIsStackExpanded(false);
-        }
-    }, [abilityStack.length, isStackExpanded]);
 
     // Effect: Auto-advance from Declare Attackers to Declare Blockers when stack clears
     useEffect(() => {
@@ -464,14 +453,23 @@ const Game = () => {
     };
 
     const dockHasContent = targetingMode.active
-        || (isStackExpanded && abilityStack.length > 0)
         || !!selectedCard
         || currentCombatStep === 'Combat Damage';
 
+    // The selected-card detail floats chromeless (bare) and reaches the top of
+    // the screen; the header's phase chevrons hide while it's open since they'd
+    // sit on the card's name bar (BottomBar still advances phases).
+    const dockIsBare = isLandscape && !targetingMode.active && !!selectedCard;
+
     const handleBgClick = (e) => {
-        // Only close panels if the click was directly on the background container
-        // If target !== currentTarget, it means the click was on a child element
-        if (e.target !== e.currentTarget) {
+        // Direct background hit, or (landscape) any click on empty space — i.e.
+        // not on a card, a control, or a marked dock surface. This is what makes
+        // "tap anywhere to close the selected-card panel" work: BattlefieldList's
+        // inner containers fill the area, so e.target is rarely the wrapper itself.
+        const isDirectBg = e.target === e.currentTarget;
+        const isEmptySpace = isDirectBg || (isLandscape
+            && !e.target.closest('[data-card-ids], [data-dock], button, input, select, textarea, a, [role="button"]'));
+        if (!isEmptySpace) {
             return;
         }
 
@@ -519,14 +517,19 @@ const Game = () => {
                     )}
                 </div>
 
-                {/* Center: Title (compact in landscape — gameplay real estate wins) */}
-                <h1 className={`font-bold drop-shadow-md select-none pointer-events-auto ${isLandscape ? 'text-sm text-gray-300' : 'text-lg text-white'}`}>
-                    Magic Calculator
-                </h1>
+                {/* Center: Title (portrait only — landscape gives the space to gameplay) */}
+                {!isLandscape && (
+                    <h1 className="font-bold drop-shadow-md select-none pointer-events-auto text-lg text-white">
+                        Magic Calculator
+                    </h1>
+                )}
 
-                {/* Right: phase chevrons (landscape) / undo-redo (portrait) */}
+                {/* Right: phase chevrons (landscape) / undo-redo (portrait).
+                    Chevrons turn invisible (still laid out, so the centered title
+                    doesn't shift) while the bare card panel occupies their corner;
+                    phases still advance via the BottomBar. */}
                 {isLandscape ? (
-                    <div className="pointer-events-auto flex gap-2">
+                    <div className={`pointer-events-auto flex gap-2 ${dockIsBare ? 'invisible' : ''}`}>
                         {/* Phases only advance — the back chevron stays disabled (use Undo below) */}
                         <button
                             disabled
@@ -574,9 +577,10 @@ const Game = () => {
                 )}
             </div>
 
-            {/* Triggered Ability Stack (Overlay) — portrait only; landscape uses the
-                inline StackStrip + dock expansion */}
-            {!isLandscape && (
+            {/* Triggered Ability Stack (Overlay). Portrait: centered above the controls.
+                Landscape: bottom-right of the battlefield, tap the top card to resolve;
+                hidden while the dock overlay is showing so they never collide. */}
+            {(!isLandscape || !dockHasContent) && (
                 <LIFOStack
                     items={abilityStack}
                     onResolve={handleResolveWithTargeting}
@@ -586,6 +590,9 @@ const Game = () => {
                     onReorder={setAbilityStack}
                     isCollapsed={isStackCollapsed}
                     onToggleCollapse={() => setIsStackCollapsed(prev => !prev)}
+                    anchorClass={isLandscape ? 'right-4 bottom-16' : undefined}
+                    tapToResolve={isLandscape}
+                    compact={isLandscape}
                 />
             )}
 
@@ -594,10 +601,14 @@ const Game = () => {
                 className={`flex-1 flex ${isLandscape ? 'flex-row' : 'flex-col'} pt-16 pb-0 overflow-hidden relative`}
                 onClick={handleBgClick}
             >
-                <div className="flex-1 relative min-h-0 flex flex-col" ref={battlefieldRef}>
+                {/* min-w-0: in the landscape flex-row wrapper, a flex item's min-width
+                    defaults to its content size — without this the column grows past the
+                    viewport with the card row and the row can never scroll. */}
+                <div className="flex-1 relative min-h-0 min-w-0 flex flex-col" ref={battlefieldRef}>
                     <div className="flex-1 min-h-0">
                     <BattlefieldList
                         cards={battlefieldCards}
+                        dualZone={isLandscape}
                         activeZone={activeZone}
                         onZoneChange={setActiveZone}
                         zoneCounts={zoneCounts}
@@ -714,28 +725,19 @@ const Game = () => {
                     />
                     </div>
 
-                    {/* Inline trigger-stack strip (landscape) — absent when the stack is empty */}
-                    {isLandscape && (
-                        <StackStrip
-                            items={abilityStack}
-                            isExpanded={isStackExpanded}
-                            onToggleExpand={() => setIsStackExpanded(prev => !prev)}
-                            onResolveTop={() => {
-                                const topItem = abilityStack[abilityStack.length - 1];
-                                if (topItem) handleResolveWithTargeting(topItem);
-                            }}
-                        />
-                    )}
+                    {/* Landscape trigger stack is the floating LIFOStack (bottom-right) —
+                        the old inline StackStrip is retired. */}
                 </div>
 
-                {/* Right Dock (landscape only). Priority: targeting > stack > selection > combat summary.
+                {/* Right Dock (landscape only). Priority: targeting > selection > combat summary.
+                    (The trigger stack lives in the floating LIFOStack, not the dock.)
                     Always a right-side floating overlay (never a column) so the battlefield stays
                     full-width; rendered only when it has content. */}
                 {isLandscape && dockHasContent && (
                     <RightDock
                         overlay={true}
-                        bare={!targetingMode.active && !(isStackExpanded && abilityStack.length > 0) && !!selectedCard}
-                        title={targetingMode.active ? 'Choose targets' : (isStackExpanded && abilityStack.length > 0) ? 'Trigger stack' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
+                        bare={dockIsBare}
+                        title={targetingMode.active ? 'Choose targets' : currentCombatStep === 'Combat Damage' && !selectedCard ? 'Combat' : 'Selected'}>
                         {targetingMode.active ? (
                             <DockTargetingPanel
                                 targetingMode={targetingMode}
@@ -744,14 +746,6 @@ const Game = () => {
                                 onCancel={cancelTargeting}
                                 onSelectAll={handleToggleSelectAll}
                                 isConfirmDisabled={targetingMode.selectedIds.length === 0 && !['declare-attackers', 'declare-blockers'].includes(targetingMode.action)}
-                            />
-                        ) : (isStackExpanded && abilityStack.length > 0) ? (
-                            <DockStackList
-                                items={abilityStack}
-                                onResolve={handleResolveWithTargeting}
-                                onRemove={removeFromStack}
-                                onResolveAll={() => resolveAllStack(recentCards)}
-                                onClear={clearStack}
                             />
                         ) : selectedCard ? (
                             <DockCardDetail

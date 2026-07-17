@@ -75,7 +75,9 @@ const DockCardDetail = ({
     }
 
     return (
-        <div className="animate-in fade-in duration-150">
+        // data-dock: clicks on the card unit (name bar, credit, gaps between
+        // controls) must not trigger the battlefield's click-anywhere deselect.
+        <div data-dock="true" className="animate-in fade-in duration-150">
             {/* The Card Unit — mirrors SelectionMenu, including the green glow.
                 A crisp 1px green edge + soft outer halo; the dock hosts this in
                 `bare` (chromeless, non-clipping) mode so the halo shows over the

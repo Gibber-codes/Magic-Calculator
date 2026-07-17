@@ -28,8 +28,11 @@ const StackItem = ({
     isMounted = true,
     isHidden = false,
     onResolve,
-    onRemove
+    onRemove,
+    onTapResolve = null, // when set, tapping the top item resolves it (landscape)
+    compact = false // landscape: art + info panel only (no name/type banners), 100px tall
 }) => {
+    const itemHeight = compact ? 100 : 160;
     // Strategy: Center the entire group.
     // Total Width = CARD_WIDTH + (totalRendered - 1) * CARD_SPACING
     // Group Start X = (100% - Total Width) / 2
@@ -103,15 +106,20 @@ const StackItem = ({
 
                 const sourceRect = sourceEl.getBoundingClientRect();
 
-                // Target: Stack is centered at bottom of screen.
-                // Horizontal: window.innerWidth / 2 + itemX (left edge of stack item)
-                // Center of card frame (140px wide) is 70px from that edge.
-                const targetCardFrameCenterX = (window.innerWidth / 2) + itemX + 70;
-
-                // Vertical: container is bottom-32 (128px from bottom). Height 160px.
-                // Center of item is at (window.innerHeight - 128 - 160/2) = window.innerHeight - 208
-                // Plus the vertical stagger (itemY)
-                const targetCardFrameCenterY = window.innerHeight - 208 + itemY;
+                // Target: measure the actual stack container (its anchor position is
+                // configurable — bottom-center in portrait, bottom-right in landscape).
+                // Card frame center is 70px from the item's left edge, 80px from its top.
+                const container = document.getElementById('stack-container');
+                let targetCardFrameCenterX, targetCardFrameCenterY;
+                if (container) {
+                    const cRect = container.getBoundingClientRect();
+                    targetCardFrameCenterX = cRect.left + cRect.width / 2 + itemX + 70;
+                    targetCardFrameCenterY = cRect.top + itemHeight / 2 + itemY;
+                } else {
+                    // Fallback: the legacy bottom-center math (bottom-32, 160px tall)
+                    targetCardFrameCenterX = (window.innerWidth / 2) + itemX + 70;
+                    targetCardFrameCenterY = window.innerHeight - 208 + itemY;
+                }
 
                 const sourceCenterX = sourceRect.left + sourceRect.width / 2;
                 const sourceCenterY = sourceRect.top + sourceRect.height / 2;
@@ -131,7 +139,8 @@ const StackItem = ({
 
         // Fallback: Drop from top
         return { y: -150, scale: 0.8, opacity: 0 };
-    }, [isNew, item.sourceId]);
+        // initial variants are only read on mount, so extra deps are harmless
+    }, [isNew, item.sourceId, itemX, itemY, itemHeight]);
 
     return (
         <motion.div
@@ -150,29 +159,34 @@ const StackItem = ({
                 absolute
                 stack-item
                 ${isTop ? 'pointer-events-auto' : 'pointer-events-none select-none'}
+                ${isTop && onTapResolve ? 'cursor-pointer' : ''}
             `}
+            onClick={isTop && onTapResolve ? (e) => { e.stopPropagation(); onTapResolve(item); } : undefined}
             id={`stack-item-${item.id}`}
             style={{
                 left: `calc(50% + ${itemX}px)`,
                 top: `${itemY}px`,
                 zIndex: zIndex,
                 width: '360px',
-                height: '160px',
+                height: `${itemHeight}px`,
                 // filter handled via style for performance
                 filter: `brightness(${Math.pow(0.7, index)}) contrast(${Math.pow(0.85, index)})${index === 0 ? ' drop-shadow(0 4px 14px rgba(34, 211, 238, 0.5))' : ''}`
             }}
         >
             <div className="flex items-stretch gap-0 h-full">
-                {/* REDESIGNED CARD FRAME - Vertical Layout */}
+                {/* REDESIGNED CARD FRAME - Vertical Layout (compact: art only,
+                    the info panel already carries the name/description) */}
                 <div className="relative flex flex-col items-center rounded-xl transition-all duration-300 shrink-0 z-30" style={{ width: 140 }}>
                     {/* Top Banner */}
-                    <div className="z-30 relative" style={{ marginBottom: -4 }}>
-                        <TopBanner width={140} height={28} colorIdentity={item.sourceColor || null}>
-                            <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: '#ffffff' }}>
-                                {item.sourceName}
-                            </div>
-                        </TopBanner>
-                    </div>
+                    {!compact && (
+                        <div className="z-30 relative" style={{ marginBottom: -4 }}>
+                            <TopBanner width={140} height={28} colorIdentity={item.sourceColor || null}>
+                                <div className="w-full text-center text-[10px] font-bold truncate leading-tight" style={{ color: '#ffffff' }}>
+                                    {item.sourceName}
+                                </div>
+                            </TopBanner>
+                        </div>
+                    )}
 
                     {/* Art Window */}
                     <div className="z-30 relative">
@@ -190,22 +204,24 @@ const StackItem = ({
                     </div>
 
                     {/* Bottom Banner */}
-                    <div className="z-30 relative" style={{ marginTop: 4 }}>
-                        <BottomBanner width={140} height={28}>
-                            <div style={{ width: '80%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                                <div className="w-full flex justify-between items-center px-1">
-                                    <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>
-                                        {item.sourceType || 'Ability'}
-                                    </span>
+                    {!compact && (
+                        <div className="z-30 relative" style={{ marginTop: 4 }}>
+                            <BottomBanner width={140} height={28}>
+                                <div style={{ width: '80%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                    <div className="w-full flex justify-between items-center px-1">
+                                        <span className="text-[9px] font-semibold truncate flex-1 leading-tight" style={{ color: '#ffffff' }}>
+                                            {item.sourceType || 'Ability'}
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
-                            {item.sourcePT && (
-                                <div className="text-[10px] font-bold flex gap-0.5 text-white">
-                                    <span>{item.sourcePT}</span>
-                                </div>
-                            )}
-                        </BottomBanner>
-                    </div>
+                                {item.sourcePT && (
+                                    <div className="text-[10px] font-bold flex gap-0.5 text-white">
+                                        <span>{item.sourcePT}</span>
+                                    </div>
+                                )}
+                            </BottomBanner>
+                        </div>
+                    )}
                 </div>
 
                 {/* Info Panel - Slides out from the right */}
@@ -218,7 +234,7 @@ const StackItem = ({
                         ease: "easeOut"
                     }}
                     className="flex-1 min-w-0 bg-black/60 backdrop-blur-md p-3 rounded-r-xl rounded-l-none -ml-2 flex flex-col justify-center shadow-none border-t border-b border-r border-white/10"
-                    style={{ height: 160 }} // Match card frame height
+                    style={{ height: itemHeight }} // Match card frame height
                 >
                     <div className="flex items-center justify-between mb-1">
                         <span className="text-white font-bold text-sm truncate" title={item.sourceName}>
@@ -256,8 +272,12 @@ const LIFOStack = ({
     onResolve,
     onRemove,
     isCollapsed,
-    onToggleCollapse
+    onToggleCollapse,
+    anchorClass = 'left-1/2 -translate-x-1/2 bottom-32', // screen position of the stack
+    tapToResolve = false, // landscape: tap the top card to resolve it
+    compact = false // landscape: banner-less 100px items
 }) => {
+    const itemHeight = compact ? 100 : 160;
     const [newItemIds, setNewItemIds] = React.useState(new Set());
     const [exitingItemIds, setExitingItemIds] = React.useState(new Set());
     const seenItemsRef = React.useRef(new Set());
@@ -371,18 +391,19 @@ const LIFOStack = ({
         }
     }, [items, renderedItems]);
 
-    // If empty, render empty placeholder to keep component mounted
+    // If empty, render empty placeholder to keep component mounted. It carries
+    // the container id so a first item's fly-in can measure the anchor position.
     if (!renderedItems || renderedItems.length === 0) {
-        return <div className="fixed left-1/2 -translate-x-1/2 bottom-32 z-[60] perspective-1000 w-[360px] h-[160px] pointer-events-none" />;
+        return <div id="stack-container" className={`fixed ${anchorClass} z-[60] perspective-1000 w-[360px] pointer-events-none`} style={{ height: itemHeight }} />;
     }
 
     const visibleItems = renderedItems.slice(-MAX_VISIBLE_STACK);
     const hiddenCount = Math.max(0, renderedItems.length - MAX_VISIBLE_STACK);
 
     return (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-32 z-[60] perspective-1000" id="stack-container">
+        <div className={`fixed ${anchorClass} z-[60] perspective-1000`} id="stack-container">
             {/* Main Stack Container */}
-            <div className="relative w-[360px] h-[160px]" id="stack-list">
+            <div className="relative w-[360px]" style={{ height: itemHeight }} id="stack-list">
 
                 {/* Render Items - reversed so newest is first */}
                 {[...visibleItems].reverse().map((item, index) => {
@@ -406,6 +427,8 @@ const LIFOStack = ({
                             isHidden={isHidden}
                             onResolve={onResolve}
                             onRemove={onRemove}
+                            onTapResolve={tapToResolve ? onResolve : null}
+                            compact={compact}
                         />
                     );
                 })}
