@@ -7,6 +7,38 @@ import { toast } from 'react-hot-toast';
 import { SIGNATURE_DATA } from '../data/signatureCards';
 import cardData from '../data/scryfall_cards.json';
 
+// Tokens carry creature-ness/token-ness inconsistently across creation paths
+// (isToken flag from the scanner/related-tokens fetch, or only in type_line
+// for Scryfall search results and signature data) — check both.
+const isTokenDef = (c) => !!(c?.isToken || (typeof c?.type_line === 'string' && c.type_line.toLowerCase().includes('token')));
+
+// Insert new entries into the Recent Cards tray. Named cards prepend to the
+// front (most-recent-first); tokens append to the tail instead — otherwise
+// auto-fetched "related tokens" (Krenko's Goblins, Doubling Season copies,
+// etc.) bury the named cards the player actually searched for. Entries whose
+// name already exists anywhere in the list are skipped (matches prior
+// behavior: adding an already-present card is a no-op, not a re-bump). On
+// overflow the oldest token is evicted before any named card.
+const insertRecents = (prev, candidates, cap) => {
+    const itemsToAdd = candidates.filter(item => !prev.some(c => c.name === item.name));
+    if (itemsToAdd.length === 0) return prev;
+
+    const tokens = prev.filter(isTokenDef);
+    const nonTokens = prev.filter(c => !isTokenDef(c));
+
+    itemsToAdd.forEach(item => {
+        if (isTokenDef(item)) tokens.push(item);
+        else nonTokens.unshift(item);
+    });
+
+    while (nonTokens.length + tokens.length > cap) {
+        if (tokens.length > 0) tokens.shift();
+        else nonTokens.pop();
+    }
+
+    return [...nonTokens, ...tokens];
+};
+
 /**
  * Hook for card-related action handlers
  * Extracts card manipulation logic from App.jsx
@@ -518,10 +550,7 @@ const useCardActions = ({
 
             saveHistoryState(currentCards);
 
-            setRecentCards(prev => {
-                if (prev.some(c => c.name === def.name)) return prev;
-                return [def, ...prev].slice(0, 10);
-            });
+            setRecentCards(prev => insertRecents(prev, [def], 10));
 
             const referenceCard = addedCards[0];
             // Fetch related tokens — favorites cards may lack all_parts/scryfall_id,
@@ -542,11 +571,7 @@ const useCardActions = ({
                             addedIds.includes(c.id) ? { ...c, relatedTokens: tokens } : c
                         ));
 
-                        setRecentCards(prev => {
-                            const newTokens = tokens.filter(t => !prev.some(p => p.name === t.name));
-                            if (newTokens.length === 0) return prev;
-                            return [...newTokens, ...prev].slice(0, 20);
-                        });
+                        setRecentCards(prev => insertRecents(prev, tokens, 20));
                         logAction(`Added ${tokens.length} related token(s) to recents`);
                     }
                 }).catch(err => console.warn('Failed to auto-fetch tokens', err));
@@ -556,12 +581,9 @@ const useCardActions = ({
         }, 50);
     }, [cards, setCards, gameEngineRef, logAction, saveHistoryState, addToStack, setRecentCards, startTargetingMode, recentCards]);
 
-    // Add to Recents Handler
+    // Add to Recents Handler (see insertRecents for ordering rules).
     const handleAddToRecents = useCallback((def) => {
-        setRecentCards(prev => {
-            if (prev.some(c => c.name === def.name)) return prev;
-            return [def, ...prev].slice(0, 10);
-        });
+        setRecentCards(prev => insertRecents(prev, [def], 10));
 
         setPreviewCard(null);
         setSearchQuery('');

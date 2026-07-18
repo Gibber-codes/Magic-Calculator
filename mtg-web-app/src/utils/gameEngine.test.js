@@ -68,6 +68,21 @@ describe('GameEngine phase trigger casing (Tier 1D normalization)', () => {
         expect(engine.processPhaseChange('main 2')).toHaveLength(0);
     });
 
+    it('finds ALL creatures for all_creatures_you_control, including tokens (Ouroboroid)', () => {
+        const engine = new GameEngine([]);
+        const pool = [
+            { id: 1, name: 'Plain Creature', type: 'Creature', zone: 'battlefield' },
+            // Token whose type field never got set to 'Creature' (varies by creation path)
+            { id: 2, name: 'Goblin Token', type: 'Token', type_line: 'Token Creature — Goblin', isToken: true, zone: 'battlefield' },
+            // Scryfall-shaped card: creature-ness only in type_line
+            { id: 3, name: 'Scryfall Creature', type_line: 'Legendary Creature — Elf', zone: 'battlefield' },
+            { id: 4, name: 'Enchantment', type: 'Enchantment', type_line: 'Enchantment', zone: 'battlefield' },
+            { id: 5, name: 'Dead Creature', type: 'Creature', type_line: 'Creature — Bear', zone: 'graveyard' },
+        ];
+        const targets = engine.findTargets('all_creatures_you_control', pool);
+        expect(targets.map(t => t.id).sort()).toEqual([1, 2, 3]);
+    });
+
     it('processEndOfTurn resolves delayed end-step triggers once, and never standard ones', () => {
         const engine = new GameEngine([endStepCard]);
         engine.registerDelayedTrigger({

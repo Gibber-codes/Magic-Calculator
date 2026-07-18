@@ -195,11 +195,11 @@ const AddCardPanel = ({
                     flex flex-col touch-auto
                     transition-[height,top,border-radius] duration-500 cubic-bezier(0.32, 0.72, 0, 1)
                     ${isInputFocused || activeTab === 'favorites' ? 'rounded-b-3xl' : 'rounded-t-3xl'} overflow-hidden
-                    ${isInputFocused || activeTab === 'favorites' ? 'inset-0' : 'left-0 right-0 bottom-0 h-[35vh]'}
+                    ${isInputFocused || activeTab === 'favorites' ? 'inset-0' : 'left-0 right-0 bottom-0 h-[35vh] landscape:h-[72vh]'}
                 `}
             >
                 {/* Content Wrapper - Responsive Height */}
-                <div className={`flex flex-col w-full min-h-0 ${isInputFocused || activeTab === 'favorites' ? 'flex-1' : (searchResults.length > 0 ? 'max-h-[60vh] h-[60vh]' : 'max-h-[35vh]')}`}>
+                <div className={`flex flex-col w-full min-h-0 ${isInputFocused || activeTab === 'favorites' ? 'flex-1' : (searchResults.length > 0 ? 'max-h-[60vh] h-[60vh]' : 'max-h-[35vh] landscape:max-h-[72vh]')}`}>
 
                     {/* Top Bar: Tabs & Close */}
                     <div className="flex items-center justify-between gap-3 px-4 pt-4 shrink-0">

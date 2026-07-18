@@ -76,42 +76,6 @@ const usePhaseHandlers = ({
         return false;
     }, [baseHandlePhaseChange, cardPositions, cards, setCards, logAction, addToStack]);
 
-    // Smart Phase Advance (Game Flow Button)
-    const handleSmartPhaseAdvance = useCallback(() => {
-        if (abilityStack && abilityStack.length > 0) {
-            logAction(`Must resolve ${abilityStack.length} item(s) on the stack first!`);
-            return;
-        }
-
-        if (!currentPhase) {
-            handlePhaseChange('Main');
-            return;
-        }
-
-        if (currentPhase === 'Beginning') {
-            handlePhaseChange('Main');
-        } else if (currentPhase === 'Main') {
-            handlePhaseChange('Combat');
-        } else if (currentPhase === 'Combat') {
-            if (!targetingMode.active) {
-                // Manually starting declaration
-                gameState.setCurrentCombatStep('Declare Attackers');
-                setTargetingMode({
-                    active: true,
-                    mode: 'multiple',
-                    action: 'declare-attackers',
-                    sourceId: null,
-                    selectedIds: []
-                });
-                logAction("Select creatures to attack, then Confirm.");
-            } else {
-                handlePhaseChange('Main 2');
-            }
-        } else if (currentPhase === 'Main 2') {
-            endTurn();
-        }
-    }, [abilityStack, currentPhase, handlePhaseChange, targetingMode.active, setTargetingMode, logAction, endTurn]);
-
     // Animate through phase steps
     const startPhasePassAnimation = useCallback((steps, startIndex) => {
         let stepIndex = startIndex;
@@ -210,6 +174,50 @@ const usePhaseHandlers = ({
             handlePhaseChange(nextPhase);
         }
     }, [baseAdvancePhase, handlePhaseChange]);
+
+    // Smart Phase Advance (Game Flow Button).
+    // Defined after the advanceCombatStep wrapper because the Combat branch
+    // steps through combat with it rather than restarting declaration.
+    const handleSmartPhaseAdvance = useCallback(() => {
+        if (abilityStack && abilityStack.length > 0) {
+            logAction(`Must resolve ${abilityStack.length} item(s) on the stack first!`);
+            return;
+        }
+
+        if (!currentPhase) {
+            handlePhaseChange('Main');
+            return;
+        }
+
+        if (currentPhase === 'Beginning') {
+            handlePhaseChange('Main');
+        } else if (currentPhase === 'Main') {
+            handlePhaseChange('Combat');
+        } else if (currentPhase === 'Combat') {
+            const combatStep = gameState.currentCombatStep;
+            if (targetingMode.active || combatStep === 'Combat Damage' || combatStep === 'End of Combat') {
+                // Combat already resolved (or declaration is being abandoned) —
+                // move on instead of restarting Declare Attackers.
+                handlePhaseChange('Main 2');
+            } else if (combatStep === 'Declare Blockers') {
+                // Blocker declaration was cancelled — continue forward to damage.
+                advanceCombatStep();
+            } else {
+                // Beginning of Combat / fresh combat: start attack declaration
+                gameState.setCurrentCombatStep('Declare Attackers');
+                setTargetingMode({
+                    active: true,
+                    mode: 'multiple',
+                    action: 'declare-attackers',
+                    sourceId: null,
+                    selectedIds: []
+                });
+                logAction("Select creatures to attack, then Confirm.");
+            }
+        } else if (currentPhase === 'Main 2') {
+            endTurn();
+        }
+    }, [abilityStack, currentPhase, handlePhaseChange, targetingMode.active, setTargetingMode, logAction, endTurn, gameState, advanceCombatStep]);
 
     // Automatic Calculations Mode Logic
     const handleAutoCalculate = useCallback(() => {

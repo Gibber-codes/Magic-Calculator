@@ -2,7 +2,7 @@
  * MTG Game Engine
  * Handles phase management, triggered abilities, and replacement effects
  */
-import { calculateCardStats, getTypeFromTypeLine } from './cardUtils';
+import { calculateCardStats, getTypeFromTypeLine, isCreature } from './cardUtils';
 import localCardData from '../data/scryfall_cards.json';
 import { SIGNATURE_DATA } from '../data/signatureCards';
 import { formatBigNumber } from './formatters';
@@ -510,7 +510,13 @@ export class GameEngine {
                 }
                 return [];
             case 'all_creatures_you_control':
-                return pool.filter(c => c.type === 'Creature');
+                // Tokens carry creature-ness in type_line (e.g. "Token Creature — Goblin")
+                // and their `type` field varies by creation path — a strict
+                // type === 'Creature' check silently skips them. Graveyard excluded.
+                return pool.filter(c =>
+                    c.zone !== 'graveyard' &&
+                    (c.type === 'Creature' || isCreature(c))
+                );
 
             case 'self':
                 return source ? [source] : [];
